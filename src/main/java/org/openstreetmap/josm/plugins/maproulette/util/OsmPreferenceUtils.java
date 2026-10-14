@@ -14,6 +14,7 @@ import org.openstreetmap.josm.gui.progress.swing.PleaseWaitProgressMonitor;
 import org.openstreetmap.josm.io.OsmServerUserPreferencesReader;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Utils;
@@ -46,7 +47,7 @@ public final class OsmPreferenceUtils {
         if (!Utils.isStripEmpty(possibleApiKey) && !"Couldn't authenticate you".equals(possibleApiKey)) {
             return possibleApiKey;
         }
-        final var osmServerKey = Config.getPref().get("maproulette.openstreetmap" + getBaseUrl() + ".api_key",
+        final var osmServerKey = Config.getPref().get(MapRouletteConfig.apiKeyPreferenceKey(getBaseUrl()),
                 "maproulette_apikey_v2");
         final var reader = new OsmServerUserPreferencesReader();
         final var monitor = new PleaseWaitProgressMonitor(tr("Fetching OpenStreetMap User Preferences"));

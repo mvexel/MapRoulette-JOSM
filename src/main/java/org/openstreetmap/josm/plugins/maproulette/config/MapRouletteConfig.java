@@ -51,4 +51,14 @@ public record MapRouletteConfig(@Nonnull String baseUrl) {
     public static void setInstance(@Nonnull MapRouletteConfig instance) {
         MapRouletteConfig.instance = instance;
     }
+
+    /**
+     * Get the JOSM preference key that stores which OSM user preference holds the MapRoulette API key
+     *
+     * @param baseUrl The MapRoulette API base url
+     * @return The JOSM preference key
+     */
+    public static String apiKeyPreferenceKey(String baseUrl) {
+        return "maproulette.openstreetmap." + baseUrl + ".api_key";
+    }
 }
