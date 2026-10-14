@@ -56,6 +56,10 @@ jobs:
             echo "::error::pom.xml plugin.main.version ($main_version) != build.xml ($ant_version)"
             exit 1
           fi
+          # Numbered JOSM builds are not in the Maven repository, so install the published jar for that revision
+          curl -fsSL -o josm.jar "https://josm.openstreetmap.de/download/josm-snapshot-${main_version}.jar"
+          mvn -B -q install:install-file -Dfile=josm.jar -DgroupId=org.openstreetmap.josm -DartifactId=josm \
+            -Dversion="$main_version" -Dpackaging=jar
           mvn -B compile -Djosm.compile.version="$main_version"
 
   format:
