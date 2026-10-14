@@ -17,6 +17,15 @@ If a task specifies an OSM primitive, and you have modified a primitive specifie
 by the task, you will be asked if you have fixed the problem _even if you haven't
 locked the task_ when you upload the changed primitive.
 
+# Development
+The plugin builds standalone with Maven (JDK 17+); JOSM is fetched from https://josm.openstreetmap.de/repository/.
+* `mvn verify` builds `target/MapRoulette.jar` and runs the tests against the latest JOSM.
+* `mvn compile -Djosm.compile.version=19528` checks that it still compiles against the minimum JOSM version
+  (`plugin.main.version`, which must match `build.xml`).
+* `mvn spotless:apply` formats the code with the JOSM formatter (`tools/eclipse/formatter.xml`).
+
+The Ant `build.xml` is kept for building inside the JOSM plugins SVN tree.
+
 # Author
 * Taylor Smock <tsmock@protonmail.com>
 

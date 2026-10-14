@@ -4,8 +4,17 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.Stream;
+
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 
 @MapRouletteConfig
@@ -22,5 +31,24 @@ class MRGuiHelperTest {
                         </ol>
                         </html>""",
                 instructions);
+    }
+
+    @Test
+    void testFilterKeysRemovesMapRouletteIdentifiers() {
+        assertEquals(List.of("building", "addr:street"),
+                MRGuiHelper.filterKeys(Stream.of("building", "identifier", "addr:street", "@id", "osm_id")).toList());
+    }
+
+    /**
+     * Tag values substituted into instructions must not be interpreted as regex group references
+     */
+    @Test
+    void testGetInstructionTextMustacheWithSpecialCharacters() throws Exception {
+        final var json = Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start"))
+                .replace("\"instruction\": \"\"", "\"instruction\": \"Street: {{addr:street}}\"")
+                .replace("Chatham Hill Road", "Costs $1 \\\\ Road");
+        final var task = (Task) TaskParser.parseTask(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        final var instructions = assertDoesNotThrow(() -> MRGuiHelper.getInstructionText(task));
+        assertEquals("<html><p>Street: Costs $1 \\ Road</p>\n</html>", instructions);
     }
 }

@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -85,7 +86,8 @@ public final class MRGuiHelper {
             final var tag = matcher.group(1);
             final var replacement = currentTask.geometries().allPrimitives().stream().map(prim -> prim.get(tag))
                     .filter(Objects::nonNull).collect(Collectors.joining(System.lineSeparator()));
-            matcher.appendReplacement(builder, Utils.isStripEmpty(replacement) ? matcher.group(0) : replacement);
+            matcher.appendReplacement(builder,
+                    Matcher.quoteReplacement(Utils.isStripEmpty(replacement) ? matcher.group(0) : replacement));
         }
         matcher.appendTail(builder);
 
@@ -102,6 +104,6 @@ public final class MRGuiHelper {
      * @return The filtered stream
      */
     public static Stream<String> filterKeys(Stream<String> keys) {
-        return keys.filter(DISCARDABLE_KEYS::contains);
+        return keys.filter(key -> !DISCARDABLE_KEYS.contains(key));
     }
 }

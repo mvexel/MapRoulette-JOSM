@@ -65,7 +65,7 @@ public class MapRouletteDownloadChallengeTask extends AbstractDownloadTask<Colle
 
     @Override
     public String[] getPatterns() {
-        return new String[] { "https:?//.*" + PATTERN_CHALLENGE.pattern() };
+        return new String[] { "https?://.*" + PATTERN_CHALLENGE.pattern() };
     }
 
     @Override

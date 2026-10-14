@@ -5,12 +5,19 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.openstreetmap.josm.plugins.maproulette.util.RecordAssertion.assertRecordsEqual;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Map;
+import java.util.logging.Level;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.ILatLon;
@@ -24,6 +31,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.OSMChange;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskReviewFields;
+import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 
 /**
@@ -101,5 +109,27 @@ class TaskParserTest {
                         Instant.parse("2022-10-18T07:08:52.469Z"), null, null),
                 0, -1L, null, null, false, null, "");
         assertRecordsEqual(expected, task);
+    }
+
+    /**
+     * A malformed OSC file in a cooperative task must be reported, not silently dropped
+     *
+     * @param handler The log handler
+     */
+    @Test
+    @LoggingHandler
+    void testMalformedOscIsLogged(LoggingHandler.TestHandler handler) throws Exception {
+        // osmChange without the mandatory version attribute
+        final var content = Base64.getEncoder()
+                .encodeToString("<osmChange><modify/></osmChange>".getBytes(StandardCharsets.UTF_8));
+        final var cooperativeWork = "{\"cooperativeWork\": {\"meta\": {\"type\": 2, \"version\": 2}, \"file\": {"
+                + "\"type\": \"xml\", \"format\": \"osc\", \"encoding\": \"base64\", \"content\": \"" + content
+                + "\"}},";
+        final var json = Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start"))
+                .replaceFirst("\\{", cooperativeWork);
+        final var task = (Task) TaskParser.parseTask(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        assertNull(task.cooperativeWork());
+        assertTrue(handler.getRecords().stream()
+                .anyMatch(r -> r.getLevel().intValue() >= Level.WARNING.intValue() && r.getMessage().contains("OSC")));
     }
 }

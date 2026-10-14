@@ -3,14 +3,21 @@ name: Java CI
 on:
   push:
     branches:
+      - main
       - master
       - $default-branch
       - $protected-branches
   pull_request:
     branches:
+      - main
       - master
       - $default-branch
   workflow_dispatch:
+
+# A new push to a pull request cancels its superseded run; runs on main always finish
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   id-token: write
@@ -47,12 +54,14 @@ jobs:
     needs: check-release-needed
     strategy:
       matrix:
-        josm-revision: ["", "r19330"]
+        josm-revision: ["", "r19528"]
     uses: JOSM/JOSMPluginAction/.github/workflows/ant.yml@v3
     with:
       josm-revision: ${{ matrix.josm-revision }}
       java-version: 17
-      perform-revision-tagging: ${{ github.repository == 'JOSM/MapRoulette' && github.ref_type == 'branch' && github.ref_name == 'master' && github.event_name != 'schedule' && github.event_name != 'pull_request' && matrix.josm-revision == 'r19330' }}
+      # The fork's repository name (MapRoulette-JOSM) is not the plugin's jar name
+      plugin-jar-name: MapRoulette
+      perform-revision-tagging: ${{ github.repository == 'JOSM/MapRoulette' && github.ref_type == 'branch' && github.ref_name == 'master' && github.event_name != 'schedule' && github.event_name != 'pull_request' && matrix.josm-revision == 'r19528' }}
     secrets: inherit
     permissions:
       attestations: write

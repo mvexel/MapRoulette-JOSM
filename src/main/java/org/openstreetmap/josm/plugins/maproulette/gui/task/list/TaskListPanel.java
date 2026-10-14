@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.LongPredicate;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -79,6 +80,10 @@ public final class TaskListPanel extends ToggleDialog
      * The underlying model
      */
     private final TaskTableModel model;
+    /**
+     * The test registered with {@link HiddenList}, kept so it can be removed again
+     */
+    private final LongPredicate hiddenTest = this::isHidden;
 
     /**
      * Create a new task list panel
@@ -109,7 +114,7 @@ public final class TaskListPanel extends ToggleDialog
                 return !TaskCache.isHidden(point);
             }
         };
-        HiddenList.addListUpdater(this::isHidden);
+        HiddenList.addListUpdater(this.hiddenTest);
         filterField.filter(expr -> {
             expr = expr.replace("+", "\\+");
             final ArrayList<RowFilter<? super TaskTableModel, ? super Integer>> andFilters = new ArrayList<>();
@@ -205,6 +210,8 @@ public final class TaskListPanel extends ToggleDialog
     public void destroy() {
         super.destroy();
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this.model);
+        MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
+        HiddenList.removeListUpdater(this.hiddenTest);
     }
 
     /**

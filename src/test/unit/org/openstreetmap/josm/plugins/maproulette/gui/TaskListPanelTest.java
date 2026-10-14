@@ -2,9 +2,17 @@
 package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.ActionEvent;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongPredicate;
 
 import javax.swing.Action;
 import javax.swing.JButton;
@@ -17,14 +25,17 @@ import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapViewState;
+import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
+import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
 
+import mockit.Invocation;
 import mockit.Mock;
 import mockit.MockUp;
 
@@ -76,6 +87,45 @@ public class TaskListPanelTest {
         action.actionPerformed(null);
         MainApplication.worker.submit(() -> {
             /* Sync thread */ }).get();
+    }
+
+    /**
+     * Non-regression test: a destroyed panel must not stay registered with the layer manager or {@link HiddenList}
+     */
+    @Test
+    void testDestroyRemovesListeners() throws ReflectiveOperationException {
+        final var registered = new ArrayList<LongPredicate>();
+        new MockUp<HiddenList>() {
+            @Mock
+            void addListUpdater(Invocation invocation, LongPredicate checkFunction) {
+                registered.add(checkFunction);
+                invocation.proceed();
+            }
+        };
+        final var panel = new TaskListPanel();
+        final var layerEvents = new AtomicInteger();
+        new MockUp<TaskListPanel>() {
+            @Mock
+            void layerAdded(Invocation invocation, LayerManager.LayerAddEvent e) {
+                if (invocation.getInvokedInstance() == panel) {
+                    layerEvents.incrementAndGet();
+                }
+            }
+        };
+        assertEquals(1, registered.size());
+        assertTrue(getHiddenListTests().contains(registered.get(0)));
+        panel.destroy();
+        assertFalse(getHiddenListTests().contains(registered.get(0)),
+                "The destroyed panel should not be asked whether tasks are hidden");
+        MainApplication.getLayerManager()
+                .addLayer(new OsmDataLayer(new DataSet(), "testDestroyRemovesListeners", null));
+        assertEquals(0, layerEvents.get(), "The destroyed panel should not get layer events");
+    }
+
+    private static List<LongPredicate> getHiddenListTests() throws ReflectiveOperationException {
+        final Field tests = HiddenList.class.getDeclaredField("tests");
+        tests.setAccessible(true);
+        return Arrays.asList((LongPredicate[]) tests.get(null));
     }
 
     /**

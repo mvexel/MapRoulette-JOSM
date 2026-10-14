@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalArray;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInteger;
@@ -200,7 +201,7 @@ public final class ChallengeAPI {
     public static Task[] tasksNearby(long challengeId, long proximityId, boolean excludeSelfLocked, int limit,
             long proximity) throws IOException {
         Map<String, String> query = new TreeMap<>();
-        if (!excludeSelfLocked) {
+        if (excludeSelfLocked) {
             query.put("excludeSelfLocked", "true");
         }
         if (limit > 0) {
@@ -316,11 +317,10 @@ public final class ChallengeAPI {
     @Nonnull
     private static ChallengePriority parseChallengePriority(JsonObject object) {
         return new ChallengePriority(
-                object.containsKey("defaultPriority") ? Priority.values()[object.getInt("defaultPriority")]
-                        : Priority.MEDIUM,
-                object.containsKey("highPriorityRule") ? object.get("highPriorityRule").toString() : null,
-                object.containsKey("mediumPriorityRule") ? object.get("mediumPriorityRule").toString() : null,
-                object.containsKey("lowPriorityRule") ? object.get("lowPriorityRule").toString() : null);
+                has(object, "defaultPriority") ? Priority.fromCode(object.getInt("defaultPriority")) : Priority.MEDIUM,
+                has(object, "highPriorityRule") ? object.get("highPriorityRule").toString() : null,
+                has(object, "mediumPriorityRule") ? object.get("mediumPriorityRule").toString() : null,
+                has(object, "lowPriorityRule") ? object.get("lowPriorityRule").toString() : null);
     }
 
     /**

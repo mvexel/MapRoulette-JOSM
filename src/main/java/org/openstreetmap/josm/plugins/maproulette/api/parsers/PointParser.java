@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
+
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 
 import jakarta.annotation.Nullable;
@@ -25,9 +27,9 @@ public final class PointParser {
      */
     @Nullable
     public static Point parse(JsonObject object) {
-        if (object.containsKey("lat") && object.containsKey("lng")) {
+        if (has(object, "lat") && has(object, "lng")) {
             return new Point(object.getJsonNumber("lat").doubleValue(), object.getJsonNumber("lng").doubleValue());
-        } else if (object.containsKey("type") && "Point".equals(object.getString("type"))) {
+        } else if (has(object, "type") && "Point".equals(object.getString("type"))) {
             final var coordinates = object.getJsonArray("coordinates");
             return new Point(coordinates.getJsonNumber(1).doubleValue(), coordinates.getJsonNumber(0).doubleValue());
         }

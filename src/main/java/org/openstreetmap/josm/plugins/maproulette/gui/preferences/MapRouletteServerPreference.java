@@ -55,7 +55,7 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
         panel.add(apiKey, GBC.eol().fill(GBC.HORIZONTAL));
         apiKey.addItem(DEFAULT_MAPROULETTE_API_KEY);
         apiKey.setEditable(true);
-        var currentApiKey = Config.getPref().get("maproulette.openstreetmap" + MAPROULETTE_URL.get() + ".api_key",
+        var currentApiKey = Config.getPref().get(MapRouletteConfig.apiKeyPreferenceKey(MAPROULETTE_URL.get()),
                 DEFAULT_MAPROULETTE_API_KEY);
         if (!DEFAULT_MAPROULETTE_API_KEY.equals(currentApiKey)) {
             apiKey.addItem(currentApiKey);
@@ -83,7 +83,7 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
             }
         }
 
-        final var prefKeyApi = "maproulette.openstreetmap." + MAPROULETTE_URL.get() + ".api_key";
+        final var prefKeyApi = MapRouletteConfig.apiKeyPreferenceKey(MAPROULETTE_URL.get());
         if (!Utils.isStripEmpty(newApiKey)) {
             if (DEFAULT_MAPROULETTE_API_KEY.equals(newApiKey)) {
                 Config.getPref().put(prefKeyApi, null);

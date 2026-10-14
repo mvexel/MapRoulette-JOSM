@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.data;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,7 +18,10 @@ import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.Notification;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.OSMChange;
+import org.openstreetmap.josm.tools.Logging;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -43,7 +47,7 @@ public class ApplyCooperativeChange {
      * Generate the command for a specified dataset
      *
      * @param ds The dataset to generate the command for
-     * @return The generated command
+     * @return The generated command, or {@code null} if an object in the task is not in {@code ds}
      */
     @Nullable
     public Command generateCommand(@Nonnull DataSet ds) {
@@ -51,6 +55,22 @@ public class ApplyCooperativeChange {
         if (this.change.creates().length > 0) {
             throw new IllegalArgumentException(
                     "We don't currently handle cooperative challenge creates: " + this.change);
+        }
+        // Apply the task completely or not at all, so it is never marked as fixed with only part of its changes
+        final List<String> missing = new ArrayList<>();
+        for (var update : this.change.updates()) {
+            if (ds.getPrimitiveById(update.osmId(), update.osmType()) == null) {
+                missing.add(update.osmType().getAPIName() + ' ' + update.osmId());
+            }
+        }
+        if (!missing.isEmpty()) {
+            final var message = tr("Download these objects before applying the MapRoulette tag fix: {0}",
+                    String.join(", ", missing));
+            Logging.warn(message);
+            if (!GraphicsEnvironment.isHeadless()) {
+                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.WARNING_MESSAGE).show());
+            }
+            return null;
         }
         ConditionalOptionPaneUtil.startBulkOperation(BULK_OPERATION_VERSION_MISMATCH);
         final List<Command> commands = new ArrayList<>();

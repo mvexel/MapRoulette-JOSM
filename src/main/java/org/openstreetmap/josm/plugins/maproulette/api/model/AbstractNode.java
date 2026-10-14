@@ -262,7 +262,8 @@ public interface AbstractNode extends INode {
     default void declareCachedStyleUpToDate(ElemStyles elemStyles) {
         throw new UnsupportedOperationException();
     }
-    default void clearCachedStyle(){
+
+    default void clearCachedStyle() {
         //do nothing
     };
 

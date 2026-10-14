@@ -14,6 +14,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.ListenerList;
+import org.openstreetmap.josm.tools.bugreport.BugReport;
 
 /**
  * A late upload hook for uploading task status'
@@ -57,6 +58,9 @@ public class LateUploadHook implements UploadHook {
                     TaskAPI.changeset(entry.task().id());
                 } catch (IOException e) {
                     ExceptionDialogUtil.explainException(e);
+                } catch (RuntimeException e) {
+                    // Never abort the OSM upload because of a MapRoulette problem
+                    BugReport.intercept(e).put("task", entry.task().id()).warn();
                 }
             }
         }

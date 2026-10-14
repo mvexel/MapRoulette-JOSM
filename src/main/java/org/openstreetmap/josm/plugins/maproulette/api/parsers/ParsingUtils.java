@@ -21,6 +21,18 @@ public final class ParsingUtils {
     }
 
     /**
+     * Check if a key has a value. MapRoulette sends {@code null} for some absent values, so this treats a JSON
+     * {@code null} the same as a missing key.
+     *
+     * @param object The json to read from
+     * @param key    The key which might not be present
+     * @return {@code true} if the key is present and not {@code null}
+     */
+    public static boolean has(@Nonnull JsonObject object, @Nonnull String key) {
+        return object.containsKey(key) && !object.isNull(key);
+    }
+
+    /**
      * Get an optional object
      *
      * @param object The json to read from
@@ -32,7 +44,7 @@ public final class ParsingUtils {
     @Nullable
     public static <T> T optionalObject(@Nonnull JsonObject object, @Nonnull String key,
             @Nonnull Function<JsonObject, T> parser) {
-        if (object.containsKey(key)) {
+        if (has(object, key)) {
             return parser.apply(object.getJsonObject(key));
         }
         return null;
@@ -50,7 +62,7 @@ public final class ParsingUtils {
     @Nullable
     public static <T> T optionalArray(@Nonnull JsonObject object, @Nonnull String key,
             @Nonnull Function<JsonArray, T> parser) {
-        if (object.containsKey(key)) {
+        if (has(object, key)) {
             return parser.apply(object.getJsonArray(key));
         }
         return null;
@@ -65,7 +77,7 @@ public final class ParsingUtils {
      */
     @Nullable
     public static Instant optionalInstant(JsonObject object, String key) {
-        if (object.containsKey(key)) {
+        if (has(object, key)) {
             return Instant.parse(object.getString(key));
         }
         return null;
@@ -80,7 +92,7 @@ public final class ParsingUtils {
      */
     @Nullable
     public static Long optionalLong(JsonObject object, String key) {
-        if (object.containsKey(key)) {
+        if (has(object, key)) {
             return object.getJsonNumber(key).longValue();
         }
         return null;
@@ -95,7 +107,7 @@ public final class ParsingUtils {
      */
     @Nullable
     public static Integer optionalInteger(JsonObject object, String key) {
-        if (object.containsKey(key)) {
+        if (has(object, key)) {
             return object.getInt(key);
         }
         return null;

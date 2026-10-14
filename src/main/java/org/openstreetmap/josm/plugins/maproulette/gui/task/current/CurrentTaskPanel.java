@@ -218,14 +218,14 @@ public final class CurrentTaskPanel extends ToggleDialog {
                     final var current = OsmDataManager.getInstance().getEditDataSet().getPrimitiveById(updates.osmId(),
                             updates.osmType());
                     for (var change : updates.tags().updates().entrySet()) {
-                        final var old = current.get(change.getKey());
+                        final var old = current == null ? null : current.get(change.getKey());
                         table.setValueAt(change.getKey(), row, 0);
                         table.setValueAt(old, row, 1);
                         table.setValueAt(change.getValue(), row++, 2);
                     }
                     for (var change : updates.tags().deletes()) {
                         table.setValueAt(change, row, 0);
-                        table.setValueAt(current.get(change), row++, 1);
+                        table.setValueAt(current == null ? null : current.get(change), row++, 1);
                     }
                 }
             } else {

@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
+
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 
@@ -89,11 +91,11 @@ final class GeometryParser {
      * @throws IllegalDataException If the object is not parseable
      */
     private static void parseObject(DataSet ds, JsonObject object) throws IllegalDataException {
-        if (object.containsKey("type")) {
+        if (has(object, "type")) {
             ds.mergeFrom(GeoJSONReader.parseDataSet(
                     new ByteArrayInputStream(object.toString().getBytes(StandardCharsets.UTF_8)),
                     NullProgressMonitor.INSTANCE));
-        } else if (object.containsKey("features")) {
+        } else if (has(object, "features")) {
             final var value = object.get("features");
             if (value instanceof JsonObject obj) {
                 parseObject(ds, obj);

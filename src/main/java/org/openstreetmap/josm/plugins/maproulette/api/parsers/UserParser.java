@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
+
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 
@@ -22,7 +24,7 @@ final class UserParser {
      */
     @Nullable
     static PublicUser parse(@Nullable JsonObject object) {
-        if (object != null && object.containsKey("username") && object.containsKey("id")) {
+        if (object != null && has(object, "username") && has(object, "id")) {
             return new PublicUser(object.getJsonNumber("id").longValue(), null, object.getString("username"), null,
                     null);
         }

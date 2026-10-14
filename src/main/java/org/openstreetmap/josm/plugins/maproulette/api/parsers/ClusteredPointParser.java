@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalLong;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalObject;
@@ -71,11 +72,10 @@ public final class ClusteredPointParser {
                     Objects.requireNonNull(PointParser.parse(object.getJsonObject("point"))),
                     parseBounding(object.get("bounding")), object.getString("blurb"),
                     Instant.parse(object.getString("modified")),
-                    object.containsKey("difficulty") && object.getInt("difficulty") > 0
-                            ? Difficulty.values()[object.getInt("difficulty") - 1]
+                    has(object, "difficulty") && object.getInt("difficulty") > 0
+                            ? Difficulty.fromCode(object.getInt("difficulty"))
                             : null,
-                    object.getInt("type"),
-                    object.containsKey("status") ? TaskStatus.values()[object.getInt("status")] : null,
+                    object.getInt("type"), has(object, "status") ? TaskStatus.fromCode(object.getInt("status")) : null,
                     object.getString("cooperativeWork", null), optionalInstant(object, "mappedOn"),
                     optionalLong(object, "completedTimeSpent"),
                     optionalObject(object, "completedBy", UserParser::parse),
@@ -86,8 +86,11 @@ public final class ClusteredPointParser {
     }
 
     @Nullable
-    private static Object parseBounding(JsonValue bounding) {
-        if (bounding instanceof JsonString str) {
+    private static Object parseBounding(@Nullable JsonValue bounding) {
+        if (bounding == null || bounding.getValueType() == JsonValue.ValueType.NULL) {
+            // See JOSM #24772: MapRoulette may send "bounding": null, or leave it out
+            return null;
+        } else if (bounding instanceof JsonString str) {
             return str.getString();
         } else if (bounding instanceof JsonObject obj) {
             if (obj.isEmpty()) {

@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInteger;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalObject;
@@ -39,7 +40,7 @@ public final class PointReviewParser {
                 optionalInteger(object, "metaReviewStatus"),
                 optionalObject(object, "metaReviewedBy", UserParser::parse), optionalInstant(object, "metaReviewedAt"),
                 optionalInstant(object, "reviewStartedAt"),
-                object.containsKey("additionalReviewers")
+                has(object, "additionalReviewers")
                         ? object.getJsonArray("additionalReviewers").getValuesAs(JsonNumber.class).stream()
                                 .mapToLong(JsonNumber::longValue).toArray()
                         : EMPTY_LONG);

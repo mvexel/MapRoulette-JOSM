@@ -49,6 +49,16 @@ public final class HiddenList {
     }
 
     /**
+     * Remove a function added with {@link #addListUpdater(LongPredicate)}
+     * @param checkFunction The function to remove
+     */
+    public static void removeListUpdater(LongPredicate checkFunction) {
+        synchronized (HiddenList.class) {
+            tests = Arrays.stream(tests).filter(test -> test != checkFunction).toArray(LongPredicate[]::new);
+        }
+    }
+
+    /**
      * Check if an id is hidden
      * @param id The id to check
      * @return {@code true} if the id is hidden

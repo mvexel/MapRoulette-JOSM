@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import jakarta.json.Json;
+import jakarta.json.JsonException;
 import javax.swing.text.html.Option;
 
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
@@ -19,9 +20,9 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.ClusteredPointParser;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
 import org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils;
+import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
-import org.openstreetmap.josm.tools.bugreport.BugReport;
 
 /**
  * Task API
@@ -59,7 +60,7 @@ public final class TaskAPI {
      * @param includeGeometries include the geometries
      * @param includeTags       include the tags
      * @return The collection of tasks
-     * @throws IOException if there was a problem communicating with the server
+     * @throws IOException if there was a problem communicating with the server, or its response could not be read
      */
     public static ClusteredPoint[] box(double minLon, double minLat, double maxLon, double maxLat, int limit, int page,
             boolean excludeLocked, String sort, String order, boolean includeTotal, boolean includeGeometries,
@@ -92,10 +93,14 @@ public final class TaskAPI {
         final var client = put(getBaseUrl() + TASKS + "/box/" + minLon + "/" + minLat + "/" + maxLon + "/" + maxLat,
                 query);
         try (var inputstream = client.connect().getContent()) {
-            return (ClusteredPoint[]) ClusteredPointParser.parse(inputstream);
-        } catch (Exception e) {
-            BugReport.intercept(e).put("uri", client.getURL().toExternalForm()).warn();
-            return new ClusteredPoint[0];
+            if (ClusteredPointParser.parse(inputstream)instanceof ClusteredPoint[] points) {
+                return points;
+            }
+            throw new IOException("Unexpected MapRoulette response from " + client.getURL().toExternalForm());
+        } catch (JsonException | IllegalArgumentException | JosmRuntimeException e) {
+            // Let the caller tell the user, instead of silently showing no tasks
+            throw new IOException("Could not read the MapRoulette response from " + client.getURL().toExternalForm(),
+                    e);
         } finally {
             client.disconnect();
         }
@@ -217,7 +222,7 @@ public final class TaskAPI {
             body = null;
         }
         @SuppressWarnings("EnumOrdinal")
-        final var client = put(getBaseUrl() + TASK + "/" + task + "/" + status.ordinal(), query, body);
+        final var client = put(getBaseUrl() + TASK + "/" + task + "/" + status.code(), query, body);
         client.setHeader("content-type", "text/json");
         try {
             final var response = client.connect();
