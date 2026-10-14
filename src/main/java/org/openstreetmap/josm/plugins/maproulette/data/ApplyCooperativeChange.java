@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.data;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,7 +18,10 @@ import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.Notification;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.OSMChange;
+import org.openstreetmap.josm.tools.Logging;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -54,8 +58,14 @@ public class ApplyCooperativeChange {
         }
         ConditionalOptionPaneUtil.startBulkOperation(BULK_OPERATION_VERSION_MISMATCH);
         final List<Command> commands = new ArrayList<>();
+        final List<String> missing = new ArrayList<>();
         for (var update : this.change.updates()) {
             final var primitive = ds.getPrimitiveById(update.osmId(), update.osmType());
+            if (primitive == null) {
+                // The object has not been downloaded into the edit layer, so there is nothing to change
+                missing.add(update.osmType().getAPIName() + ' ' + update.osmId());
+                continue;
+            }
             if (update.version() < 0 || primitive.getVersion() == update.version()
                     || ConditionalOptionPaneUtil.showConfirmationDialog(BULK_OPERATION_VERSION_MISMATCH,
                             MainApplication.getMainFrame(),
@@ -71,6 +81,17 @@ public class ApplyCooperativeChange {
             }
         }
         ConditionalOptionPaneUtil.endBulkOperation(BULK_OPERATION_VERSION_MISMATCH);
+        if (!missing.isEmpty()) {
+            final var message = tr("Download these objects before applying the MapRoulette tag fix: {0}",
+                    String.join(", ", missing));
+            Logging.warn(message);
+            if (!GraphicsEnvironment.isHeadless()) {
+                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.WARNING_MESSAGE).show());
+            }
+        }
+        if (commands.isEmpty()) {
+            return null;
+        }
         return SequenceCommand.wrapIfNeeded(tr("MapRoulette Cooperative Challenge"), commands);
     }
 

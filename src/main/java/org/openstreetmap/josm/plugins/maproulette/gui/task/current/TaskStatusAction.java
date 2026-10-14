@@ -160,10 +160,10 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 return;
             }
             ModifiedObjects.addModifiedTask(modifiedTask);
-            if (task.isCooperativeWorkOsmChange() && this.status == TaskStatus.FIXED) {
+            final var editDataSet = OsmDataManager.getInstance().getEditDataSet();
+            if (task.isCooperativeWorkOsmChange() && this.status == TaskStatus.FIXED && editDataSet != null) {
                 final var command = new ApplyCooperativeChange(
-                        Objects.requireNonNull(task.cooperativeWorkAsOsmChange()))
-                                .generateCommand(OsmDataManager.getInstance().getEditDataSet());
+                        Objects.requireNonNull(task.cooperativeWorkAsOsmChange())).generateCommand(editDataSet);
                 if (command != null) {
                     command.executeCommand();
                     if (!command.getParticipatingPrimitives().isEmpty()) {
