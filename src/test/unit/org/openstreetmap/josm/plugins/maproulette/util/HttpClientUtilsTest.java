@@ -9,7 +9,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.net.URI;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -17,8 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
-
-import com.github.tomakehurst.wiremock.client.WireMock;
 
 /**
  * Test class for {@link HttpClientUtils}
@@ -37,8 +34,7 @@ class HttpClientUtilsTest {
 
     @Test
     void testUpdateStatusSendsCommentIntact() throws Exception {
-        final var baseUrl = URI.create(org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl());
-        final var wireMock = new WireMock(baseUrl.getHost(), baseUrl.getPort());
+        final var wireMock = WireMocks.current();
         wireMock.register(put(urlPathEqualTo("/api/v2/task/1/1")).willReturn(aResponse().withStatus(204)));
         assertTrue(TaskAPI.updateStatus(1, TaskStatus.FIXED, "Fixed a & b #1", "road", null, null));
         wireMock.verifyThat(putRequestedFor(urlPathEqualTo("/api/v2/task/1/1"))
