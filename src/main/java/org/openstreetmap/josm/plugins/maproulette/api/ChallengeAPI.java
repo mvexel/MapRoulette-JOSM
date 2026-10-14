@@ -200,7 +200,7 @@ public final class ChallengeAPI {
     public static Task[] tasksNearby(long challengeId, long proximityId, boolean excludeSelfLocked, int limit,
             long proximity) throws IOException {
         Map<String, String> query = new TreeMap<>();
-        if (!excludeSelfLocked) {
+        if (excludeSelfLocked) {
             query.put("excludeSelfLocked", "true");
         }
         if (limit > 0) {
