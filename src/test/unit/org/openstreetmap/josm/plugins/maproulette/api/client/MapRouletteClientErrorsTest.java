@@ -249,6 +249,7 @@ class MapRouletteClientErrorsTest {
         };
         final var exception = assertThrows(MapRouletteException.class,
                 () -> client().get(TASK, Collections.emptyMap(), failing));
+        assertFalse(exception instanceof MapRouletteParseException, "A read failure is not a parse failure");
         assertInstanceOf(IOException.class, exception.getCause());
     }
 
