@@ -86,8 +86,11 @@ public final class ClusteredPointParser {
     }
 
     @Nullable
-    private static Object parseBounding(JsonValue bounding) {
-        if (bounding instanceof JsonString str) {
+    private static Object parseBounding(@Nullable JsonValue bounding) {
+        if (bounding == null || bounding.getValueType() == JsonValue.ValueType.NULL) {
+            // See JOSM #24772: MapRoulette may send "bounding": null, or leave it out
+            return null;
+        } else if (bounding instanceof JsonString str) {
             return str.getString();
         } else if (bounding instanceof JsonObject obj) {
             if (obj.isEmpty()) {

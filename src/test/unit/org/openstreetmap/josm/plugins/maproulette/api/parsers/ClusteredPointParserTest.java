@@ -2,12 +2,19 @@
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.openstreetmap.josm.plugins.maproulette.util.RecordAssertion.assertRecordsEqual;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
@@ -37,5 +44,25 @@ class ClusteredPointParserTest {
                         Instant.parse("2022-10-18T07:08:52.469Z"), new long[0]),
                 0, null, false);
         assertRecordsEqual(expected, actual);
+    }
+
+    /**
+     * Non-regression test for JOSM #24772: MapRoulette may send {@code "bounding": null}, or no bounding at all
+     *
+     * @param replacement What to replace the bounding with
+     * @throws IOException if the test data could not be read
+     */
+    @ParameterizedTest
+    @ValueSource(strings = { "\"bounding\": null,", "" })
+    void testNullBounding(String replacement) throws IOException {
+        final var json = Files
+                .readString(Path.of(
+                        "src/test/resources/__files/api/v2/tasks/box/-108.4962538/39.082404/-108.4962538/39.082404"))
+                .replace("\"bounding\": \"\",", replacement);
+        final var points = (ClusteredPoint[]) ClusteredPointParser
+                .parse(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1, points.length);
+        assertEquals(136226437L, points[0].id());
+        assertNull(points[0].bounding());
     }
 }
