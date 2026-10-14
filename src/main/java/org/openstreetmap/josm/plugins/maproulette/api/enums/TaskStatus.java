@@ -10,43 +10,74 @@ public enum TaskStatus {
     /**
      * The task hasn't been modified since creation
      */
-    CREATED, // 0
+    CREATED(0),
     /**
      * The task is fixed
      */
-    FIXED, // 1
+    FIXED(1),
     /**
      * The task was a false positive
      */
-    FALSE_POSITIVE, // 2
+    FALSE_POSITIVE(2),
     /**
      * The task was skipped
      */
-    SKIPPED, // 3
+    SKIPPED(3),
     /**
      * The task was deleted
      */
-    DELETED, // 4
+    DELETED(4),
     /**
      * The task was already fixed
      */
-    ALREADY_FIXED, // 5
+    ALREADY_FIXED(5),
     /**
      * The task was too hard
      */
-    TOO_HARD, // 6
+    TOO_HARD(6),
     /**
      * The task has had a comment
      */
-    ANSWERED, // 7
+    ANSWERED(7),
     /**
      * The task is validated
      */
-    VALIDATED, // 8
+    VALIDATED(8),
     /**
      * The task is disabled
      */
-    DISABLED; // 9
+    DISABLED(9);
+
+    private final int code;
+
+    TaskStatus(int code) {
+        this.code = code;
+    }
+
+    /**
+     * Get the code MapRoulette uses for this task status
+     *
+     * @return The server code
+     */
+    public int code() {
+        return this.code;
+    }
+
+    /**
+     * Get the task status for a MapRoulette server code
+     *
+     * @param code The server code
+     * @return The task status
+     * @throws IllegalArgumentException if MapRoulette sent an unknown code
+     */
+    public static TaskStatus fromCode(int code) {
+        for (var value : values()) {
+            if (value.code == code) {
+                return value;
+            }
+        }
+        throw new IllegalArgumentException("Unknown MapRoulette task status: " + code);
+    }
 
     /**
      * Get the description to show the user

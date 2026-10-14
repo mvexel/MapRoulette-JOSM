@@ -73,9 +73,9 @@ public final class ClusteredPointParser {
                     parseBounding(object.get("bounding")), object.getString("blurb"),
                     Instant.parse(object.getString("modified")),
                     has(object, "difficulty") && object.getInt("difficulty") > 0
-                            ? Difficulty.values()[object.getInt("difficulty") - 1]
+                            ? Difficulty.fromCode(object.getInt("difficulty"))
                             : null,
-                    object.getInt("type"), has(object, "status") ? TaskStatus.values()[object.getInt("status")] : null,
+                    object.getInt("type"), has(object, "status") ? TaskStatus.fromCode(object.getInt("status")) : null,
                     object.getString("cooperativeWork", null), optionalInstant(object, "mappedOn"),
                     optionalLong(object, "completedTimeSpent"),
                     optionalObject(object, "completedBy", UserParser::parse),

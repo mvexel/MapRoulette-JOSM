@@ -217,7 +217,7 @@ public final class TaskAPI {
             body = null;
         }
         @SuppressWarnings("EnumOrdinal")
-        final var client = put(getBaseUrl() + TASK + "/" + task + "/" + status.ordinal(), query, body);
+        final var client = put(getBaseUrl() + TASK + "/" + task + "/" + status.code(), query, body);
         client.setHeader("content-type", "text/json");
         try {
             final var response = client.connect();

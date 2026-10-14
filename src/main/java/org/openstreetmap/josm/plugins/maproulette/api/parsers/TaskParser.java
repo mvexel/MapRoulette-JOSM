@@ -113,7 +113,7 @@ public final class TaskParser {
                     parseLocation(obj.getJsonObject("location")),
                     GeometryParser.parse(obj.getJsonObject("geometries").toString()),
                     has(obj, "cooperativeWork") ? parseCooperativeWork(obj.getJsonObject("cooperativeWork")) : null,
-                    TaskStatus.values()[obj.getInt("status")], optionalInstant(obj, "mappedOn"),
+                    TaskStatus.fromCode(obj.getInt("status")), optionalInstant(obj, "mappedOn"),
                     optionalLong(obj, "completedTimeSpent"), optionalLong(obj, "completedBy"),
                     parseTaskReviewFields(obj.getJsonObject("review")), obj.getInt("priority"),
                     optionalLong(obj, "changesetId"), obj.getString("completionResponses", null),

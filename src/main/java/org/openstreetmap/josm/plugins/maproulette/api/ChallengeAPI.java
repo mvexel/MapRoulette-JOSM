@@ -317,7 +317,7 @@ public final class ChallengeAPI {
     @Nonnull
     private static ChallengePriority parseChallengePriority(JsonObject object) {
         return new ChallengePriority(
-                has(object, "defaultPriority") ? Priority.values()[object.getInt("defaultPriority")] : Priority.MEDIUM,
+                has(object, "defaultPriority") ? Priority.fromCode(object.getInt("defaultPriority")) : Priority.MEDIUM,
                 has(object, "highPriorityRule") ? object.get("highPriorityRule").toString() : null,
                 has(object, "mediumPriorityRule") ? object.get("mediumPriorityRule").toString() : null,
                 has(object, "lowPriorityRule") ? object.get("lowPriorityRule").toString() : null);
