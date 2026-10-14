@@ -229,9 +229,7 @@ public final class MapRouletteClient {
                 }
                 try (var reader = new InputStreamReader(response.getContent(), StandardCharsets.UTF_8)) {
                     return parser.parse(reader);
-                } catch (MapRouletteException e) {
-                    throw e;
-                } catch (IOException | JsonException | IllegalArgumentException | IllegalStateException
+                } catch (JsonException | IllegalArgumentException | IllegalStateException
                         | ClassCastException | NullPointerException | DateTimeException | JosmRuntimeException e) {
                     throw new MapRouletteParseException("Could not read the MapRoulette response from " + url, e);
                 }
