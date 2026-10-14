@@ -157,19 +157,19 @@ public final class MapRouletteClient {
     }
 
     /**
-     * PUT form parameters to a path. Only {@link org.openstreetmap.josm.plugins.maproulette.api.TaskAPI#box} uses
-     * this, to keep sending its parameters the way older versions did.
+     * PUT a read-only request: the parameters go in the query string, the body is empty, and no login is needed. Only
+     * {@link org.openstreetmap.josm.plugins.maproulette.api.TaskAPI#box} uses this; MapRoulette serves that search
+     * as a PUT.
      *
      * @param path   The path below the API base URL, starting with {@code /}
-     * @param form   The form parameters, sent as the request body
+     * @param query  The query parameters
      * @param parser The response parser
      * @param <T>    The result type
      * @return The parsed response
      * @throws MapRouletteException if the request failed
      */
-    public <T> T putForm(String path, Map<String, String> form, ResponseParser<T> parser) throws MapRouletteException {
-        return request("PUT", path, Collections.emptyMap(), query(form).substring(1).getBytes(StandardCharsets.UTF_8),
-                "application/x-www-form-urlencoded", parser);
+    public <T> T putRead(String path, Map<String, String> query, ResponseParser<T> parser) throws MapRouletteException {
+        return request("PUT", path, query, null, null, parser);
     }
 
     /**

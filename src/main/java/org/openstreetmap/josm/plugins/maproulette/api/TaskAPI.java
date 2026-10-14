@@ -51,14 +51,11 @@ public final class TaskAPI {
      * @param sort              Unknown
      * @param order             ASC/DESC
      * @param includeTotal      Include total
-     * @param includeGeometries include the geometries
-     * @param includeTags       include the tags
      * @return The collection of tasks
      * @throws IOException if there was a problem communicating with the server, or its response could not be read
      */
     public static ClusteredPoint[] box(double minLon, double minLat, double maxLon, double maxLat, int limit, int page,
-            boolean excludeLocked, String sort, String order, boolean includeTotal, boolean includeGeometries,
-            boolean includeTags) throws IOException {
+            boolean excludeLocked, String sort, String order, boolean includeTotal) throws IOException {
         Map<String, String> query = new TreeMap<>();
         if (limit > 0) {
             query.put("limit", String.valueOf(limit));
@@ -78,14 +75,8 @@ public final class TaskAPI {
         if (includeTotal) {
             query.put("includeTotal", "true");
         }
-        if (includeGeometries) {
-            query.put("includeGeometries", "true");
-        }
-        if (includeTags) {
-            query.put("includeTags", "true");
-        }
         final var path = TASKS + "/box/" + minLon + "/" + minLat + "/" + maxLon + "/" + maxLat;
-        final var result = MapRouletteClient.getInstance().putForm(path, query, ClusteredPointParser::parse);
+        final var result = MapRouletteClient.getInstance().putRead(path, query, ClusteredPointParser::parse);
         if (result instanceof ClusteredPoint[] points) {
             return points;
         }

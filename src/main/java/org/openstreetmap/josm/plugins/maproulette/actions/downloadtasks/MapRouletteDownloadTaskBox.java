@@ -85,7 +85,7 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
         protected void realRun() throws IOException, OsmTransferException {
             try {
                 tasks = TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(), bounds.getMaxLat(),
-                        1_000, 0, true, null, null, false, true, true);
+                        1_000, 0, true, null, null, false);
                 for (var task : tasks) {
                     if (!this.cancelled && !this.getProgressMonitor().isCanceled()) {
                         // Force cache the challenges
