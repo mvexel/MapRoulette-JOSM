@@ -144,7 +144,7 @@ class MapRouletteClusteredPointLayerTest {
      * @param box The box to test
      */
     @ParameterizedTest
-    @ValueSource(strings={"121.0923654/14.57171/121.1008573/14.5774521"})
+    @ValueSource(strings = { "121.0923654/14.57171/121.1008573/14.5774521" })
     void testNonRegression24760(String box) throws ExecutionException, InterruptedException, TimeoutException {
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testShiftSelection", null));
         double[] boxDouble = Arrays.stream(box.split("/", 4)).mapToDouble(Double::parseDouble).toArray();
