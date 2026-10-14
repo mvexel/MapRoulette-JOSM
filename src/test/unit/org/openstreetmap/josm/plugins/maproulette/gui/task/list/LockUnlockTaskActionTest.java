@@ -1,14 +1,22 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.Collections;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 import javax.swing.Action;
 import javax.swing.JTable;
+import javax.swing.SwingUtilities;
 import javax.swing.table.TableRowSorter;
 
 import org.junit.jupiter.api.AfterEach;
@@ -16,18 +24,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.tools.HttpClient;
 
 /**
  * Test class for {@link LockUnlockTaskAction}
@@ -73,5 +86,52 @@ class LockUnlockTaskActionTest {
         action.updateEnabledState();
         assertFalse(action.isEnabled());
         assertTrue(((String) action.getValue(Action.SHORT_DESCRIPTION)).contains("MapRoulette website"));
+    }
+
+    /**
+     * Start, clicked on the EDT, sends its request from the worker and records the lock on the EDT (#32)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testStartRunsOffEdt() throws Exception {
+        final var originalAuth = MapRouletteClient.getInstance().auth();
+        final var onEdt = new CopyOnWriteArrayList<Boolean>();
+        MapRouletteClient.getInstance().setAuthProvider(new AuthProvider() {
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public Set<Capability> capabilities() {
+                return EnumSet.allOf(Capability.class);
+            }
+
+            @Override
+            public void authenticate(HttpClient request) {
+                onEdt.add(SwingUtilities.isEventDispatchThread());
+            }
+        });
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            // The worker job hands its result to the EDT with invokeAndWait, so the lock is recorded once it is done
+            MainApplication.worker.submit(() -> {
+                /* Sync worker */ }).get(10, TimeUnit.SECONDS);
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            assertEquals(List.of(false), onEdt);
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            final var locked = ModifiedObjects.getLockedTask(132279499L);
+            if (locked != null) {
+                ModifiedObjects.removeLockedTask(locked);
+            }
+            MapRouletteClient.getInstance().setAuthProvider(originalAuth);
+        }
     }
 }

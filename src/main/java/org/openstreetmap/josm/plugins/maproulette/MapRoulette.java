@@ -53,13 +53,16 @@ public class MapRoulette extends Plugin {
         if (newFrame != null) {
             newFrame.addToggleDialog(new TaskListPanel());
         } else {
-            for (var task : ModifiedObjects.getLockedTasks()) {
-                try {
-                    TaskAPI.release(task.id());
-                } catch (IOException e) {
-                    ExceptionDialogUtil.explainException(e);
+            final var lockedTasks = ModifiedObjects.getLockedTasks();
+            MainApplication.worker.submit(() -> {
+                for (var task : lockedTasks) {
+                    try {
+                        TaskAPI.release(task.id());
+                    } catch (IOException e) {
+                        ExceptionDialogUtil.explainException(e);
+                    }
                 }
-            }
+            });
         }
     }
 }
