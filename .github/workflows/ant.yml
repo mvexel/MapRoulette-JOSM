@@ -7,17 +7,12 @@ on:
       - master
       - $default-branch
       - $protected-branches
-  pull_request:
-    branches:
-      - main
-      - master
-      - $default-branch
   workflow_dispatch:
 
-# A new push to a pull request cancels its superseded run; runs on main always finish
+# Runs on main only; the Maven workflow checks pull requests
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
