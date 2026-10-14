@@ -52,6 +52,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Locatable;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
+import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
 import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
@@ -113,6 +114,10 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
     private final ListenerList<Consumer<Map<Long, TaskClusteredPoint>>> updatedDataListeners = ListenerList.create();
     private final Consumer<Map<Long, Task>> taskUpdated;
     /**
+     * Repaints when a challenge arrives in the background, since it may hide tasks
+     */
+    private final Runnable challengeLoaded = this::invalidate;
+    /**
      * The bounds of the points
      */
     private final Bounds bounds;
@@ -136,6 +141,7 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
             this.updatedDataListeners.fireEvent(listener -> listener.accept(Collections.emptyMap()));
         };
         LateUploadHook.addUploadListener(this.taskUpdated);
+        ChallengeCache.addListener(this.challengeLoaded);
         this.pointMap.addAll(points);
     }
 
@@ -358,6 +364,7 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
         this.selectionListeners.fireEvent(listener -> listener.accept(Collections.emptyList()));
         MainApplication.getMap().mapView.removeMouseListener(this);
         LateUploadHook.removeUploadListener(this.taskUpdated);
+        ChallengeCache.removeListener(this.challengeLoaded);
     }
 
     /**

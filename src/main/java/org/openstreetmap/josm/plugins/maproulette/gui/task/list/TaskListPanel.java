@@ -9,7 +9,6 @@ import java.awt.Color;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
-import java.io.IOException;
 import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,6 +44,7 @@ import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRoule
 import org.openstreetmap.josm.plugins.maproulette.api.MRColors;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -57,7 +57,6 @@ import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClustered
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.widgets.DefaultPanelListCellRenderer;
-import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
@@ -90,6 +89,10 @@ public final class TaskListPanel extends ToggleDialog
      * Re-evaluates Start/Stop when the MapRoulette login changes
      */
     private final Runnable authListener;
+    /**
+     * Re-sorts, re-filters and repaints the list when a challenge arrives in the background
+     */
+    private final Runnable challengeListener;
 
     /**
      * Create a new task list panel
@@ -110,6 +113,11 @@ public final class TaskListPanel extends ToggleDialog
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         final var browseButton = new SideButton(new OpenInBrowserAction(table));
         final var tableRowSorter = new TableRowSorter<>(model);
+        this.challengeListener = () -> {
+            tableRowSorter.allRowsChanged();
+            table.repaint();
+        };
+        ChallengeCache.addListener(this.challengeListener);
         final var menu = new JPopupMenu();
         final var filterField = new FilterField();
         final var panel = new JPanel(new GridBagLayout());
@@ -189,12 +197,8 @@ public final class TaskListPanel extends ToggleDialog
         if (point instanceof ClusteredPoint clusteredPoint) {
             return clusteredPoint.parentName();
         } else if (point instanceof Task task) {
-            try {
-                return ChallengeCache.challenge(task.parentId()).name();
-            } catch (IOException ioException) {
-                ExceptionDialogUtil.explainException(ioException);
-            }
-            return tr("Unknown");
+            // Used by the comparator and the renderer, so never block on the network
+            return ChallengeCache.cached(task.parentId()).map(Challenge::name).orElseGet(() -> tr("Unknown"));
         } else {
             throw new IllegalArgumentException("Unknown class type: " + point.getClass());
         }
@@ -223,6 +227,7 @@ public final class TaskListPanel extends ToggleDialog
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
         HiddenList.removeListUpdater(this.hiddenTest);
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
+        ChallengeCache.removeListener(this.challengeListener);
     }
 
     /**
