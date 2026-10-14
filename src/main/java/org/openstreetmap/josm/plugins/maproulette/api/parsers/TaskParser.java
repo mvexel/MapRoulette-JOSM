@@ -32,8 +32,8 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.OSMChange;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskReviewFields;
-import org.openstreetmap.josm.tools.ExceptionUtil;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
+import org.openstreetmap.josm.tools.Logging;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -196,7 +196,8 @@ public final class TaskParser {
                     return OsmChangeReader.parseDataSetAndNotes(new ByteArrayInputStream(dataString),
                             NullProgressMonitor.INSTANCE);
                 } catch (IllegalDataException e) {
-                    ExceptionUtil.explainException(e);
+                    Logging.log(Logging.LEVEL_WARN,
+                            "MapRoulette: could not parse the OSC change file of a cooperative task", e);
                 }
 
             }
