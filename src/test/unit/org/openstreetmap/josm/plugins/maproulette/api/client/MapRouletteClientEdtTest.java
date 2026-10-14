@@ -102,7 +102,8 @@ class MapRouletteClientEdtTest {
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testDownloadDataAction", null));
         final var panel = new TaskListPanel();
         try {
-            GuiHelper.runInEDTAndWaitWithException(() -> TaskListPanelTest.getDownloadAction(panel).actionPerformed(null));
+            final var download = TaskListPanelTest.getDownloadAction(panel);
+            GuiHelper.runInEDTAndWaitWithException(() -> download.actionPerformed(null));
             sync();
             this.auth.assertRequestsOffEdt(1);
         } finally {
