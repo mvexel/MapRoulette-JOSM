@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalLong;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalObject;
@@ -71,11 +72,10 @@ public final class ClusteredPointParser {
                     Objects.requireNonNull(PointParser.parse(object.getJsonObject("point"))),
                     parseBounding(object.get("bounding")), object.getString("blurb"),
                     Instant.parse(object.getString("modified")),
-                    object.containsKey("difficulty") && object.getInt("difficulty") > 0
+                    has(object, "difficulty") && object.getInt("difficulty") > 0
                             ? Difficulty.values()[object.getInt("difficulty") - 1]
                             : null,
-                    object.getInt("type"),
-                    object.containsKey("status") ? TaskStatus.values()[object.getInt("status")] : null,
+                    object.getInt("type"), has(object, "status") ? TaskStatus.values()[object.getInt("status")] : null,
                     object.getString("cooperativeWork", null), optionalInstant(object, "mappedOn"),
                     optionalLong(object, "completedTimeSpent"),
                     optionalObject(object, "completedBy", UserParser::parse),

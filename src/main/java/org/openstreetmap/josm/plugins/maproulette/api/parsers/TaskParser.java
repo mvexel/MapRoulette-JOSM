@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInteger;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalLong;
@@ -111,15 +112,13 @@ public final class TaskParser {
                     obj.getJsonNumber("parent").longValue(), obj.getString("instruction"),
                     parseLocation(obj.getJsonObject("location")),
                     GeometryParser.parse(obj.getJsonObject("geometries").toString()),
-                    obj.containsKey("cooperativeWork") ? parseCooperativeWork(obj.getJsonObject("cooperativeWork"))
-                            : null,
+                    has(obj, "cooperativeWork") ? parseCooperativeWork(obj.getJsonObject("cooperativeWork")) : null,
                     TaskStatus.values()[obj.getInt("status")], optionalInstant(obj, "mappedOn"),
                     optionalLong(obj, "completedTimeSpent"), optionalLong(obj, "completedBy"),
                     parseTaskReviewFields(obj.getJsonObject("review")), obj.getInt("priority"),
                     optionalLong(obj, "changesetId"), obj.getString("completionResponses", null),
                     optionalLong(obj, "bundleId"), obj.getBoolean("isBundlePrimary", false),
-                    obj.containsKey("mapillaryImages") ? parseMapillaryImages(obj.getJsonArray("mapillaryImages"))
-                            : null,
+                    has(obj, "mapillaryImages") ? parseMapillaryImages(obj.getJsonArray("mapillaryImages")) : null,
                     obj.getString("errorTags"));
         } catch (IllegalDataException e) {
             throw new JosmRuntimeException(e);
@@ -134,7 +133,7 @@ public final class TaskParser {
      */
     @Nonnull
     private static Point parseLocation(JsonObject jsonObject) {
-        if (jsonObject.containsKey("type") && "Point".equals(jsonObject.getString("type"))) {
+        if (has(jsonObject, "type") && "Point".equals(jsonObject.getString("type"))) {
             double[] location = jsonObject.getJsonArray("coordinates").getValuesAs(JsonNumber.class).stream()
                     .mapToDouble(JsonNumber::doubleValue).toArray();
             return new Point(location[1], location[0]);
@@ -218,7 +217,7 @@ public final class TaskParser {
                 optionalLong(obj, "metaReviewedBy"), optionalInteger(obj, "metaReviewedStatus"),
                 optionalInstant(obj, "metaReviewedAt"), optionalInstant(obj, "reviewStartedAt"),
                 optionalLong(obj, "reviewClaimedBy"), optionalInstant(obj, "reviewClaimedAt"),
-                obj.containsKey("additionalReviewers")
+                has(obj, "additionalReviewers")
                         ? obj.getJsonArray("additionalReviewers").getValuesAs(JsonNumber.class).stream()
                                 .mapToLong(JsonNumber::longValue).toArray()
                         : EMPTY_LONG);

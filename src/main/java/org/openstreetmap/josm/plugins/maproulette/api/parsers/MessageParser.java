@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 
+import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.has;
+
 import jakarta.json.JsonObject;
 
 import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
@@ -20,7 +22,7 @@ final class MessageParser {
      * @throws UnauthorizedException If there is a problem
      */
     static void parse(JsonObject jsonObject) throws UnauthorizedException {
-        if (jsonObject.containsKey("status") && jsonObject.containsKey("message")) {
+        if (has(jsonObject, "status") && has(jsonObject, "message")) {
             throw new UnauthorizedException(jsonObject.getString("message"));
         }
     }
