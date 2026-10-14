@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.util;
 import java.io.UncheckedIOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Map;
@@ -84,9 +85,20 @@ public final class HttpClientUtils {
      * @param queryParameters The query parameters to send the server
      * @return The parameters to send the server
      */
-    private static String query(Map<String, String> queryParameters) {
-        return queryParameters.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue())
+    static String query(Map<String, String> queryParameters) {
+        return queryParameters.entrySet().stream()
+                .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
                 .collect(Collectors.joining("&", "?", ""));
+    }
+
+    /**
+     * Encode a query parameter key or value
+     *
+     * @param value The string to encode
+     * @return The encoded string
+     */
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
