@@ -182,7 +182,7 @@ public final class ChallengeAPI {
      */
     public static Task[] randomTask(long challengeId, @Nullable String searchString, @Nullable String[] tags, int limit,
             long proximity) throws IOException {
-        return taskCollectionEndpoints("/tasks/prioritizedTasks", challengeId, searchString, tags, limit, proximity);
+        return taskCollectionEndpoints("/tasks/randomTasks", challengeId, searchString, tags, limit, proximity);
     }
 
     /**
