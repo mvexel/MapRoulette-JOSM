@@ -4,6 +4,9 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.List;
+import java.util.stream.Stream;
+
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -22,5 +25,11 @@ class MRGuiHelperTest {
                         </ol>
                         </html>""",
                 instructions);
+    }
+
+    @Test
+    void testFilterKeysRemovesMapRouletteIdentifiers() {
+        assertEquals(List.of("building", "addr:street"), MRGuiHelper
+                .filterKeys(Stream.of("building", "identifier", "addr:street", "@id", "osm_id")).toList());
     }
 }

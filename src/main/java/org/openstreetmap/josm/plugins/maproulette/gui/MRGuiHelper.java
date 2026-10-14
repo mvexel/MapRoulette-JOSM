@@ -102,6 +102,6 @@ public final class MRGuiHelper {
      * @return The filtered stream
      */
     public static Stream<String> filterKeys(Stream<String> keys) {
-        return keys.filter(DISCARDABLE_KEYS::contains);
+        return keys.filter(key -> !DISCARDABLE_KEYS.contains(key));
     }
 }
