@@ -13,6 +13,7 @@ import org.openstreetmap.josm.plugins.PluginInformation;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadChallengeTask;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTask;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
@@ -32,6 +33,7 @@ public class MapRoulette extends Plugin {
      */
     public MapRoulette(PluginInformation info) {
         super(info);
+        MapRouletteAuth.deleteCachedApiKeys();
         this.getPreferenceSetting().ok();
         UploadAction.registerUploadHook(new EarlyUploadHook());
         UploadAction.registerUploadHook(new LateUploadHook(), true);

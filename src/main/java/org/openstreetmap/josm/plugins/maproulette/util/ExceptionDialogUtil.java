@@ -2,7 +2,6 @@
 package org.openstreetmap.josm.plugins.maproulette.util;
 
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
-import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
@@ -11,16 +10,13 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 
 import javax.swing.JOptionPane;
-import javax.swing.SwingUtilities;
 
-import org.openstreetmap.josm.data.UserIdentityManager;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.preferences.PreferenceDialog;
-import org.openstreetmap.josm.gui.preferences.server.ServerAccessPreference;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 
 /**
@@ -37,21 +33,10 @@ public final class ExceptionDialogUtil {
      */
     public static void explainException(Exception exception) {
         if (exception instanceof UnauthorizedException) {
-            OsmPreferenceUtils.clearCachedKey();
-            final var message = UserIdentityManager.getInstance().isAnonymous()
-                    ? tr("Please log in to OpenStreetMap in JOSM")
-                    : tr("Please log in to the MapRoulette instance at least once: {0}\n NOTE: you may need to reset your MapRoulette API key",
-                            getBaseUrl());
-            GuiHelper.runInEDT(() -> {
-                ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in",
-                        MainApplication.getMainFrame(), message, message, JOptionPane.ERROR_MESSAGE);
-                if (UserIdentityManager.getInstance().isAnonymous()) {
-                    final var p = new PreferenceDialog(MainApplication.getMainFrame());
-                    SwingUtilities.invokeLater(() -> p.selectPreferencesTabByClass(ServerAccessPreference.class));
-                    p.setVisible(true);
-                }
-            });
-            showErrorDialog(message, tr("Unauthorized"), null);
+            final var message = MapRouletteAuth.unavailableMessage();
+            GuiHelper.runInEDT(() -> ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in",
+                    MainApplication.getMainFrame(), message, tr("MapRoulette login unavailable"),
+                    JOptionPane.INFORMATION_MESSAGE));
         } else if (exception instanceof SocketException socketException) {
             final var message = tr("<html>Failed to open a connection to the remote server<br>" + "''{0}''.<br>"
                     + "Please check your internet connection.", socketException.getMessage()) + "</html>";
