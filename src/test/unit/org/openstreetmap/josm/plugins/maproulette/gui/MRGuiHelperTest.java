@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
+import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 
 @MapRouletteConfig
@@ -22,6 +23,8 @@ class MRGuiHelperTest {
     @Test
     void testGetInstructionTextMustache() {
         final var task = assertDoesNotThrow(() -> TaskAPI.get(147197178));
+        // The instructions come from the challenge, which getInstructionText only reads from the cache
+        assertDoesNotThrow(() -> ChallengeCache.challenge(task.parentId()));
         final var instructions = MRGuiHelper.getInstructionText(task);
         assertEquals(
                 """

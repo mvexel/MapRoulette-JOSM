@@ -15,9 +15,11 @@ import javax.swing.table.DefaultTableColumnModel;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
 import org.openstreetmap.josm.gui.preferences.SubPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.TabPreferenceSetting;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.HideableTabbedPane;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
@@ -36,78 +38,91 @@ public class MapRouletteTaskListPreferences implements SubPreferenceSetting {
 
     @Override
     public void addGui(PreferenceTabbedPane gui) {
-        try {
-            final var pane = new HideableTabbedPane();
-            final var ignoredTaskPanel = new JPanel(new GridBagLayout());
-            final var ignoredChallengePanel = new JPanel(new GridBagLayout());
-            ignoredTaskTable = buildTaskTable();
-            ignoredChallengeTable = buildChallengeTable();
-            final var scrollTaskTable = new VerticallyScrollablePanel(new GridBagLayout());
-            final var scrollChallengeTable = new VerticallyScrollablePanel(new GridBagLayout());
-            scrollTaskTable.add(ignoredTaskTable, GBC.eol().fill(GBC.BOTH));
-            scrollChallengeTable.add(ignoredChallengeTable, GBC.eol().fill(GBC.BOTH));
-            ignoredTaskPanel.add(ignoredTaskTable.getTableHeader(), GBC.eol().fill(GBC.HORIZONTAL));
-            ignoredTaskPanel.add(scrollTaskTable, GBC.eol().fill(GBC.BOTH));
-            ignoredChallengePanel.add(ignoredChallengeTable.getTableHeader(), GBC.eol().fill(GBC.HORIZONTAL));
-            ignoredChallengePanel.add(scrollChallengeTable, GBC.eol().fill(GBC.BOTH));
-            pane.add(tr("Ignored Tasks"), ignoredTaskPanel);
-            pane.add(tr("Ignored Challenges"), ignoredChallengePanel);
-            getTabPreferenceSetting(gui).addSubTab(this, tr("Task List"), pane, tr("MapRoulette Task List Settings"));
-        } catch (IOException ioException) {
-            ExceptionDialogUtil.explainException(ioException);
-        }
+        final var pane = new HideableTabbedPane();
+        final var ignoredTaskPanel = new JPanel(new GridBagLayout());
+        final var ignoredChallengePanel = new JPanel(new GridBagLayout());
+        ignoredTaskTable = buildTaskTable();
+        ignoredChallengeTable = buildChallengeTable();
+        final var scrollTaskTable = new VerticallyScrollablePanel(new GridBagLayout());
+        final var scrollChallengeTable = new VerticallyScrollablePanel(new GridBagLayout());
+        scrollTaskTable.add(ignoredTaskTable, GBC.eol().fill(GBC.BOTH));
+        scrollChallengeTable.add(ignoredChallengeTable, GBC.eol().fill(GBC.BOTH));
+        ignoredTaskPanel.add(ignoredTaskTable.getTableHeader(), GBC.eol().fill(GBC.HORIZONTAL));
+        ignoredTaskPanel.add(scrollTaskTable, GBC.eol().fill(GBC.BOTH));
+        ignoredChallengePanel.add(ignoredChallengeTable.getTableHeader(), GBC.eol().fill(GBC.HORIZONTAL));
+        ignoredChallengePanel.add(scrollChallengeTable, GBC.eol().fill(GBC.BOTH));
+        pane.add(tr("Ignored Tasks"), ignoredTaskPanel);
+        pane.add(tr("Ignored Challenges"), ignoredChallengePanel);
+        getTabPreferenceSetting(gui).addSubTab(this, tr("Task List"), pane, tr("MapRoulette Task List Settings"));
     }
 
     /**
-     * Build a task table
+     * Build a task table. The names are filled in from the worker, since they may need the server.
      *
      * @return The task table
-     * @throws IOException if there was a problem communicating with the server
      */
-    private static JTable buildTaskTable() throws IOException {
+    private static JTable buildTaskTable() {
         final var ignoredTasks = IgnoreList.ignoredTasks();
         final var table = buildTable(ignoredTasks.length, tr("Project"), tr("Challenge"), tr("Task Name"),
                 tr("Task ID"), tr("Keep"));
-        var row = 0;
-        for (var taskId : ignoredTasks) {
-            final var task = TaskCache.get(taskId);
-            final var challenge = ChallengeCache.challenge(task.parentId());
-            final var project = ProjectCache.get(challenge.general().parent());
-            table.setValueAt(project.displayName(), row, 0);
-            table.setValueAt(challenge.name(), row, 1);
-            table.setValueAt(task.name(), row, 2);
-            table.setValueAt(task.id(), row, 3);
-            table.setValueAt(true, row, 4);
-            row++;
+        for (var row = 0; row < ignoredTasks.length; row++) {
+            table.getModel().setValueAt(ignoredTasks[row], row, 3);
+            table.getModel().setValueAt(true, row, 4);
         }
         ((NonEditableTableModel) table.getModel()).setColumnClass(3, Long.class);
         ((NonEditableTableModel) table.getModel()).setColumnEditable(4);
         ((NonEditableTableModel) table.getModel()).setColumnClass(4, Boolean.class);
+        MainApplication.worker.execute(() -> {
+            try {
+                for (var row = 0; row < ignoredTasks.length; row++) {
+                    final var task = TaskCache.get(ignoredTasks[row]);
+                    final var challenge = ChallengeCache.challenge(task.parentId());
+                    final var project = ProjectCache.get(challenge.general().parent());
+                    final var r = row;
+                    GuiHelper.runInEDT(() -> {
+                        table.getModel().setValueAt(project.displayName(), r, 0);
+                        table.getModel().setValueAt(challenge.name(), r, 1);
+                        table.getModel().setValueAt(task.name(), r, 2);
+                    });
+                }
+            } catch (IOException ioException) {
+                ExceptionDialogUtil.explainException(ioException);
+            }
+        });
         return table;
     }
 
     /**
-     * Build a challenge table
+     * Build a challenge table. The names are filled in from the worker, since they may need the server.
      *
      * @return The table with ignored challenges
-     * @throws IOException if there was a problem communicating with the server
      */
-    private static JTable buildChallengeTable() throws IOException {
+    private static JTable buildChallengeTable() {
         final var ignoredChallenges = IgnoreList.ignoredChallenges();
         final var table = buildTable(ignoredChallenges.length, tr("Project"), tr("Challenge Name"), tr("Challenge ID"),
                 tr("Keep"));
-        var row = 0;
-        for (var challengeId : ignoredChallenges) {
-            final var challenge = ChallengeCache.challenge(challengeId);
-            final var project = ProjectCache.get(challenge.general().parent());
-            table.setValueAt(project.displayName(), row, 0);
-            table.setValueAt(challenge.name(), row, 1);
-            table.setValueAt(challenge.id(), row, 2);
-            table.setValueAt(true, row, 3);
+        for (var row = 0; row < ignoredChallenges.length; row++) {
+            table.getModel().setValueAt(ignoredChallenges[row], row, 2);
+            table.getModel().setValueAt(true, row, 3);
         }
         ((NonEditableTableModel) table.getModel()).setColumnClass(2, Long.class);
         ((NonEditableTableModel) table.getModel()).setColumnEditable(3);
         ((NonEditableTableModel) table.getModel()).setColumnClass(3, Boolean.class);
+        MainApplication.worker.execute(() -> {
+            try {
+                for (var row = 0; row < ignoredChallenges.length; row++) {
+                    final var challenge = ChallengeCache.challenge(ignoredChallenges[row]);
+                    final var project = ProjectCache.get(challenge.general().parent());
+                    final var r = row;
+                    GuiHelper.runInEDT(() -> {
+                        table.getModel().setValueAt(project.displayName(), r, 0);
+                        table.getModel().setValueAt(challenge.name(), r, 1);
+                    });
+                }
+            } catch (IOException ioException) {
+                ExceptionDialogUtil.explainException(ioException);
+            }
+        });
         return table;
     }
 

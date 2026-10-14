@@ -43,6 +43,9 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
@@ -86,9 +89,21 @@ public final class CurrentTaskPanel extends ToggleDialog {
      */
     private final Runnable authListener = this::refreshActions;
     /**
+     * Shows the instructions once the challenge they come from arrives in the background
+     */
+    private final Runnable challengeListener = () -> {
+        if (this.instructionPending) {
+            this.refreshPanel();
+        }
+    };
+    /**
      * The current task
      */
     private Task task;
+    /**
+     * {@code true} if the instructions are waiting for the challenge to arrive
+     */
+    private boolean instructionPending;
 
     /**
      * Create a new task panel
@@ -126,11 +141,13 @@ public final class CurrentTaskPanel extends ToggleDialog {
         this.panel.add(this.cooperativeWork, gbc);
         super.createLayout(this.panel.getVerticalScrollPane(), false, sideButtons);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
+        ChallengeCache.addListener(this.challengeListener);
     }
 
     @Override
     public void destroy() {
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
+        ChallengeCache.removeListener(this.challengeListener);
         super.destroy();
     }
 
@@ -206,6 +223,7 @@ public final class CurrentTaskPanel extends ToggleDialog {
             action.updateEnabledState();
         }
         if (currentTask == null) {
+            this.instructionPending = false;
             this.idLabel.setText(null);
             this.instructionPane.setText(tr("Please select a locked task"));
             this.cooperativeWork.setVisible(false);
@@ -213,6 +231,9 @@ public final class CurrentTaskPanel extends ToggleDialog {
         }
         this.idLabel.setText(tr("ID: {0}", currentTask.id()));
 
+        // Checked before building the text, so a challenge arriving in between still triggers a refresh
+        this.instructionPending = Utils.isStripEmpty(currentTask.instruction())
+                && ChallengeCache.cached(currentTask.parentId()).isEmpty();
         this.instructionPane.setText(MRGuiHelper.getInstructionText(currentTask));
         updateSelections((HTMLDocument) this.instructionPane.getEditorPane().getDocument(), this.task);
         if (currentTask.isCooperativeWorkOsmChange()) {
@@ -403,11 +424,16 @@ private static class SelectOsmPrimitives extends InnerAction {
     public void actionPerformed(ActionEvent e) {
         final var task = this.taskSuppler.get();
         if (task != null) {
-            final var primitives = TaskPrimitives.getPrimitiveIds(task);
-            if (!primitives.isEmpty()) {
-                OsmDataManager.getInstance().getEditDataSet().setSelected(primitives);
-                AutoScaleAction.autoScale(AutoScaleAction.AutoScaleMode.SELECTION);
-            }
+            // Finding the primitives may need the challenge from the server
+            MainApplication.worker.execute(() -> {
+                final var primitives = TaskPrimitives.getPrimitiveIds(task);
+                if (!primitives.isEmpty()) {
+                    GuiHelper.runInEDT(() -> {
+                        OsmDataManager.getInstance().getEditDataSet().setSelected(primitives);
+                        AutoScaleAction.autoScale(AutoScaleAction.AutoScaleMode.SELECTION);
+                    });
+                }
+            });
         }
     }
 
