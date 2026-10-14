@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -36,6 +37,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
@@ -57,8 +59,36 @@ class EarlyUploadHookTest {
     }
 
     @ParameterizedTest
+    @MapRouletteLogin
     @ValueSource(strings = { "9494185766_node_4", "9494185766", "node/9494185766", "node 9494185766@4" })
     void testRegexParsing(String title) {
+        final var apiDataSet = setUpUpload(title);
+        assertTrue(hook.checkUpload(apiDataSet));
+        final var map = new HashMap<String, String>();
+        hook.modifyChangesetTags(map);
+        assertEquals("132279499", map.get("maproulette:tasks"));
+    }
+
+    /**
+     * Without a MapRoulette login the answer can't be sent, so the user is not asked if the task is done
+     */
+    @Test
+    void testNoPromptWithoutLogin() {
+        final var apiDataSet = setUpUpload("9494185766");
+        assertTrue(hook.checkUpload(apiDataSet));
+        assertNull(ModifiedObjects.getModifiedTask(132279499L));
+        final var map = new HashMap<String, String>();
+        hook.modifyChangesetTags(map);
+        assertNull(map.get("maproulette:tasks"));
+    }
+
+    /**
+     * Set up an upload of a node that a MapRoulette task is about, and answer "yes" to "did you finish the task?"
+     *
+     * @param title The task title
+     * @return The data to upload
+     */
+    private static APIDataSet setUpUpload(String title) {
         final var ds = new DataSet();
         final var node = TestUtils.newNode("");
         node.setCoor(LatLon.ZERO);
@@ -75,10 +105,7 @@ class EarlyUploadHookTest {
         MainApplication.getLayerManager().addLayer(mrLayer);
         Config.getPref().putInt("message." + EarlyUploadHook.PREF_CHECK_IF_FINISHED + ".value", 0);
         Config.getPref().putBoolean("message." + EarlyUploadHook.PREF_CHECK_IF_FINISHED, false);
-        assertTrue(hook.checkUpload(apiDataSet));
-        final var map = new HashMap<String, String>();
-        hook.modifyChangesetTags(map);
-        assertEquals("132279499", map.get("maproulette:tasks"));
+        return apiDataSet;
     }
 
     /**

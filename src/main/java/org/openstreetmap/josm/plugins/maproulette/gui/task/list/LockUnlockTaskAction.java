@@ -20,6 +20,7 @@ import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
@@ -152,24 +153,37 @@ final class LockUnlockTaskAction extends JosmAction {
     @Override
     protected void updateEnabledState() {
         if (this.table != null && !this.table.getSelectionModel().isSelectionEmpty()) {
-            super.setEnabled(true);
-            for (var i : this.table.getSelectedRows()) {
-                final var index = this.table.getRowSorter().convertRowIndexToModel(i);
-                final var point = ((TaskTableModel) this.table.getModel()).get(index);
-                if (ModifiedObjects.getLockedTask(point.id()) == null) {
-                    this.putValue(NAME, tr("Start Task"));
-                    this.setTooltip(tr("Start MapRoulette Tasks"));
-                    new ImageProvider("lock").getResource().attachImageIcon(this);
-                    putValue("lock", true);
-                    return;
-                }
+            updateStartOrStop();
+            if (MapRouletteAuth.isAvailable()) {
+                super.setEnabled(true);
+            } else {
+                // Start and Stop need a MapRoulette login; keep the button visible and explain why it is disabled
+                this.setTooltip(MapRouletteAuth.unavailableTooltip());
+                super.setEnabled(false);
             }
-            putValue("lock", false);
-            this.putValue(NAME, tr("Stop Task"));
-            this.setTooltip(tr("Stop MapRoulette Tasks"));
-            new ImageProvider("save").getResource().attachImageIcon(this);
         } else {
             super.setEnabled(false);
         }
+    }
+
+    /**
+     * Show Start if any selected task is not locked, Stop otherwise
+     */
+    private void updateStartOrStop() {
+        for (var i : this.table.getSelectedRows()) {
+            final var index = this.table.getRowSorter().convertRowIndexToModel(i);
+            final var point = ((TaskTableModel) this.table.getModel()).get(index);
+            if (ModifiedObjects.getLockedTask(point.id()) == null) {
+                this.putValue(NAME, tr("Start Task"));
+                this.setTooltip(tr("Start MapRoulette Tasks"));
+                new ImageProvider("lock").getResource().attachImageIcon(this);
+                putValue("lock", true);
+                return;
+            }
+        }
+        putValue("lock", false);
+        this.putValue(NAME, tr("Stop Task"));
+        this.setTooltip(tr("Stop MapRoulette Tasks"));
+        new ImageProvider("save").getResource().attachImageIcon(this);
     }
 }

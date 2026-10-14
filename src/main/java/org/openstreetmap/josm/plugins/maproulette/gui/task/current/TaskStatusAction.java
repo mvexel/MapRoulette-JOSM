@@ -34,6 +34,7 @@ import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.gui.widgets.QuadStateCheckBox;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
@@ -272,7 +273,13 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         this.setTooltip(this.status.description());
                     }
                 }
-                this.setEnabled(status != state);
+                if (MapRouletteAuth.isAvailable()) {
+                    this.setEnabled(status != state);
+                } else {
+                    // Setting a status needs a MapRoulette login; explain why the button is disabled
+                    this.setTooltip(MapRouletteAuth.unavailableTooltip());
+                    this.setEnabled(false);
+                }
                 return;
             }
         }
