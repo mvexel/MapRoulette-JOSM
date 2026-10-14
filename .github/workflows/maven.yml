@@ -39,7 +39,9 @@ jobs:
           path: target/MapRoulette.jar
 
   minimum-version:
-    name: Compile against minimum JOSM (Plugin-Mainversion)
+    # The Ant workflow builds and tests against the minimum JOSM revision (no jar is published for every revision),
+    # so this only checks that the Maven and Ant builds declare the same Plugin-Mainversion.
+    name: Plugin-Mainversion matches build.xml
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +50,7 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: maven
-      - name: Compile against the minimum JOSM version
+      - name: Compare pom.xml and build.xml
         run: |
           main_version=$(mvn -B -q help:evaluate -Dexpression=plugin.main.version -DforceStdout)
           ant_version=$(sed -n 's/.*name="plugin.main.version" value="\([0-9]*\)".*/\1/p' build.xml)
@@ -56,11 +58,6 @@ jobs:
             echo "::error::pom.xml plugin.main.version ($main_version) != build.xml ($ant_version)"
             exit 1
           fi
-          # Numbered JOSM builds are not in the Maven repository, so install the published jar for that revision
-          curl -fsSL -o josm.jar "https://josm.openstreetmap.de/download/josm-snapshot-${main_version}.jar"
-          mvn -B -q install:install-file -Dfile=josm.jar -DgroupId=org.openstreetmap.josm -DartifactId=josm \
-            -Dversion="$main_version" -Dpackaging=jar
-          mvn -B compile -Djosm.compile.version="$main_version"
 
   format:
     name: Formatting (spotless)
