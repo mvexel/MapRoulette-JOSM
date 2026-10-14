@@ -38,6 +38,7 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -93,6 +94,10 @@ public final class EarlyUploadHook implements UploadHook {
     }
 
     private boolean realCheckUpload(APIDataSet apiDataSet) {
+        if (!MapRouletteAuth.isAvailable()) {
+            // The answer could not be sent to MapRoulette
+            return UploadHook.super.checkUpload(apiDataSet);
+        }
         final var ids = apiDataSet.getPrimitives().stream().map(IPrimitive::getPrimitiveId).collect(Collectors.toSet());
         //noinspection DataFlowIssue -- getPrimitiveId should stably return either a null value or a non-null value
         final var tasks = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)

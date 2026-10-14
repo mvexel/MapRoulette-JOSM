@@ -40,6 +40,17 @@ class HttpClientUtilsTest {
                 .withQueryParam("comment", equalTo("Fixed a & b #1")).withQueryParam("tags", equalTo("road")));
     }
 
+    /**
+     * MapRoulette no longer accepts API keys, so none may be sent
+     */
+    @Test
+    void testNoApiKeyIsSent() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(put(urlPathEqualTo("/api/v2/task/1/1")).willReturn(aResponse().withStatus(204)));
+        TaskAPI.updateStatus(1, TaskStatus.FIXED, null, null, null, null);
+        wireMock.verifyThat(putRequestedFor(urlPathEqualTo("/api/v2/task/1/1")).withoutHeader("apiKey"));
+    }
+
     @Test
     void testEmptyQuery() {
         assertEquals("?", HttpClientUtils.query(Map.of()));

@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 
 import org.openstreetmap.josm.actions.upload.UploadHook;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
@@ -45,6 +46,9 @@ public class LateUploadHook implements UploadHook {
 
     @Override
     public void modifyChangesetTags(Map<String, String> tags) {
+        if (!MapRouletteAuth.isAvailable()) {
+            return;
+        }
         final var modifiedTasks = ModifiedObjects.getModifiedTasks();
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
         for (ModifiedTask entry : modifiedTasks) {

@@ -43,6 +43,7 @@ import org.openstreetmap.josm.plugins.maproulette.actions.GoToTaskLocation;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
 import org.openstreetmap.josm.plugins.maproulette.api.MRColors;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -134,6 +135,7 @@ public final class TaskListPanel extends ToggleDialog
         menu.add(new DownloadTasks());
         menu.add(new IgnoreAction(IgnoreAction.IgnoreType.IGNORE_TASK));
         menu.add(new IgnoreAction(IgnoreAction.IgnoreType.IGNORE_CHALLENGE));
+        menu.add(browseButton.getAction());
         table.setComponentPopupMenu(menu);
         tableRowSorter.setRowFilter(defaultFilter);
         tableRowSorter.setComparator(0,
@@ -250,6 +252,7 @@ public final class TaskListPanel extends ToggleDialog
     public void layerAdded(LayerManager.LayerAddEvent e) {
         if (e.getAddedLayer()instanceof MapRouletteClusteredPointLayer layer) {
             layer.addSelectionListener(this);
+            MapRouletteAuth.showUnavailableNoticeOnce();
         }
     }
 
@@ -280,7 +283,7 @@ public final class TaskListPanel extends ToggleDialog
     }
 
     /**
-     * Open task in browser
+     * Open task in MapRoulette
      */
     private static final class OpenInBrowserAction extends JosmAction {
         /**
@@ -299,9 +302,10 @@ public final class TaskListPanel extends ToggleDialog
          * @param table The originating table
          */
         OpenInBrowserAction(JTable table) {
-            super(tr("Open Task in browser"), "presets/misc/contact", tr("Open MapRoulette Tasks in browser"),
+            super(tr("Open Task in MapRoulette"), "presets/misc/contact",
+                    tr("Open MapRoulette Tasks on the MapRoulette website"),
                     Shortcut.registerShortcut("maproulette:open_tasks_in_browser",
-                            tr("MapRoulette: Open Tasks in browser"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
+                            tr("MapRoulette: Open Tasks in MapRoulette"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                     false);
             Objects.requireNonNull(table, "table");
             this.table = table;

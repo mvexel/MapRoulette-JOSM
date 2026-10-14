@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.tools.HttpClient;
 
 /**
@@ -72,11 +73,11 @@ public final class HttpClientUtils {
     /**
      * Sign the client
      *
-     * @param client The client to add the api key to
-     * @throws UnauthorizedException if the user isn't logged in or hasn't logged in to MapRoulette before
+     * @param client The client to add the credentials to
+     * @throws UnauthorizedException if the user isn't logged in to MapRoulette
      */
     private static void sign(HttpClient client) throws UnauthorizedException {
-        client.setHeader("apiKey", OsmPreferenceUtils.getMapRouletteApiKey());
+        MapRouletteAuth.getProvider().authenticate(client);
     }
 
     /**
