@@ -1,13 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api;
 
-import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
-
 import java.io.IOException;
+import java.util.Collections;
 
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Project;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.ProjectParser;
-import org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils;
 
 import jakarta.annotation.Nonnull;
 
@@ -33,11 +32,6 @@ public final class ProjectAPI {
      */
     @Nonnull
     public static Project get(long id) throws IOException {
-        final var client = HttpClientUtils.get(getBaseUrl() + PROJECT + "/" + id);
-        try (var inputstream = client.connect().getContent()) {
-            return ProjectParser.parse(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PROJECT + "/" + id, Collections.emptyMap(), ProjectParser::parse);
     }
 }

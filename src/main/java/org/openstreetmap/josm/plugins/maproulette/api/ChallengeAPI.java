@@ -6,15 +6,15 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInteger;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalObject;
-import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
-import static org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils.get;
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.Reader;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Priority;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeCreation;
@@ -24,7 +24,6 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengePriority;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.PointParser;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
-import org.openstreetmap.josm.tools.bugreport.BugReport;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -84,15 +83,9 @@ public final class ChallengeAPI {
      */
     @Nonnull
     public static Task nextTask(long challengeId, long currentTask, String... status) throws IOException {
-        final var client = get(getBaseUrl() + PATH + "/" + challengeId + "/nextTask/" + currentTask,
-                status.length > 0 ? Map.of("statusList", String.join(",", status)) : null);
-        try {
-            try (var inputStream = client.connect().getContent()) {
-                return (Task) TaskParser.parseTask(inputStream);
-            }
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PATH + "/" + challengeId + "/nextTask/" + currentTask,
+                status.length > 0 ? Map.of("statusList", String.join(",", status)) : Collections.emptyMap(),
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -106,15 +99,9 @@ public final class ChallengeAPI {
      */
     @Nonnull
     public static Task previousTask(long challengeId, long currentTask, String... status) throws IOException {
-        final var client = get(getBaseUrl() + PATH + "/" + challengeId + "/previousTask/" + currentTask,
-                status.length > 0 ? Map.of("statusList", String.join(",", status)) : null);
-        try {
-            try (var inputStream = client.connect().getContent()) {
-                return (Task) TaskParser.parseTask(inputStream);
-            }
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PATH + "/" + challengeId + "/previousTask/" + currentTask,
+                status.length > 0 ? Map.of("statusList", String.join(",", status)) : Collections.emptyMap(),
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -160,14 +147,8 @@ public final class ChallengeAPI {
         if (proximity > 0) {
             query.put("proximity", String.valueOf(proximity));
         }
-        final var client = get(getBaseUrl() + PATH + "/" + challengeId + path, query);
-        try {
-            try (var inputStream = client.connect().getContent()) {
-                return (Task[]) TaskParser.parseTask(inputStream);
-            }
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PATH + "/" + challengeId + path, query,
+                body -> (Task[]) TaskParser.parseTask(body));
     }
 
     /**
@@ -210,14 +191,8 @@ public final class ChallengeAPI {
         if (proximity > 0) {
             query.put("proximity", String.valueOf(proximity));
         }
-        final var client = get(getBaseUrl() + PATH + "/" + challengeId + "/tasksNearby/" + proximityId, query);
-        try {
-            try (var inputStream = client.connect().getContent()) {
-                return (Task[]) TaskParser.parseTask(inputStream);
-            }
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PATH + "/" + challengeId + "/tasksNearby/" + proximityId, query,
+                body -> (Task[]) TaskParser.parseTask(body));
     }
 
     /**
@@ -228,42 +203,30 @@ public final class ChallengeAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static Challenge challenge(long challengeId) throws IOException {
-        final var client = get(getBaseUrl() + PATH + "/" + challengeId, null);
-        try {
-            try (var inputstream = client.connect().getContent()) {
-                return parseChallenge(inputstream);
-            }
-        } catch (ClassCastException cce) {
-            throw BugReport.intercept(cce).put("Maproulette Challenge:", challengeId);
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PATH + "/" + challengeId, Collections.emptyMap(),
+                ChallengeAPI::parseChallenge);
     }
 
     /**
      * Get tasks from a MapRoulette challenge
      * @param challengeId The id of the challenge
-     * @return The tasks from the challenge -- see {@link TaskParser#parseTask(InputStream)}
+     * @return The tasks from the challenge -- see {@link TaskParser#parseTask(Reader)}
      * @throws IOException if there was a problem communicating with the server
      */
     public static Object view(long challengeId) throws IOException {
-        final var client = get(getBaseUrl() + PATH + "/view/" + challengeId, Map.of("status", "0"));
-        try (var inputstream = client.connect().getContent()) {
-            return TaskParser.parseTask(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(PATH + "/view/" + challengeId, Map.of("status", "0"),
+                TaskParser::parseTask);
     }
 
     /**
      * Parse a challenge
      *
-     * @param inputStream The incoming stream
+     * @param body The response body
      * @return The challenge
      */
     @Nonnull
-    private static Challenge parseChallenge(InputStream inputStream) {
-        try (var parser = Json.createReader(inputStream)) {
+    private static Challenge parseChallenge(Reader body) {
+        try (var parser = Json.createReader(body)) {
             JsonStructure structure = parser.read();
             if (structure.getValueType() == JsonValue.ValueType.OBJECT) {
                 var obj = structure.asJsonObject();

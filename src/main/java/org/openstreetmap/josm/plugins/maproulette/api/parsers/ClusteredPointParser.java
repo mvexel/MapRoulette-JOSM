@@ -6,7 +6,7 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalLong;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalObject;
 
-import java.io.InputStream;
+import java.io.Reader;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -35,13 +35,13 @@ public final class ClusteredPointParser {
     }
 
     /**
-     * Parse {@link org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint}s from an {@link InputStream}
+     * Parse {@link org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint}s from a response body
      *
-     * @param inputStream The originating stream
+     * @param body The response body
      * @return The {@link org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint}(s). Either an array or a single point.
      */
-    public static Object parse(InputStream inputStream) {
-        try (JsonParser parser = Json.createParser(inputStream)) {
+    public static Object parse(Reader body) {
+        try (JsonParser parser = Json.createParser(body)) {
             while (parser.hasNext()) {
                 switch (parser.next()) {
                 case START_ARRAY:
@@ -54,7 +54,7 @@ public final class ClusteredPointParser {
                 }
             }
         }
-        throw new IllegalArgumentException("InputStream did not contain a valid ClusteredPoint");
+        throw new IllegalArgumentException("The response did not contain a valid ClusteredPoint");
     }
 
     /**

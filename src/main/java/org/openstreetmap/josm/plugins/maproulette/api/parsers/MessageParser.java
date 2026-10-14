@@ -5,10 +5,10 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 
 import jakarta.json.JsonObject;
 
-import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 
 /**
- * A parser for message objects. All methods can throw an {@link UnauthorizedException}!
+ * A parser for message objects. All methods can throw a {@link MapRouletteException}!
  */
 final class MessageParser {
     private MessageParser() {
@@ -19,11 +19,11 @@ final class MessageParser {
      * Parse a potential API message
      *
      * @param jsonObject The object to look at
-     * @throws UnauthorizedException If there is a problem
+     * @throws MapRouletteException If the object is an error message
      */
-    static void parse(JsonObject jsonObject) throws UnauthorizedException {
+    static void parse(JsonObject jsonObject) throws MapRouletteException {
         if (has(jsonObject, "status") && has(jsonObject, "message")) {
-            throw new UnauthorizedException(jsonObject.getString("message"));
+            throw new MapRouletteException("MapRoulette error: " + jsonObject.getString("message"));
         }
     }
 }

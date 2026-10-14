@@ -1,18 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api;
 
-import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
-import static org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils.delete;
-import static org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils.get;
-import static org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils.post;
-
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
+import java.io.Reader;
+import java.util.Collections;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskBundle;
 
 import jakarta.annotation.Nonnull;
@@ -47,24 +43,19 @@ public final class BundleAPI {
      */
     @Nonnull
     public static TaskBundle createBundle(TaskBundle bundle) throws IOException {
-        final var client = post(getBaseUrl() + PATH, null); // fixme add body
-        try {
-            try (var inputStream = client.connect().getContent()) {
-                return parseBundle(inputStream);
-            }
-        } finally {
-            client.disconnect();
-        }
+        final var client = MapRouletteClient.getInstance();
+        client.requireAuth();
+        return client.post(PATH, Collections.emptyMap(), null, BundleAPI::parseBundle); // fixme add body
     }
 
     /**
-     * Parse a {@link TaskBundle} from an {@link InputStream}
+     * Parse a {@link TaskBundle} from a response body
      *
-     * @param bundle The stream with the bundle information
+     * @param bundle The response body with the bundle information
      * @return The bundle of tasks
      */
     @Nonnull
-    public static TaskBundle parseBundle(InputStream bundle) {
+    public static TaskBundle parseBundle(Reader bundle) {
         try (JsonReader reader = Json.createReader(bundle)) {
             JsonStructure structure = reader.read();
             if (structure.getValueType() == JsonValue.ValueType.OBJECT) {
@@ -84,42 +75,25 @@ public final class BundleAPI {
      *
      * @param id The id of the bundle to get
      * @return The specified bundle
-     * @throws UnauthorizedException if the user hasn't logged in to MapRoulette
+     * @throws IOException if there was a problem communicating with the server
      */
     @Nonnull
-    public static TaskBundle getBundle(long id) throws UnauthorizedException {
-        final var client = get(getBaseUrl() + PATH + "/" + id);
-        try {
-            try (var inputStream = client.connect().getContent()) {
-                return parseBundle(inputStream);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } finally {
-            client.disconnect();
-        }
+    public static TaskBundle getBundle(long id) throws IOException {
+        return MapRouletteClient.getInstance().get(PATH + "/" + id, Collections.emptyMap(), BundleAPI::parseBundle);
     }
 
     /**
      * Delete a bundle
      *
      * @param id The bundle to delete
-     * @return {@code true} if the deletion was successful
-     * @throws UnauthorizedException if the user hasn't logged in to MapRoulette
+     * @return {@code true}; failures throw
+     * @throws IOException if there was a problem communicating with the server
      */
-    public static boolean deleteBundle(long id) throws UnauthorizedException {
-        final var client = delete(getBaseUrl() + PATH + "/" + id);
-        try {
-            int responseCode = client.connect().getResponseCode();
-            if (responseCode == 401) {
-                throw new UnauthorizedException(client.getURL().toExternalForm());
-            }
-            return responseCode == 200;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } finally {
-            client.disconnect();
-        }
+    public static boolean deleteBundle(long id) throws IOException {
+        final var client = MapRouletteClient.getInstance();
+        client.requireAuth();
+        client.delete(PATH + "/" + id);
+        return true;
     }
 
     /**
@@ -128,20 +102,14 @@ public final class BundleAPI {
      * @param original The original bundle
      * @param taskIds  The tasks to remove
      * @return The new bundle
-     * @throws UnauthorizedException if the user hasn't logged in to MapRoulette
+     * @throws IOException if there was a problem communicating with the server
      */
     @Nonnull
-    public static TaskBundle unbundle(TaskBundle original, long... taskIds) throws UnauthorizedException {
-        final var client = get(getBaseUrl() + PATH + "/" + original.id() + "/unbundle",
-                Map.of("taskIds", LongStream.of(taskIds).mapToObj(Long::toString).collect(Collectors.joining(","))));
-        try {
-            try (var inputstream = client.connect().getContent()) {
-                return parseBundle(inputstream);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } finally {
-            client.disconnect();
-        }
+    public static TaskBundle unbundle(TaskBundle original, long... taskIds) throws IOException {
+        final var client = MapRouletteClient.getInstance();
+        client.requireAuth();
+        return client.get(PATH + "/" + original.id() + "/unbundle",
+                Map.of("taskIds", LongStream.of(taskIds).mapToObj(Long::toString).collect(Collectors.joining(","))),
+                BundleAPI::parseBundle);
     }
 }

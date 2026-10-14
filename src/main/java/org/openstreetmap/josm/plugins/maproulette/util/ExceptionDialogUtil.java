@@ -15,8 +15,12 @@ import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 
 /**
@@ -32,11 +36,26 @@ public final class ExceptionDialogUtil {
      * @param exception The exception to explain to the user
      */
     public static void explainException(Exception exception) {
-        if (exception instanceof UnauthorizedException) {
+        if (exception.getClass() == MapRouletteException.class && exception.getCause()instanceof IOException cause) {
+            // A connection problem: explain the underlying exception
+            explainException(cause);
+        } else if (exception instanceof MapRouletteAuthUnavailableException) {
             final var message = MapRouletteAuth.unavailableMessage();
             GuiHelper.runInEDT(() -> ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in",
                     MainApplication.getMainFrame(), message, tr("MapRoulette login unavailable"),
                     JOptionPane.INFORMATION_MESSAGE));
+        } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
+            final var message = lockHeld.heldTaskId().isPresent()
+                    ? tr("You already have MapRoulette task {0} started. MapRoulette allows one started task at a time;"
+                            + " stop that task first.", lockHeld.heldTaskId().getAsLong())
+                    : tr("You already have a MapRoulette task started. MapRoulette allows one started task at a time;"
+                            + " stop that task first.");
+            showErrorDialog(message, tr("MapRoulette task already started"), null);
+        } else if (exception instanceof MapRouletteNotFoundException) {
+            showErrorDialog(tr("MapRoulette does not have this task or challenge (any more)."), tr("Not found"), null);
+        } else if (exception instanceof MapRouletteParseException) {
+            showErrorDialog(tr("Could not read the MapRoulette response: {0}", exception.getMessage()),
+                    tr("Unexpected MapRoulette response"), null);
         } else if (exception instanceof SocketException socketException) {
             final var message = tr("<html>Failed to open a connection to the remote server<br>" + "''{0}''.<br>"
                     + "Please check your internet connection.", socketException.getMessage()) + "</html>";

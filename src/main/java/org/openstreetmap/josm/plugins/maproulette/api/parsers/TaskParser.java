@@ -7,7 +7,7 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalLong;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
+import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -23,7 +23,7 @@ import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.OsmChangeReader;
-import org.openstreetmap.josm.plugins.maproulette.api.UnauthorizedException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ElementCreate;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ElementTagChange;
@@ -63,13 +63,13 @@ public final class TaskParser {
     /**
      * Parse a task
      *
-     * @param inputStream the stream to get the task from
+     * @param body the response body to get the task from
      * @return The new task. May be a singular task or an array of tasks.
-     * @throws UnauthorizedException if the user hasn't logged in to MapRoulette
+     * @throws MapRouletteException if MapRoulette sent an error message
      */
     @Nonnull
-    public static Object parseTask(InputStream inputStream) throws UnauthorizedException {
-        try (var reader = Json.createParser(inputStream)) {
+    public static Object parseTask(Reader body) throws MapRouletteException {
+        try (var reader = Json.createParser(body)) {
             while (reader.hasNext()) {
                 var value = switch (reader.next()) {
                 case START_OBJECT -> parseTask(reader.getObject());
@@ -77,7 +77,7 @@ public final class TaskParser {
                         .map(JsonObject.class::cast).map(obj -> {
                             try {
                                 return parseTask(obj);
-                            } catch (UnauthorizedException e) {
+                            } catch (MapRouletteException e) {
                                 throw new UncheckedIOException(e);
                             }
                         }).toArray(Task[]::new);
@@ -88,12 +88,12 @@ public final class TaskParser {
                 }
             }
         } catch (UncheckedIOException e) {
-            if (e.getCause()instanceof UnauthorizedException unauthorizedException) {
-                throw unauthorizedException;
+            if (e.getCause()instanceof MapRouletteException mapRouletteException) {
+                throw mapRouletteException;
             }
             throw e;
         }
-        throw new IllegalArgumentException("InputStream did not contain expected JSON data");
+        throw new IllegalArgumentException("The response did not contain expected JSON data");
     }
 
     /**
@@ -101,10 +101,10 @@ public final class TaskParser {
      *
      * @param obj the JsonObject to get the task from
      * @return The new task
-     * @throws UnauthorizedException if the user hasn't logged in to MapRoulette
+     * @throws MapRouletteException if MapRoulette sent an error message
      */
     @Nonnull
-    private static Task parseTask(JsonObject obj) throws UnauthorizedException {
+    private static Task parseTask(JsonObject obj) throws MapRouletteException {
         MessageParser.parse(obj);
         try {
             return new Task(obj.getJsonNumber("id").longValue(), obj.getString("name"),
