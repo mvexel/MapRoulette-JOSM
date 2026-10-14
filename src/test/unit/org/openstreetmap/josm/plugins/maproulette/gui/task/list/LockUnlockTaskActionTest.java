@@ -1,9 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -34,9 +41,11 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
+import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
@@ -133,5 +142,82 @@ class LockUnlockTaskActionTest {
             }
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
         }
+    }
+
+    /**
+     * Stop, clicked on the EDT, releases the lock and sends the pending status from the worker (#32, #36)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testStopRunsOffEdt() throws Exception {
+        final var originalAuth = MapRouletteClient.getInstance().auth();
+        final var onEdt = new CopyOnWriteArrayList<Boolean>();
+        MapRouletteClient.getInstance().setAuthProvider(new AuthProvider() {
+            @Override
+            public boolean isAvailable() {
+                return true;
+            }
+
+            @Override
+            public Set<Capability> capabilities() {
+                return EnumSet.allOf(Capability.class);
+            }
+
+            @Override
+            public void authenticate(HttpClient request) {
+                onEdt.add(SwingUtilities.isEventDispatchThread());
+            }
+        });
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        wireMock.register(
+                put(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())).willReturn(aResponse()));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            final var locked = ModifiedObjects.getLockedTask(132279499L);
+            assertNotNull(locked, "Start must lock the task before Stop can be tested");
+            ModifiedObjects.addModifiedTask(new ModifiedTask(locked, TaskStatus.FIXED, null, null, null, null));
+            onEdt.clear();
+
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertFalse(onEdt.isEmpty(), "Stop made no MapRoulette request");
+            assertFalse(onEdt.contains(true), "MapRoulette requests made on the EDT: " + onEdt);
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
+            wireMock.verifyThat(1,
+                    putRequestedFor(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            assertNull(ModifiedObjects.getModifiedTask(132279499L));
+        } finally {
+            final var modified = ModifiedObjects.getModifiedTask(132279499L);
+            if (modified != null) {
+                ModifiedObjects.removeModifiedTask(modified);
+            }
+            final var locked = ModifiedObjects.getLockedTask(132279499L);
+            if (locked != null) {
+                ModifiedObjects.removeLockedTask(locked);
+            }
+            MapRouletteClient.getInstance().setAuthProvider(originalAuth);
+        }
+    }
+
+    /**
+     * Wait for the worker, then the EDT. The worker job hands its result to the EDT with invokeAndWait.
+     */
+    private static void sync() throws Exception {
+        MainApplication.worker.submit(() -> {
+            /* Sync worker */ }).get(10, TimeUnit.SECONDS);
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
     }
 }
