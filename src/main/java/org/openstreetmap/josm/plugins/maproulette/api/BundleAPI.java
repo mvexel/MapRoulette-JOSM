@@ -43,9 +43,7 @@ public final class BundleAPI {
      */
     @Nonnull
     public static TaskBundle createBundle(TaskBundle bundle) throws IOException {
-        final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        return client.post(PATH, Collections.emptyMap(), null, BundleAPI::parseBundle); // fixme add body
+        return MapRouletteClient.getInstance().post(PATH, Collections.emptyMap(), null, BundleAPI::parseBundle); // fixme add body
     }
 
     /**
@@ -90,9 +88,7 @@ public final class BundleAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static boolean deleteBundle(long id) throws IOException {
-        final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        client.delete(PATH + "/" + id);
+        MapRouletteClient.getInstance().delete(PATH + "/" + id);
         return true;
     }
 

@@ -160,9 +160,7 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static Task changeset(long task) throws IOException {
-        final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        return client.put(TASK + "/" + task + "/changeset", Collections.emptyMap(), null,
+        return MapRouletteClient.getInstance().put(TASK + "/" + task + "/changeset", Collections.emptyMap(), null,
                 body -> (Task) TaskParser.parseTask(body));
     }
 
@@ -200,9 +198,7 @@ public final class TaskAPI {
         } else {
             body = null;
         }
-        final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        client.put(TASK + "/" + task + "/" + status.code(), query, body, null);
+        MapRouletteClient.getInstance().put(TASK + "/" + task + "/" + status.code(), query, body, null);
         return true;
     }
 }

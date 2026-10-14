@@ -18,6 +18,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
@@ -51,6 +52,9 @@ public final class ExceptionDialogUtil {
                     : tr("You already have a MapRoulette task started. MapRoulette allows one started task at a time;"
                             + " stop that task first.");
             showErrorDialog(message, tr("MapRoulette task already started"), null);
+        } else if (exception instanceof MapRouletteForbiddenException) {
+            showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
+                    tr("Not allowed"), null);
         } else if (exception instanceof MapRouletteNotFoundException) {
             showErrorDialog(tr("MapRoulette does not have this task or challenge (any more)."), tr("Not found"), null);
         } else if (exception instanceof MapRouletteParseException) {

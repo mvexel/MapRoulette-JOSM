@@ -29,9 +29,11 @@ import org.openstreetmap.josm.tools.Logging;
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 import jakarta.json.Json;
+import jakarta.json.JsonArray;
 import jakarta.json.JsonException;
 import jakarta.json.JsonNumber;
 import jakarta.json.JsonObject;
+import jakarta.json.JsonString;
 
 /**
  * The single entry point for MapRoulette requests. It owns the login ({@link AuthProvider}) and maps server errors
@@ -138,7 +140,7 @@ public final class MapRouletteClient {
     }
 
     /**
-     * PUT to a path
+     * PUT to a path. This needs a login: without one it fails before sending.
      *
      * @param path     The path below the API base URL, starting with {@code /}
      * @param query    The query parameters
@@ -150,6 +152,7 @@ public final class MapRouletteClient {
      */
     public <T> T put(String path, Map<String, String> query, @Nullable byte[] jsonBody,
             @Nullable ResponseParser<T> parser) throws MapRouletteException {
+        requireAuth();
         return request("PUT", path, query, jsonBody, JSON, parser);
     }
 
@@ -170,7 +173,7 @@ public final class MapRouletteClient {
     }
 
     /**
-     * POST to a path
+     * POST to a path. This needs a login: without one it fails before sending.
      *
      * @param path     The path below the API base URL, starting with {@code /}
      * @param query    The query parameters
@@ -182,16 +185,18 @@ public final class MapRouletteClient {
      */
     public <T> T post(String path, Map<String, String> query, @Nullable byte[] jsonBody,
             @Nullable ResponseParser<T> parser) throws MapRouletteException {
+        requireAuth();
         return request("POST", path, query, jsonBody, JSON, parser);
     }
 
     /**
-     * DELETE a path
+     * DELETE a path. This needs a login: without one it fails before sending.
      *
      * @param path The path below the API base URL, starting with {@code /}
      * @throws MapRouletteException if the request failed
      */
     public void delete(String path) throws MapRouletteException {
+        requireAuth();
         request("DELETE", path, Collections.emptyMap(), null, null, null);
     }
 
@@ -223,8 +228,10 @@ public final class MapRouletteClient {
                 }
                 try (var reader = new InputStreamReader(response.getContent(), StandardCharsets.UTF_8)) {
                     return parser.parse(reader);
-                } catch (JsonException | IllegalArgumentException | IllegalStateException | ClassCastException
-                        | NullPointerException | DateTimeException | JosmRuntimeException e) {
+                } catch (MapRouletteException e) {
+                    throw e;
+                } catch (IOException | JsonException | IllegalArgumentException | IllegalStateException
+                        | ClassCastException | NullPointerException | DateTimeException | JosmRuntimeException e) {
                     throw new MapRouletteParseException("Could not read the MapRoulette response from " + url, e);
                 }
             } catch (MapRouletteException e) {
@@ -251,26 +258,33 @@ public final class MapRouletteClient {
         return switch (status) {
         case 401, 410 -> new MapRouletteAuthUnavailableException(
                 "MapRoulette refused the login (HTTP " + status + ") for " + url + message);
+        case 403 -> new MapRouletteForbiddenException("MapRoulette refused the request for " + url + message);
         case 404 -> new MapRouletteNotFoundException("Not found in MapRoulette: " + url + message);
-        case 409 -> new MapRouletteLockHeldException("MapRoulette allows only one task lock" + message,
-                lockedTaskId(safeBody));
+        case 409 -> new MapRouletteLockHeldException("MapRoulette conflict for " + url + message,
+                lockedTaskId(safeBody), bundledTaskIds(safeBody));
         default -> new MapRouletteHttpException("MapRoulette answered HTTP " + status + " for " + url + message, status,
                 safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())));
         };
     }
 
     /**
-     * Read the {@code message} of a MapRoulette error body
+     * Read the {@code status} and {@code message} of a MapRoulette error body ({@code {"status": "KO", "message": ...}};
+     * either may be missing or null)
      *
      * @param body The body
-     * @return {@code ": message"}, or an empty string
+     * @return {@code ": status: message"} with the parts that are present, or an empty string
      */
     private static String message(String body) {
         final var object = jsonObject(body);
-        if (object != null && object.get("message")instanceof jakarta.json.JsonString message) {
-            return ": " + message.getString();
+        final var message = new StringBuilder();
+        if (object != null) {
+            for (var key : new String[] { "status", "message" }) {
+                if (object.get(key)instanceof JsonString value) {
+                    message.append(": ").append(value.getString());
+                }
+            }
         }
-        return "";
+        return message.toString();
     }
 
     /**
@@ -285,6 +299,21 @@ public final class MapRouletteClient {
             return OptionalLong.of(id.longValue());
         }
         return OptionalLong.empty();
+    }
+
+    /**
+     * Read the other tasks of a held bundle from a 409 body ({@code {"bundledTasks": [1, 2], ...}})
+     *
+     * @param body The body
+     * @return The task ids
+     */
+    private static long[] bundledTaskIds(String body) {
+        final var object = jsonObject(body);
+        if (object != null && object.get("bundledTasks")instanceof JsonArray tasks) {
+            return tasks.stream().filter(JsonNumber.class::isInstance).mapToLong(id -> ((JsonNumber) id).longValue())
+                    .toArray();
+        }
+        return new long[0];
     }
 
     @Nullable
