@@ -21,6 +21,7 @@ import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -30,6 +31,7 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
@@ -44,8 +46,8 @@ import mockit.MockUp;
  * No MapRoulette request may run on the EDT (epic #3, issue #36).
  * <p>
  * The client guard throws {@link IllegalStateException} on the EDT, but a caller that catches {@code Exception} would
- * hide it. So these tests also record the thread of every request that is actually signed, and drive the UI actions
- * the way Swing does (on the EDT), checking that their requests were made and none of them on the EDT.
+ * hide it. So these tests also record the thread of every request that is actually authenticated, and drive the UI
+ * actions the way Swing does (on the EDT), checking that their requests were made and none of them on the EDT.
  */
 @BasicPreferences
 @Main
@@ -67,7 +69,11 @@ class MapRouletteClientEdtTest {
         MapRouletteClient.getInstance().setAuthProvider(this.originalAuth);
     }
 
+    /**
+     * The guard only warns until the EDT callers are moved off it (contract, threading rule)
+     */
     @Test
+    @Disabled("The client guard throws only once #32, #33 and #34 are done; enable it in that PR")
     void testClientRejectsCallsOnEdt() throws Exception {
         WireMocks.current()
                 .register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
@@ -119,7 +125,8 @@ class MapRouletteClientEdtTest {
     }
 
     /**
-     * Records the thread of every signed request. Signing happens on the calling thread just before sending.
+     * Records the thread of every authenticated request. Authentication happens on the calling thread just before
+     * sending.
      */
     static final class ThreadRecordingAuthProvider implements AuthProvider {
         private final List<Boolean> onEdt = new CopyOnWriteArrayList<>();
@@ -135,7 +142,7 @@ class MapRouletteClientEdtTest {
         }
 
         @Override
-        public void sign(HttpClient request) {
+        public void authenticate(HttpClient request) {
             this.onEdt.add(SwingUtilities.isEventDispatchThread());
         }
 

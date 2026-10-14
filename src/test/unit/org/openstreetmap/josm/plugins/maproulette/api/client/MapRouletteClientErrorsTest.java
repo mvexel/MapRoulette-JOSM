@@ -9,6 +9,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
@@ -88,6 +90,7 @@ class MapRouletteClientErrorsTest {
                         MapRouletteException.class.isAssignableFrom(MapRouletteAuthUnavailableException.class)),
                 () -> assertTrue(MapRouletteException.class.isAssignableFrom(MapRouletteLockHeldException.class)),
                 () -> assertTrue(MapRouletteException.class.isAssignableFrom(MapRouletteNotFoundException.class)),
+                () -> assertTrue(MapRouletteException.class.isAssignableFrom(MapRouletteForbiddenException.class)),
                 () -> assertTrue(MapRouletteException.class.isAssignableFrom(MapRouletteHttpException.class)),
                 () -> assertTrue(MapRouletteException.class.isAssignableFrom(MapRouletteParseException.class)));
     }
@@ -157,6 +160,7 @@ class MapRouletteClientErrorsTest {
                 () -> client().put(START, Collections.emptyMap(), null, JSON));
         assertTrue(exception.heldTaskId().isPresent());
         assertEquals(777, exception.heldTaskId().getAsLong());
+        assertArrayEquals(new long[] { 778, 779 }, exception.bundledTaskIds());
     }
 
     @Test
@@ -165,6 +169,7 @@ class MapRouletteClientErrorsTest {
         final var exception = assertThrows(MapRouletteLockHeldException.class,
                 () -> client().put(START, Collections.emptyMap(), null, JSON));
         assertFalse(exception.heldTaskId().isPresent());
+        assertEquals(0, exception.bundledTaskIds().length);
     }
 
     @Test
@@ -173,12 +178,15 @@ class MapRouletteClientErrorsTest {
         assertThrows(MapRouletteNotFoundException.class, () -> client().get(TASK, Collections.emptyMap(), JSON));
     }
 
+    /**
+     * 403 is what Start gets when another user holds the task lock
+     */
     @Test
     void testForbidden() {
         stubPut(403, "403-locked-by-other.json");
-        final var exception = assertThrows(MapRouletteHttpException.class,
+        final var exception = assertThrows(MapRouletteForbiddenException.class,
                 () -> client().put(START, Collections.emptyMap(), null, JSON));
-        assertEquals(403, exception.status());
+        assertTrue(exception.getMessage().contains("locked by another user"), exception.getMessage());
     }
 
     @Test
@@ -235,10 +243,10 @@ class MapRouletteClientErrorsTest {
     }
 
     @Test
-    void testRequestsAreSigned() throws MapRouletteException {
+    void testRequestsAreAuthenticated() throws MapRouletteException {
         WireMocks.current().register(get(urlPathEqualTo(TASK_URL)).willReturn(aResponse().withBody("{}")));
         client().get(TASK, Collections.emptyMap(), JSON);
-        assertEquals(1, this.auth.signCalls.get());
+        assertEquals(1, this.auth.authenticateCalls.get());
     }
 
     /**
@@ -247,7 +255,7 @@ class MapRouletteClientErrorsTest {
     static final class FakeAuthProvider implements AuthProvider {
         boolean available = true;
         boolean refreshSucceeds;
-        final AtomicInteger signCalls = new AtomicInteger();
+        final AtomicInteger authenticateCalls = new AtomicInteger();
         final AtomicInteger unauthorizedCalls = new AtomicInteger();
 
         @Override
@@ -261,8 +269,8 @@ class MapRouletteClientErrorsTest {
         }
 
         @Override
-        public void sign(HttpClient request) {
-            this.signCalls.incrementAndGet();
+        public void authenticate(HttpClient request) {
+            this.authenticateCalls.incrementAndGet();
         }
 
         @Override
