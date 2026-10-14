@@ -4,12 +4,15 @@ package org.openstreetmap.josm.plugins.maproulette.api.client;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
+import static com.github.tomakehurst.wiremock.client.WireMock.delete;
+import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -133,17 +136,29 @@ class MapRouletteClientErrorsTest {
         assertThrows(MapRouletteAuthUnavailableException.class, () -> client().get(TASK, Collections.emptyMap(), JSON));
     }
 
+    /**
+     * Write operations call {@code requireAuth()} before sending (contract: a write can't be told apart by method)
+     */
     @Test
-    void testWriteWithoutAuthIsNotSent() {
+    void testRequireAuthWithoutAuth() {
         this.auth.available = false;
-        stubPut(200, "404-not-found.json");
-        assertAll(
-                () -> assertThrows(MapRouletteAuthUnavailableException.class,
-                        () -> client().put(START, Collections.emptyMap(), null, JSON)),
-                () -> assertThrows(MapRouletteAuthUnavailableException.class,
-                        () -> client().post("/task/12345/comment", Collections.emptyMap(), null, JSON)),
-                () -> assertThrows(MapRouletteAuthUnavailableException.class, () -> client().delete("/task/12345")));
+        assertThrows(MapRouletteAuthUnavailableException.class, () -> client().requireAuth());
         WireMocks.current().verifyThat(0, anyRequestedFor(anyUrl()));
+    }
+
+    @Test
+    void testRequireAuthWithAuth() {
+        assertDoesNotThrow(() -> client().requireAuth());
+    }
+
+    /**
+     * Requests without a body, including DELETE, must not hit the JOSM HttpClient null body NPE
+     */
+    @Test
+    void testDelete() {
+        WireMocks.current().register(delete(urlPathEqualTo("/api/v2/task/12345")).willReturn(aResponse()));
+        assertDoesNotThrow(() -> client().delete("/task/12345"));
+        WireMocks.current().verifyThat(1, deleteRequestedFor(urlPathEqualTo("/api/v2/task/12345")));
     }
 
     @Test
@@ -196,7 +211,7 @@ class MapRouletteClientErrorsTest {
                 () -> client().get(TASK, Collections.emptyMap(), JSON));
         assertEquals(500, exception.status());
         assertNotNull(exception.getMessage());
-        assertTrue(exception.getMessage().contains("KO"), exception.getMessage());
+        assertTrue(exception.getMessage().contains("internal error"), exception.getMessage());
     }
 
     @Test
@@ -223,13 +238,18 @@ class MapRouletteClientErrorsTest {
         assertNotNull(exception.getCause());
     }
 
+    /**
+     * An IOException from the parser is a read failure, not a parse failure
+     */
     @Test
     void testParserIOException() {
         WireMocks.current().register(get(urlPathEqualTo(TASK_URL)).willReturn(aResponse().withBody("{}")));
         final ResponseParser<Object> failing = reader -> {
             throw new IOException("unreadable");
         };
-        assertThrows(MapRouletteParseException.class, () -> client().get(TASK, Collections.emptyMap(), failing));
+        final var exception = assertThrows(MapRouletteException.class,
+                () -> client().get(TASK, Collections.emptyMap(), failing));
+        assertInstanceOf(IOException.class, exception.getCause());
     }
 
     @ParameterizedTest

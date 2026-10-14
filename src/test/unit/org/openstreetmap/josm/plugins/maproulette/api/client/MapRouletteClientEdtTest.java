@@ -110,6 +110,8 @@ class MapRouletteClientEdtTest {
         try {
             final var download = TaskListPanelTest.getDownloadAction(panel);
             GuiHelper.runInEDTAndWaitWithException(() -> download.actionPerformed(null));
+            // The action queues the download, which queues its own worker job, so wait for the request itself
+            this.auth.awaitRequests(1);
             sync();
             this.auth.assertRequestsOffEdt(1);
         } finally {
@@ -144,6 +146,19 @@ class MapRouletteClientEdtTest {
         @Override
         public void authenticate(HttpClient request) {
             this.onEdt.add(SwingUtilities.isEventDispatchThread());
+        }
+
+        /**
+         * Wait up to 10 seconds for at least {@code minimum} requests
+         *
+         * @param minimum The number of requests to wait for
+         * @throws InterruptedException if interrupted while waiting
+         */
+        void awaitRequests(int minimum) throws InterruptedException {
+            final var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (this.onEdt.size() < minimum && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
         }
 
         /**
