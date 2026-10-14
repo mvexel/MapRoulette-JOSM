@@ -75,8 +75,7 @@ class MapRouletteClientEdtTest {
     @Test
     @Disabled("The client guard throws only once #32, #33 and #34 are done; enable it in that PR")
     void testClientRejectsCallsOnEdt() throws Exception {
-        WireMocks.current()
-                .register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
+        WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
         GuiHelper.runInEDTAndWaitWithException(() -> assertThrows(IllegalStateException.class,
                 () -> MapRouletteClient.getInstance().get("/challenge/1", Collections.emptyMap(), reader -> null)));
         WireMocks.current().verifyThat(0, anyRequestedFor(anyUrl()));
@@ -84,8 +83,7 @@ class MapRouletteClientEdtTest {
 
     @Test
     void testClientAllowsCallsOffEdt() throws Exception {
-        WireMocks.current()
-                .register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
+        WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
         MainApplication.worker.submit(() -> {
             MapRouletteClient.getInstance().get("/challenge/1", Collections.emptyMap(), reader -> null);
             return null;
@@ -167,9 +165,8 @@ class MapRouletteClientEdtTest {
          * @param minimum The minimum number of requests the action should have made
          */
         void assertRequestsOffEdt(int minimum) {
-            assertTrue(this.onEdt.size() >= minimum,
-                    "Expected at least " + minimum + " MapRoulette request(s), got " + this.onEdt.size()
-                            + " (did the EDT guard throw and get swallowed?)");
+            assertTrue(this.onEdt.size() >= minimum, "Expected at least " + minimum + " MapRoulette request(s), got "
+                    + this.onEdt.size() + " (did the EDT guard throw and get swallowed?)");
             assertEquals(0, this.onEdt.stream().filter(Boolean::booleanValue).count(),
                     "MapRoulette requests made on the EDT");
         }

@@ -75,15 +75,13 @@ class MapRouletteClientErrorsTest {
     }
 
     private static void stubGet(int status, String bodyFile) {
-        WireMocks.current().register(get(urlPathEqualTo(TASK_URL))
-                .willReturn(aResponse().withStatus(status).withHeader("Content-Type", "application/json")
-                        .withBodyFile("errors/" + bodyFile)));
+        WireMocks.current().register(get(urlPathEqualTo(TASK_URL)).willReturn(aResponse().withStatus(status)
+                .withHeader("Content-Type", "application/json").withBodyFile("errors/" + bodyFile)));
     }
 
     private static void stubPut(int status, String bodyFile) {
-        WireMocks.current().register(put(urlPathEqualTo("/api/v2" + START))
-                .willReturn(aResponse().withStatus(status).withHeader("Content-Type", "application/json")
-                        .withBodyFile("errors/" + bodyFile)));
+        WireMocks.current().register(put(urlPathEqualTo("/api/v2" + START)).willReturn(aResponse().withStatus(status)
+                .withHeader("Content-Type", "application/json").withBodyFile("errors/" + bodyFile)));
     }
 
     @Test
@@ -107,10 +105,11 @@ class MapRouletteClientErrorsTest {
     @Test
     void testUnauthorizedRetriesOnceAfterRefresh() throws MapRouletteException {
         this.auth.refreshSucceeds = true;
-        WireMocks.current().register(get(urlPathEqualTo(TASK_URL)).inScenario("refresh")
-                .whenScenarioStateIs(com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED)
-                .willReturn(aResponse().withStatus(401).withBodyFile("errors/401-not-authorized.json"))
-                .willSetStateTo("refreshed"));
+        WireMocks.current()
+                .register(get(urlPathEqualTo(TASK_URL)).inScenario("refresh")
+                        .whenScenarioStateIs(com.github.tomakehurst.wiremock.stubbing.Scenario.STARTED)
+                        .willReturn(aResponse().withStatus(401).withBodyFile("errors/401-not-authorized.json"))
+                        .willSetStateTo("refreshed"));
         WireMocks.current().register(get(urlPathEqualTo(TASK_URL)).inScenario("refresh")
                 .whenScenarioStateIs("refreshed").willReturn(aResponse().withStatus(200).withBody("{\"id\":12345}")));
 
@@ -256,8 +255,8 @@ class MapRouletteClientErrorsTest {
     @ParameterizedTest
     @ValueSource(strings = { "CONNECTION_RESET_BY_PEER", "EMPTY_RESPONSE" })
     void testConnectionFailure(String fault) {
-        WireMocks.current().register(
-                get(urlPathEqualTo(TASK_URL)).willReturn(aResponse().withFault(Fault.valueOf(fault))));
+        WireMocks.current()
+                .register(get(urlPathEqualTo(TASK_URL)).willReturn(aResponse().withFault(Fault.valueOf(fault))));
         final var exception = assertThrows(MapRouletteException.class,
                 () -> client().get(TASK, Collections.emptyMap(), JSON));
         assertInstanceOf(IOException.class, exception.getCause() != null ? exception.getCause() : exception);
