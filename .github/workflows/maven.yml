@@ -1,0 +1,71 @@
+name: Standalone build
+
+# Builds and tests the plugin outside the JOSM plugins SVN tree, against JOSM
+# artifacts from https://josm.openstreetmap.de/repository/.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test (JOSM latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - name: Build and test
+        run: mvn -B -U verify -Dplugin.version="$(git describe --tags --always --dirty)"
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+      - name: Upload plugin jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: MapRoulette.jar
+          path: target/MapRoulette.jar
+
+  minimum-version:
+    name: Compile against minimum JOSM (Plugin-Mainversion)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - name: Compile against the minimum JOSM version
+        run: |
+          main_version=$(mvn -B -q help:evaluate -Dexpression=plugin.main.version -DforceStdout)
+          ant_version=$(sed -n 's/.*name="plugin.main.version" value="\([0-9]*\)".*/\1/p' build.xml)
+          if [ "$main_version" != "$ant_version" ]; then
+            echo "::error::pom.xml plugin.main.version ($main_version) != build.xml ($ant_version)"
+            exit 1
+          fi
+          mvn -B compile -Djosm.compile.version="$main_version"
+
+  format:
+    name: Formatting (spotless)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - run: mvn -B spotless:check

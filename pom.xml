@@ -1,37 +1,34 @@
 <?xml version="1.0"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>org.openstreetmap.josm.plugins</groupId>
-        <artifactId>plugin-root</artifactId>
-        <version>1.0-SNAPSHOT</version>
-    </parent>
+    <!-- Standalone build: no parent POM, so this builds outside the JOSM plugins SVN tree. -->
+    <groupId>org.openstreetmap.josm.plugins</groupId>
     <artifactId>MapRoulette</artifactId>
     <version>1.0-SNAPSHOT</version>
+    <name>MapRoulette</name>
     <properties>
-        <plugin.src.dir>${project.basedir}/src/main/java</plugin.src.dir>
-        <plugin.test.dir>${project.basedir}/src/test/unit</plugin.test.dir>
-        <plugin.resources.dir>${project.basedir}/src/main/resources</plugin.resources.dir>
-        <plugin.main.version>19528</plugin.main.version>
-        <plugin.author>Taylor Smock</plugin.author>
-        <plugin.class>org.openstreetmap.josm.plugins.maproulette.MapRoulette</plugin.class>
-        <plugin.description>MapRoulette Tasks in JOSM</plugin.description>
-        <plugin.icon>images/dialogs/user_no_image.png</plugin.icon>
-        <plugin.link>https://github.com/JOSM/MapRoulette</plugin.link>
-        <plugin.canloadatruntime>true</plugin.canloadatruntime>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.lang.version>17</java.lang.version>
-        <plugin.main.version>19330</plugin.main.version>
-        <plugin.src.dir>${project.basedir}/src/main/java</plugin.src.dir>
-        <plugin.resources.dir>${project.basedir}/src/main/resources</plugin.resources.dir>
-        <plugin.test.dir>${project.basedir}/src/test/</plugin.test.dir>
-        <plugin.test.data.dir>${plugin.test.dir}/resources</plugin.test.data.dir>
+        <maven.compiler.release>${java.lang.version}</maven.compiler.release>
+        <!-- The lowest JOSM version this plugin works with (Plugin-Mainversion). Keep in sync with build.xml. -->
+        <plugin.main.version>19528</plugin.main.version>
+        <!-- The JOSM version to compile and test against. Use -Djosm.compile.version=${plugin.main.version}
+             to check that the plugin still compiles against the minimum version. -->
+        <josm.compile.version>1.5-SNAPSHOT</josm.compile.version>
+        <josm.unittest.version>1.5-SNAPSHOT</josm.unittest.version>
+        <plugin.version>${project.version}</plugin.version>
         <plugin.author>Taylor Smock</plugin.author>
         <plugin.class>org.openstreetmap.josm.plugins.maproulette.MapRoulette</plugin.class>
         <plugin.description>MapRoulette Tasks in JOSM</plugin.description>
         <plugin.icon>images/dialogs/user_no_image.png</plugin.icon>
         <plugin.link>https://github.com/JOSM/MapRoulette</plugin.link>
-        <plugin.minimum.java.version>${java.lang.version}</plugin.minimum.java.version>
         <plugin.canloadatruntime>true</plugin.canloadatruntime>
+        <plugin.minimum.java.version>${java.lang.version}</plugin.minimum.java.version>
+        <plugin.test.dir>${project.basedir}/src/test</plugin.test.dir>
+        <test.headless>true</test.headless>
+        <jmockit.version>1.49</jmockit.version>
+        <junit.version>5.14.2</junit.version>
+        <junit.platform.version>1.14.2</junit.platform.version>
     </properties>
     <repositories>
         <repository>
@@ -41,107 +38,153 @@
         <repository>
             <id>JOSM-snapshots</id>
             <url>https://josm.openstreetmap.de/repository/snapshots/</url>
+            <snapshots>
+                <enabled>true</enabled>
+                <updatePolicy>daily</updatePolicy>
+            </snapshots>
         </repository>
     </repositories>
     <dependencies>
+        <dependency>
+            <groupId>org.openstreetmap.josm</groupId>
+            <artifactId>josm</artifactId>
+            <version>${josm.compile.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.commonmark</groupId>
             <artifactId>commonmark</artifactId>
             <version>0.22.0</version>
             <scope>compile</scope>
         </dependency>
+        <!-- JOSM core ships these at runtime; they are listed so compilation does not depend on the josm POM -->
+        <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+            <version>2.1.3</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+            <version>2.1.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-jcs3-core</artifactId>
+            <version>3.2.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <version>1.1.7</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.openstreetmap.josm</groupId>
+            <artifactId>josm-unittest</artifactId>
+            <version>${josm.unittest.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.jmockit</groupId>
             <artifactId>jmockit</artifactId>
+            <version>${jmockit.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.wiremock</groupId>
             <artifactId>wiremock</artifactId>
+            <version>3.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.spotbugs</groupId>
+            <artifactId>spotbugs-annotations</artifactId>
+            <version>4.9.8</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.classgraph</groupId>
+            <artifactId>classgraph</artifactId>
+            <version>4.8.184</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.ginsberg</groupId>
+            <artifactId>junit5-system-exit</artifactId>
+            <version>1.1.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>4.3.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.platform</groupId>
             <artifactId>junit-platform-launcher</artifactId>
+            <version>${junit.platform.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.platform</groupId>
             <artifactId>junit-platform-suite</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.vintage</groupId>
-            <artifactId>junit-vintage-engine</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-params</artifactId>
+            <version>${junit.platform.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-migrationsupport</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
     <build>
+        <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+        <testSourceDirectory>${plugin.test.dir}/unit</testSourceDirectory>
+        <resources>
+            <resource>
+                <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+        </resources>
+        <testResources>
+            <testResource>
+                <directory>${plugin.test.dir}/resources</directory>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <manifestEntries>
-                            <Plugin-Link>${plugin.link}</Plugin-Link>
-                            <Plugin-Icon>${plugin.icon}</Plugin-Icon>
-                            <Plugin-Canloadatruntime>${plugin.canloadatruntime}</Plugin-Canloadatruntime>
-                            <Plugin-Minimum-Java-Version>${plugin.minimum.java.version}</Plugin-Minimum-Java-Version>
-                        </manifestEntries>
-                    </archive>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <release>${java.lang.version}</release>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-                <version>2.43.0</version>
-                <configuration>
-                    <java>
-                        <eclipse>
-                            <version>4.21</version>
-                            <file>${project.basedir}/../00_core_tools/eclipse/formatter.xml</file>
-                        </eclipse>
-                        <removeUnusedImports/>
-                        <licenseHeader>
-                            <content>// License: GPL. For details, see LICENSE file.</content>
-                        </licenseHeader>
-                    </java>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.4.1</version>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <id>enforce-versions</id>
@@ -160,6 +203,103 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${java.lang.version}</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <!-- Sets ${org.jmockit:jmockit:jar} for the surefire javaagent -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+                <configuration>
+                    <argLine>-javaagent:${org.jmockit:jmockit:jar} --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.desktop/javax.swing.text.html=ALL-UNNAMED</argLine>
+                    <properties>
+                        <configurationParameters>
+                            file.encoding = UTF-8
+                            java.locale.providers = SPI,CLDR
+                            junit.jupiter.extensions.autodetection.enabled = true
+                        </configurationParameters>
+                    </properties>
+                    <systemPropertyVariables>
+                        <josm.home>${project.build.directory}/josm.home</josm.home>
+                        <josm.test.data>${plugin.test.dir}/resources</josm.test.data>
+                        <java.awt.headless>${test.headless}</java.awt.headless>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Plugin-Mainversion>${plugin.main.version}</Plugin-Mainversion>
+                            <Plugin-Version>${plugin.version}</Plugin-Version>
+                            <Plugin-Class>${plugin.class}</Plugin-Class>
+                            <Plugin-Description>${plugin.description}</Plugin-Description>
+                            <Plugin-Date>${maven.build.timestamp}</Plugin-Date>
+                            <Author>${plugin.author}</Author>
+                            <Plugin-Link>${plugin.link}</Plugin-Link>
+                            <Plugin-Icon>${plugin.icon}</Plugin-Icon>
+                            <Plugin-Canloadatruntime>${plugin.canloadatruntime}</Plugin-Canloadatruntime>
+                            <Plugin-Minimum-Java-Version>${plugin.minimum.java.version}</Plugin-Minimum-Java-Version>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <!-- Bundle commonmark into the plugin jar -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <finalName>${project.name}</finalName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>2.43.0</version>
+                <configuration>
+                    <java>
+                        <eclipse>
+                            <version>4.21</version>
+                            <file>${project.basedir}/tools/eclipse/formatter.xml</file>
+                        </eclipse>
+                        <removeUnusedImports/>
+                        <licenseHeader>
+                            <content>// License: GPL. For details, see LICENSE file.</content>
+                        </licenseHeader>
+                    </java>
+                </configuration>
             </plugin>
         </plugins>
     </build>
