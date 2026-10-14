@@ -3,7 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 
@@ -11,17 +11,17 @@ import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
 
 /**
- * A class holding modified objects
+ * A class holding modified objects. It is used from both the EDT and the worker, so it is thread-safe.
  */
 public final class ModifiedObjects {
     /**
      * The current task list (these should all be locked tasks)
      */
-    private static final Map<Long, Task> LOCKED_TASK_MAP = new TreeMap<>();
+    private static final Map<Long, Task> LOCKED_TASK_MAP = new ConcurrentSkipListMap<>();
     /**
      * The modified task list
      */
-    private static final Map<Long, ModifiedTask> MODIFIED_TASK_MAP = new TreeMap<>();
+    private static final Map<Long, ModifiedTask> MODIFIED_TASK_MAP = new ConcurrentSkipListMap<>();
 
     /**
      * Don't allow this static class to be instantiated
@@ -92,13 +92,13 @@ public final class ModifiedObjects {
     }
 
     /**
-     * Remove a modified task
+     * Remove a modified task, unless it was replaced by a newer change in the meantime
      *
      * @param task The task to remove
      * @return {@code true} if the task was removed
      */
     public static boolean removeModifiedTask(ModifiedTask task) {
-        return MODIFIED_TASK_MAP.remove(task.task().id()) != null;
+        return MODIFIED_TASK_MAP.remove(task.task().id(), task);
     }
 
     /**

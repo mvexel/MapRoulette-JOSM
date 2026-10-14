@@ -3,10 +3,13 @@ package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
 import org.openstreetmap.josm.actions.upload.UploadHook;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
@@ -44,12 +47,25 @@ public class LateUploadHook implements UploadHook {
         MODIFIED_TASKS_UPLOADED.removeListener(consumer);
     }
 
+    /**
+     * JOSM calls this on the EDT, so the status updates are sent from the worker. The worker runs them before the
+     * upload, which JOSM queues on the worker after this returns.
+     */
     @Override
     public void modifyChangesetTags(Map<String, String> tags) {
         if (!MapRouletteAuth.isAvailable()) {
             return;
         }
         final var modifiedTasks = ModifiedObjects.getModifiedTasks();
+        MainApplication.worker.execute(() -> sendStatuses(modifiedTasks));
+    }
+
+    /**
+     * Send the status of modified tasks, release them and link them to the changeset
+     *
+     * @param modifiedTasks The modified tasks
+     */
+    private static void sendStatuses(List<ModifiedTask> modifiedTasks) {
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
         for (ModifiedTask entry : modifiedTasks) {
             if (entry.status() != TaskStatus.CREATED) {
@@ -63,11 +79,11 @@ public class LateUploadHook implements UploadHook {
                 } catch (IOException e) {
                     ExceptionDialogUtil.explainException(e);
                 } catch (RuntimeException e) {
-                    // Never abort the OSM upload because of a MapRoulette problem
+                    // One task failing must not stop the others (or reach the worker)
                     BugReport.intercept(e).put("task", entry.task().id()).warn();
                 }
             }
         }
-        MODIFIED_TASKS_UPLOADED.fireEvent(l -> l.accept(updatedTasks));
+        GuiHelper.runInEDT(() -> MODIFIED_TASKS_UPLOADED.fireEvent(l -> l.accept(updatedTasks)));
     }
 }
