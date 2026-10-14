@@ -57,7 +57,7 @@ jobs:
           cache: maven
       - name: Compare pom.xml and build.xml
         run: |
-          main_version=$(mvn -B -q help:evaluate -Dexpression=plugin.main.version -DforceStdout)
+          main_version=$(mvn -B -U -q help:evaluate -Dexpression=plugin.main.version -DforceStdout)
           ant_version=$(sed -n 's/.*name="plugin.main.version" value="\([0-9]*\)".*/\1/p' build.xml)
           if [ "$main_version" != "$ant_version" ]; then
             echo "::error::pom.xml plugin.main.version ($main_version) != build.xml ($ant_version)"
@@ -74,4 +74,4 @@ jobs:
           distribution: temurin
           java-version: 17
           cache: maven
-      - run: mvn -B spotless:check
+      - run: mvn -B -U spotless:check
