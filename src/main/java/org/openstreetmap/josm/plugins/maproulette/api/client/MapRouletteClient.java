@@ -210,7 +210,8 @@ public final class MapRouletteClient {
             if (body != null) {
                 client.setRequestBody(body);
                 client.setHeader("Content-Type", contentType);
-            } else if (!"GET".equals(method) && !"DELETE".equals(method)) {
+            } else if (!"GET".equals(method)) {
+                // JOSM's HttpClient needs a body for PUT, POST and DELETE
                 client.setRequestBody(new byte[0]);
             }
             try {
