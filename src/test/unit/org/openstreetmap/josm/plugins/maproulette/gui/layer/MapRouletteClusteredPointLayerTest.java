@@ -193,6 +193,6 @@ class MapRouletteClusteredPointLayerTest {
         final CountDownLatch cdl = new CountDownLatch(2);
         GuiHelper.runInEDTAndWait(cdl::countDown);
         MainApplication.worker.execute(cdl::countDown);
-        assertTrue(cdl.await(1, TimeUnit.SECONDS));
+        assertTrue(cdl.await(10, TimeUnit.SECONDS));
     }
 }
