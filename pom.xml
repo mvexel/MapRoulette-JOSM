@@ -29,6 +29,10 @@
         <jmockit.version>1.49</jmockit.version>
         <junit.version>5.14.2</junit.version>
         <junit.platform.version>1.14.2</junit.platform.version>
+        <!-- The JOSM plugins Ant build (build-common.xml) resolves these tools by version; the plugin parent POM used to set them -->
+        <jacoco.version>0.8.13</jacoco.version>
+        <checkstyle.version>10.26.1</checkstyle.version>
+        <spotbugs.version>4.9.8</spotbugs.version>
     </properties>
     <repositories>
         <repository>
