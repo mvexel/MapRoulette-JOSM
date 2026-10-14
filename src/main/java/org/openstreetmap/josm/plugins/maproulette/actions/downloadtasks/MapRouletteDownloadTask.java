@@ -90,9 +90,8 @@ public class MapRouletteDownloadTask extends AbstractDownloadTask<Collection<Tas
             c.cancel();
         } else if (this.downloadTask instanceof DownloadTask t) {
             t.cancel();
-        } else {
-            throw new UnsupportedOperationException("Cannot cancel " + this.downloadTask);
         }
+        // Otherwise no download was started, so there is nothing to cancel
     }
 
     @Override
