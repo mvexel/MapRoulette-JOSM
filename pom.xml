@@ -17,6 +17,8 @@
         <josm.compile.version>1.5-SNAPSHOT</josm.compile.version>
         <josm.unittest.version>1.5-SNAPSHOT</josm.unittest.version>
         <plugin.version>${project.version}</plugin.version>
+        <!-- Where the plugin jar goes; JOSMPluginAction sets this to the JOSM checkout's dist directory -->
+        <plugin.dist.dir>${project.build.directory}</plugin.dist.dir>
         <plugin.author>Taylor Smock</plugin.author>
         <plugin.class>org.openstreetmap.josm.plugins.maproulette.MapRoulette</plugin.class>
         <plugin.description>MapRoulette Tasks in JOSM</plugin.description>
@@ -282,6 +284,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <outputDirectory>${plugin.dist.dir}</outputDirectory>
                             <finalName>${project.name}</finalName>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                         </configuration>
