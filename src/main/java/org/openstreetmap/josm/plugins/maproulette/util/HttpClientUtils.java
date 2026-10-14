@@ -86,8 +86,7 @@ public final class HttpClientUtils {
      * @return The parameters to send the server
      */
     static String query(Map<String, String> queryParameters) {
-        return queryParameters.entrySet().stream()
-                .map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
+        return queryParameters.entrySet().stream().map(entry -> encode(entry.getKey()) + "=" + encode(entry.getValue()))
                 .collect(Collectors.joining("&", "?", ""));
     }
 

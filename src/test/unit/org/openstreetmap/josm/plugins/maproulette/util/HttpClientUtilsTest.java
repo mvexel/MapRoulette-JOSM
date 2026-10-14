@@ -28,8 +28,7 @@ class HttpClientUtilsTest {
         final var parameters = new TreeMap<String, String>();
         parameters.put("comment", "Fixed a & b #1 = ok?");
         parameters.put("tags", "über,road");
-        assertEquals("?comment=Fixed+a+%26+b+%231+%3D+ok%3F&tags=%C3%BCber%2Croad",
-                HttpClientUtils.query(parameters));
+        assertEquals("?comment=Fixed+a+%26+b+%231+%3D+ok%3F&tags=%C3%BCber%2Croad", HttpClientUtils.query(parameters));
     }
 
     @Test

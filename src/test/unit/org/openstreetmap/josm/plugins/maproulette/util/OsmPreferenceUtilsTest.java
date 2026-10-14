@@ -22,11 +22,11 @@ class OsmPreferenceUtilsTest {
      */
     @Test
     void testCustomOsmPreferenceKeyIsUsed() throws Exception {
-        WireMocks.current().register(get(urlPathEqualTo("/api/0.6/user/preferences")).willReturn(aResponse()
-                .withStatus(200)
-                .withBody("<osm version=\"0.6\"><preferences>"
-                        + "<preference k=\"maproulette_apikey_v2\" v=\"1|defaultKey\"/>"
-                        + "<preference k=\"custom_apikey\" v=\"2|customKey\"/>" + "</preferences></osm>")));
+        WireMocks.current()
+                .register(get(urlPathEqualTo("/api/0.6/user/preferences")).willReturn(aResponse().withStatus(200)
+                        .withBody("<osm version=\"0.6\"><preferences>"
+                                + "<preference k=\"maproulette_apikey_v2\" v=\"1|defaultKey\"/>"
+                                + "<preference k=\"custom_apikey\" v=\"2|customKey\"/>" + "</preferences></osm>")));
         Config.getPref().put(MapRouletteConfig.apiKeyPreferenceKey(MapRouletteConfig.getBaseUrl()), "custom_apikey");
         assertEquals("2|customKey", OsmPreferenceUtils.getMapRouletteApiKey());
     }

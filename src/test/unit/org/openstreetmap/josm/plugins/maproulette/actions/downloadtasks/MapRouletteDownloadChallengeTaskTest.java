@@ -23,7 +23,7 @@ class MapRouletteDownloadChallengeTaskTest {
 
     @Test
     void testRejectsMalformedScheme() {
-        assertFalse(new MapRouletteDownloadChallengeTask().acceptsUrl("https//maproulette.org/browse/challenges/1",
-                false));
+        assertFalse(
+                new MapRouletteDownloadChallengeTask().acceptsUrl("https//maproulette.org/browse/challenges/1", false));
     }
 }

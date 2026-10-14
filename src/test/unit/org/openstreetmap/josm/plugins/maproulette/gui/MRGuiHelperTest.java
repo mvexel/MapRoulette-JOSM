@@ -35,8 +35,8 @@ class MRGuiHelperTest {
 
     @Test
     void testFilterKeysRemovesMapRouletteIdentifiers() {
-        assertEquals(List.of("building", "addr:street"), MRGuiHelper
-                .filterKeys(Stream.of("building", "identifier", "addr:street", "@id", "osm_id")).toList());
+        assertEquals(List.of("building", "addr:street"),
+                MRGuiHelper.filterKeys(Stream.of("building", "identifier", "addr:street", "@id", "osm_id")).toList());
     }
 
     /**
