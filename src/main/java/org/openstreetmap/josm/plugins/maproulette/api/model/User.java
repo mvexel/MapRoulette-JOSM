@@ -13,7 +13,6 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.Achievement;
  * @param modified         The date that the user was modified
  * @param osmProfile       The osm profile for the user
  * @param grants           Any grants for the user
- * @param apiKey           The MR api key for the user
  * @param guest            {@code true} if the user is a guest
  * @param settings         The settings for the user
  * @param properties       misc properties for the user
@@ -23,6 +22,6 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.Achievement;
  * @param achievements     The achievements for this user
  */
 public record User(long id, Instant created, Instant modified, OSMProfile osmProfile, Grant[] grants,
-                   String apiKey, boolean guest, UserSettings settings, String properties, int score,
+                   boolean guest, UserSettings settings, String properties, int score,
                    long followingGroupId, long followersGroupId, Achievement[] achievements) implements BaseUser, Identifier {
 }

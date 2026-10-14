@@ -31,7 +31,8 @@ public interface AuthProvider {
     boolean isAvailable();
 
     /**
-     * Add the credentials to a request
+     * Add the credentials to a request. A provider that adds a token must only add it to https requests to the
+     * configured MapRoulette server's host.
      *
      * @param client The client to add the credentials to
      * @throws UnauthorizedException if the user is not logged in
