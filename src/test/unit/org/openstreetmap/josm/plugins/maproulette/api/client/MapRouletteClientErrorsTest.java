@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -184,6 +185,8 @@ class MapRouletteClientErrorsTest {
                 () -> client().put(START, Collections.emptyMap(), null, JSON));
         assertFalse(exception.heldTaskId().isPresent());
         assertEquals(0, exception.bundledTaskIds().length);
+        // Not a lock: the dialog shows the server's explanation instead of "task already started"
+        assertEquals(Optional.of("Conflict found in upload"), exception.serverMessage());
     }
 
     @Test

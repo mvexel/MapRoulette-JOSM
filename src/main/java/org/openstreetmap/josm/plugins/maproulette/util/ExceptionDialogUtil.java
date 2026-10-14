@@ -46,12 +46,16 @@ public final class ExceptionDialogUtil {
                     MainApplication.getMainFrame(), message, tr("MapRoulette login unavailable"),
                     JOptionPane.INFORMATION_MESSAGE));
         } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
-            final var message = lockHeld.heldTaskId().isPresent()
-                    ? tr("You already have MapRoulette task {0} started. MapRoulette allows one started task at a time;"
-                            + " stop that task first.", lockHeld.heldTaskId().getAsLong())
-                    : tr("You already have a MapRoulette task started. MapRoulette allows one started task at a time;"
-                            + " stop that task first.");
-            showErrorDialog(message, tr("MapRoulette task already started"), null);
+            if (lockHeld.heldTaskId().isPresent()) {
+                showErrorDialog(
+                        tr("You already have MapRoulette task {0} started. MapRoulette allows one started task"
+                                + " at a time; stop that task first.", lockHeld.heldTaskId().getAsLong()),
+                        tr("MapRoulette task already started"), null);
+            } else {
+                // MapRoulette also answers 409 for conflicts that are not about locks, such as OSM change conflicts
+                showErrorDialog(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
+                        .orElseGet(() -> tr("MapRoulette reported a conflict.")), tr("MapRoulette conflict"), null);
+            }
         } else if (exception instanceof MapRouletteForbiddenException) {
             showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
                     tr("Not allowed"), null);

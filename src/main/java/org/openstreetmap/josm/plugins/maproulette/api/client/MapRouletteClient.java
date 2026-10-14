@@ -231,6 +231,8 @@ public final class MapRouletteClient {
                     return parser.parse(reader);
                 } catch (JsonException | IllegalArgumentException | IllegalStateException | ClassCastException
                         | NullPointerException | DateTimeException | JosmRuntimeException e) {
+                    // Keep the stack trace for bug reports; this can also be a parser bug
+                    Logging.debug(e);
                     throw new MapRouletteParseException("Could not read the MapRoulette response from " + url, e);
                 }
             } catch (MapRouletteException e) {
@@ -260,7 +262,7 @@ public final class MapRouletteClient {
         case 403 -> new MapRouletteForbiddenException("MapRoulette refused the request for " + url + message);
         case 404 -> new MapRouletteNotFoundException("Not found in MapRoulette: " + url + message);
         case 409 -> new MapRouletteLockHeldException("MapRoulette conflict for " + url + message,
-                lockedTaskId(safeBody), bundledTaskIds(safeBody));
+                serverMessage(safeBody), lockedTaskId(safeBody), bundledTaskIds(safeBody));
         default -> new MapRouletteHttpException("MapRoulette answered HTTP " + status + " for " + url + message, status,
                 safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())));
         };
@@ -284,6 +286,18 @@ public final class MapRouletteClient {
             }
         }
         return message.toString();
+    }
+
+    /**
+     * Read the {@code message} of a MapRoulette error body
+     *
+     * @param body The body
+     * @return The message, or {@code null} if there is none
+     */
+    @Nullable
+    private static String serverMessage(String body) {
+        final var object = jsonObject(body);
+        return object != null && object.get("message")instanceof JsonString value ? value.getString() : null;
     }
 
     /**
@@ -344,13 +358,15 @@ public final class MapRouletteClient {
      * @param path  The path below the API base URL
      * @param query The query parameters
      * @return The URL
+     * @throws MapRouletteException if the configured server URL is not valid
      */
-    static URL url(String path, Map<String, String> query) {
+    static URL url(String path, Map<String, String> query) throws MapRouletteException {
         final var base = MapRouletteConfig.getBaseUrl() + path;
         try {
             return URI.create(query == null || query.isEmpty() ? base : base + query(query)).toURL();
         } catch (MalformedURLException | IllegalArgumentException e) {
-            throw new JosmRuntimeException(e);
+            // The base URL comes from the user's preferences
+            throw new MapRouletteException("The MapRoulette server URL is not valid: " + base, e);
         }
     }
 
