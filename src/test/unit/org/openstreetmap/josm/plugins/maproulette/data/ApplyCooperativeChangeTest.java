@@ -50,16 +50,30 @@ class ApplyCooperativeChangeTest {
     }
 
     /**
-     * Objects that are present are still changed when another object in the task is missing
+     * A task is applied completely or not at all: if one of its objects is missing, the others are not changed
      */
     @Test
-    void testPresentPrimitiveIsChanged() {
+    void testPartialChangeIsNotApplied() {
         final long presentId = 1;
         final var ds = new DataSet();
         final var node = new Node(presentId, 1);
         node.setCoor(new LatLon(0, 0));
         ds.addPrimitive(node);
-        final var command = new ApplyCooperativeChange(changeFor(presentId, 2)).generateCommand(ds);
+        assertNull(new ApplyCooperativeChange(changeFor(presentId, 2)).generateCommand(ds));
+        assertNull(node.get("highway"));
+    }
+
+    /**
+     * Objects are changed when all of them are present
+     */
+    @Test
+    void testPresentPrimitivesAreChanged() {
+        final long presentId = 1;
+        final var ds = new DataSet();
+        final var node = new Node(presentId, 1);
+        node.setCoor(new LatLon(0, 0));
+        ds.addPrimitive(node);
+        final var command = new ApplyCooperativeChange(changeFor(presentId)).generateCommand(ds);
         assertNotNull(command);
         command.executeCommand();
         assertEquals("crossing", node.get("highway"));

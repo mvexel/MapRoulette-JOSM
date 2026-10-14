@@ -27,6 +27,7 @@ import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
@@ -161,14 +162,25 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
             }
             ModifiedObjects.addModifiedTask(modifiedTask);
             final var editDataSet = OsmDataManager.getInstance().getEditDataSet();
-            if (task.isCooperativeWorkOsmChange() && this.status == TaskStatus.FIXED && editDataSet != null) {
+            if ((task.isCooperativeWorkOsmChange() || task.isCooperativeWorkOsc()) && this.status == TaskStatus.FIXED
+                    && editDataSet == null) {
+                // Nothing to apply the fix to; don't report the task as fixed
+                new Notification(tr("Open an editable data layer before marking this task as fixed"))
+                        .setIcon(JOptionPane.WARNING_MESSAGE).show();
+                ModifiedObjects.removeModifiedTask(modifiedTask);
+                return;
+            }
+            if (task.isCooperativeWorkOsmChange() && this.status == TaskStatus.FIXED) {
                 final var command = new ApplyCooperativeChange(
                         Objects.requireNonNull(task.cooperativeWorkAsOsmChange())).generateCommand(editDataSet);
-                if (command != null) {
-                    command.executeCommand();
-                    if (!command.getParticipatingPrimitives().isEmpty()) {
-                        UndoRedoHandler.getInstance().add(command, false);
-                    }
+                if (command == null) {
+                    // The task's objects are not all downloaded (the user has been told which); don't report it as fixed
+                    ModifiedObjects.removeModifiedTask(modifiedTask);
+                    return;
+                }
+                command.executeCommand();
+                if (!command.getParticipatingPrimitives().isEmpty()) {
+                    UndoRedoHandler.getInstance().add(command, false);
                 }
             } else if (task.isCooperativeWorkOsc() && this.status == TaskStatus.FIXED) {
                 final var message = tr("Apply OSC directly to the edit layer?");
@@ -178,8 +190,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         JOptionPane.YES_OPTION, options, options[0]);
                 final var osc = Objects.requireNonNull(task.cooperativeWorkAsOsc());
                 if (option == 0) {
-                    UndoRedoHandler.getInstance()
-                            .add(new ApplyOscChange(OsmDataManager.getInstance().getEditDataSet(), osc.a));
+                    UndoRedoHandler.getInstance().add(new ApplyOscChange(editDataSet, osc.a));
                 } else if (option == 1) {
                     final var layer = new OsmDataLayer(osc.a, task.name(), null);
                     MainApplication.getLayerManager().addLayer(layer);
