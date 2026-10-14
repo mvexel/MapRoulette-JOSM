@@ -204,7 +204,8 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
         final var mrColorOpacity = new Color(mrColor.getRed(), mrColor.getGreen(), mrColor.getBlue(), 128);
         final var taskListPanel = MainApplication.getMap().getToggleDialog(TaskListPanel.class);
 
-        final var listSelected = taskListPanel.getSelected();
+        final Collection<TaskClusteredPoint> listSelected = taskListPanel == null ? Collections.emptySet()
+                : taskListPanel.getSelected();
 
         painter.enableSlowOperations(mv.getMapMover() == null || !mv.getMapMover().movementInProgress()
                 || !PROPERTY_HIDE_LABELS_WHILE_DRAGGING.get());

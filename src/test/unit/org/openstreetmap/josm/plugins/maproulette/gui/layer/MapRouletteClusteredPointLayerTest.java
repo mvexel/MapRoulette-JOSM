@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -173,6 +174,47 @@ class MapRouletteClusteredPointLayerTest {
         } finally {
             MainApplication.getMap().removeToggleDialog(panel);
         }
+    }
+
+    /**
+     * Painting must not fail when the task list dialog is not in the map frame
+     */
+    @Test
+    void testPaintWithoutTaskListPanel() throws ExecutionException, InterruptedException, TimeoutException {
+        final var layer = downloadTestLayer();
+        final var mv = MainApplication.getMap().mapView;
+        final var image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+        final var graphics = image.createGraphics();
+        try {
+            assertDoesNotThrow(() -> layer.paint(graphics, mv, mv.getRealBounds()));
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    /**
+     * Download tasks into a new layer using a task list panel, then remove the panel from the map frame
+     *
+     * @return The downloaded layer
+     */
+    private static MapRouletteClusteredPointLayer downloadTestLayer()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "downloadTestLayer", null));
+        final var bounds = new Bounds(36.0770518, -119.1139411, 36.0839216, -119.0992458);
+        new MockUp<MapViewState.MapViewRectangle>() {
+            @Mock
+            public Bounds getLatLonBoundsBox() {
+                return bounds;
+            }
+        };
+        final var panel = new TaskListPanel();
+        MainApplication.getMap().addToggleDialog(panel);
+        TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
+        sync();
+        MainApplication.getMap().removeToggleDialog(panel);
+        final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
+        assertEquals(1, layers.size());
+        return layers.get(0);
     }
 
     private static MouseEvent generateMouseEvent(boolean shift, double lat, double lon) {
