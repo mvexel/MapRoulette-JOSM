@@ -85,7 +85,9 @@ class OAuthAuthProviderTest {
     }
 
     private OAuthAuthProvider provider() {
-        return new OAuthAuthProvider(this.root, this.browser, this.clock);
+        final var provider = new OAuthAuthProvider(this.root, this.browser, this.clock);
+        provider.loadStored();
+        return provider;
     }
 
     private static String tokenResponse(String access, String refresh) {
@@ -310,6 +312,38 @@ class OAuthAuthProviderTest {
         final var tokens = OAuthTokens.fromTokenResponse(tokenResponse(ACCESS_1, REFRESH_1), Instant.EPOCH);
         assertFalse(tokens.toString().contains(ACCESS_1) || tokens.toString().contains(REFRESH_1));
         assertEquals(tokens, OAuthTokens.fromStorage(tokens.toStorage()));
+    }
+
+    /**
+     * JOSM keeps the consumer of a login that timed out, so it must refuse a late answer
+     */
+    @Test
+    void testCallbackAfterTimeoutRefused() {
+        final var code = new java.util.concurrent.CompletableFuture<String>();
+        code.cancel(false);
+        final var consumer = new LoopbackAuthorization.CodeConsumer("our-state", code);
+        assertThrows(Exception.class,
+                () -> consumer.validateRequest("127.0.0.1", "", Map.of("state", "our-state", "code", "x")));
+    }
+
+    @Test
+    @LoggingHandler
+    void testLoginRefreshLogoutLoggedAtInfo(LoggingHandler.TestHandler logs) throws Exception {
+        final var provider = loggedIn();
+        stubToken("refresh_token", ACCESS_2, REFRESH_2);
+        this.clock.now = this.clock.now.plusSeconds(900);
+        provider.authenticate(request(), true);
+        provider.logOut();
+        final var info = logs.getRecords().stream().filter(r -> r.getLevel().equals(Logging.LEVEL_INFO))
+                .map(r -> String.valueOf(r.getMessage())).toList();
+        assertAll(
+                () -> assertTrue(info.stream().anyMatch(m -> m.startsWith("Logged in to MapRoulette")), info::toString),
+                () -> assertTrue(info.stream().anyMatch(m -> m.startsWith("Refreshed the MapRoulette login")),
+                        info::toString),
+                () -> assertTrue(info.stream().anyMatch(m -> m.startsWith("Logged out of MapRoulette")),
+                        info::toString),
+                () -> assertFalse(info.stream()
+                        .anyMatch(m -> Stream.of(ACCESS_1, ACCESS_2, REFRESH_1, REFRESH_2).anyMatch(m::contains))));
     }
 
     @Test

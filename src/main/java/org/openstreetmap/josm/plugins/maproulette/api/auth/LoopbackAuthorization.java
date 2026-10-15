@@ -38,6 +38,9 @@ final class LoopbackAuthorization implements OAuthAuthProvider.Authorizer {
 
     @Override
     public String authorize(URI authorizeUri, String state) throws MapRouletteException, InterruptedException {
+        if (this.pending != null) {
+            throw new MapRouletteException(tr("A MapRoulette login is already waiting for the browser."));
+        }
         final var code = new CompletableFuture<String>();
         this.pending = code;
         AuthorizationHandler.addAuthorizationConsumer(state, new CodeConsumer(state, code));
@@ -88,7 +91,9 @@ final class LoopbackAuthorization implements OAuthAuthProvider.Authorizer {
     @Override
     public void validateRequest(String sender, String request, Map<String, String> args)
             throws RequestHandler.RequestHandlerBadRequestException {
-        if (!state.equals(args.get("state")) || args.getOrDefault("code", "").isEmpty()) {
+        // JOSM keeps a consumer until it handles a request, so one from a login that timed out or was cancelled
+        // must refuse late answers
+        if (code.isDone() || !state.equals(args.get("state")) || args.getOrDefault("code", "").isEmpty()) {
             throw new RequestHandler.RequestHandlerBadRequestException("Not a MapRoulette login");
         }
     }

@@ -99,7 +99,21 @@ public final class OAuthAuthProvider implements AuthProvider {
         this.host = host(root);
         this.authorizer = authorizer;
         this.clock = clock;
-        this.tokens = load(this.host);
+    }
+
+    /**
+     * Read the stored login. Credential stores like a system keyring can block, so call it off the EDT.
+     */
+    public void loadStored() {
+        final var stored = load(this.host);
+        synchronized (this.tokenLock) {
+            if (this.tokens == null) {
+                this.tokens = stored;
+            }
+        }
+        if (stored != null) {
+            MapRouletteClient.getInstance().fireAuthChanged();
+        }
     }
 
     /**
@@ -246,6 +260,7 @@ public final class OAuthAuthProvider implements AuthProvider {
         synchronized (this.tokenLock) {
             store(received);
         }
+        Logging.info("Logged in to MapRoulette at " + this.root);
         MapRouletteClient.getInstance().fireAuthChanged();
     }
 
@@ -265,6 +280,7 @@ public final class OAuthAuthProvider implements AuthProvider {
             current = this.tokens;
             store(null);
         }
+        Logging.info("Logged out of MapRoulette at " + this.root);
         MapRouletteClient.getInstance().fireAuthChanged();
         if (current != null) {
             final var body = new LinkedHashMap<String, String>();
@@ -319,6 +335,8 @@ public final class OAuthAuthProvider implements AuthProvider {
             store(received);
             if (received == null) {
                 MapRouletteClient.getInstance().fireAuthChanged();
+            } else {
+                Logging.info("Refreshed the MapRoulette login at " + this.root);
             }
             return received;
         }

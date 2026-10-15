@@ -13,6 +13,7 @@ import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -80,8 +81,14 @@ public final class MapRouletteAuth {
                 && current.server().equals(OAuthAuthProvider.serverRoot(apiUrl))) {
             return;
         }
+        if (client.auth()instanceof OAuthAuthProvider previous) {
+            previous.cancelLogIn();
+        }
         final var provider = OAuthAuthProvider.forServer(apiUrl);
         client.setAuthProvider(provider == null ? AuthProvider.NONE : provider);
+        if (provider != null) {
+            Workers.execute(provider::loadStored);
+        }
     }
 
     /**
