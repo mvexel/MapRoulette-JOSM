@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.maproulette.api.client;
 
 import java.io.Serial;
+import java.util.Optional;
 
 /**
  * MapRoulette answered with an HTTP error that has no more specific exception
@@ -47,5 +48,14 @@ public class MapRouletteHttpException extends MapRouletteException {
      */
     public String bodyExcerpt() {
         return this.bodyExcerpt;
+    }
+
+    /**
+     * Get the {@code message} MapRoulette sent with the error
+     *
+     * @return The message, if the body has one
+     */
+    public Optional<String> serverMessage() {
+        return Optional.ofNullable(MapRouletteClient.serverMessage(this.bodyExcerpt));
     }
 }

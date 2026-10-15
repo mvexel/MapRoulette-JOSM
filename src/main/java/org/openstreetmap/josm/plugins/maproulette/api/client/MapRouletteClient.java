@@ -295,7 +295,7 @@ public final class MapRouletteClient {
      * @return The message, or {@code null} if there is none
      */
     @Nullable
-    private static String serverMessage(String body) {
+    static String serverMessage(String body) {
         final var object = jsonObject(body);
         return object != null && object.get("message")instanceof JsonString value ? value.getString() : null;
     }

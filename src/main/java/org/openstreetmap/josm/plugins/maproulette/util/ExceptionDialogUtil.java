@@ -19,6 +19,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteHttpException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
@@ -64,6 +65,10 @@ public final class ExceptionDialogUtil {
                     tr("Not allowed"), null);
         } else if (exception instanceof MapRouletteNotFoundException) {
             showErrorDialog(tr("MapRoulette does not have this task or challenge (any more)."), tr("Not found"), null);
+        } else if (exception instanceof MapRouletteHttpException httpException && httpException.status() == 400) {
+            // MapRoulette's message says why, for example a status change it does not allow or a paused challenge
+            showErrorDialog(httpException.serverMessage().map(m -> tr("MapRoulette did not accept this: {0}", m))
+                    .orElseGet(() -> tr("MapRoulette did not accept this.")), tr("Not accepted"), null);
         } else if (exception instanceof MapRouletteParseException) {
             showErrorDialog(tr("Could not read the MapRoulette response: {0}", exception.getMessage()),
                     tr("Unexpected MapRoulette response"), null);

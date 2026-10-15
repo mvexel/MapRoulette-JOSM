@@ -40,6 +40,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteHttpException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
@@ -281,6 +282,9 @@ class LateUploadHookTest {
         sync();
         assertNull(ModifiedObjects.getModifiedTask(task.id()));
         assertEquals(1, explained.size(), "The user is told");
+        assertEquals("Invalid task status supplied.",
+                ((MapRouletteHttpException) explained.get(0)).serverMessage().orElseThrow(),
+                "with MapRoulette's reason");
     }
 
     /**
