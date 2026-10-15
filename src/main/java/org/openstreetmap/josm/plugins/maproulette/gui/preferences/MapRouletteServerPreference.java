@@ -13,6 +13,7 @@ import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
 import org.openstreetmap.josm.gui.preferences.SubPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.TabPreferenceSetting;
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Utils;
@@ -62,6 +63,7 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
         }
 
         MapRouletteConfig.setInstance(new MapRouletteConfig(MAPROULETTE_URL.get()));
+        MapRouletteAuth.configure();
         return false;
     }
 

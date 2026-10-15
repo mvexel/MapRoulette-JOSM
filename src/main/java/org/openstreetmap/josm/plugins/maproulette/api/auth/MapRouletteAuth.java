@@ -12,6 +12,7 @@ import javax.swing.JOptionPane;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -47,6 +48,10 @@ public final class MapRouletteAuth {
      * @return The message
      */
     public static String unavailableMessage() {
+        if (MapRouletteClient.getInstance().auth() instanceof OAuthAuthProvider) {
+            return tr("Log in to MapRoulette in the MapRoulette preferences (Login tab) to start tasks and set their "
+                    + "status.");
+        }
         return tr("MapRoulette does not accept logins from JOSM at the moment. "
                 + "You can browse and download tasks, but set task status on the MapRoulette website.");
     }
@@ -57,8 +62,26 @@ public final class MapRouletteAuth {
      * @return The tooltip
      */
     public static String unavailableTooltip() {
+        if (MapRouletteClient.getInstance().auth() instanceof OAuthAuthProvider) {
+            return tr("Log in to MapRoulette in the MapRoulette preferences first.");
+        }
         return tr("Not available while MapRoulette does not accept logins from JOSM. "
                 + "Set task status on the MapRoulette website.");
+    }
+
+    /**
+     * Use the login for the configured MapRoulette server: OAuth if the server accepts logins from JOSM, otherwise
+     * none. Keeps the current login if the server did not change.
+     */
+    public static void configure() {
+        final var client = MapRouletteClient.getInstance();
+        final var apiUrl = MapRouletteConfig.getBaseUrl();
+        if (client.auth()instanceof OAuthAuthProvider current
+                && current.server().equals(OAuthAuthProvider.serverRoot(apiUrl))) {
+            return;
+        }
+        final var provider = OAuthAuthProvider.forServer(apiUrl);
+        client.setAuthProvider(provider == null ? AuthProvider.NONE : provider);
     }
 
     /**

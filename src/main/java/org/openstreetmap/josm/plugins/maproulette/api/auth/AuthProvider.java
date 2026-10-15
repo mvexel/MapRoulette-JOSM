@@ -26,7 +26,7 @@ public interface AuthProvider {
         }
 
         @Override
-        public void authenticate(HttpClient client) {
+        public void authenticate(HttpClient client, boolean loginRequired) {
             // Nothing to add
         }
     };
@@ -62,20 +62,23 @@ public interface AuthProvider {
     Set<Capability> capabilities();
 
     /**
-     * Add the credentials to a request. This must not do IO on the EDT. A provider that adds a token must only add it
-     * to https requests to the configured MapRoulette server's host.
+     * Add the credentials to a request. Called for every request. This must not do IO on the EDT. A provider that
+     * adds a token must only add it to https requests to the configured MapRoulette server's host.
      *
-     * @param client The client to add the credentials to
-     * @throws MapRouletteAuthUnavailableException if the user is not logged in
+     * @param client        The client to add the credentials to
+     * @param loginRequired {@code true} for requests that need a login (writes). Reads should go without a token:
+     *                      MapRoulette refuses app tokens on most read routes.
+     * @throws MapRouletteAuthUnavailableException if the request needs a login and the user is not logged in
      */
-    void authenticate(HttpClient client) throws MapRouletteAuthUnavailableException;
+    void authenticate(HttpClient client, boolean loginRequired) throws MapRouletteAuthUnavailableException;
 
     /**
      * Called once after MapRoulette answers 401
      *
+     * @param failed The request that got the 401, with the credentials it was sent with
      * @return {@code true} if the credentials were refreshed and the request may be sent again (once)
      */
-    default boolean onUnauthorized() {
+    default boolean onUnauthorized(HttpClient failed) {
         return false;
     }
 }

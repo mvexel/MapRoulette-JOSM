@@ -38,7 +38,7 @@ public @interface MapRouletteLogin {
                 }
 
                 @Override
-                public void authenticate(HttpClient client) {
+                public void authenticate(HttpClient client, boolean loginRequired) {
                     // The test server doesn't check credentials
                 }
             });
