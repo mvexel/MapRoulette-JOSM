@@ -105,7 +105,6 @@ public final class TaskListPanel extends ToggleDialog
                 200, false, MapRoulettePreferences.class);
         model = new TaskTableModel();
         MainApplication.getLayerManager().addAndFireLayerChangeListener(model);
-        MainApplication.getLayerManager().addAndFireLayerChangeListener(this);
         table = new JTable(model);
         final var downloadButton = new SideButton(new DownloadDataAction());
         final var lockUnlockAction = new LockUnlockTaskAction(table);
@@ -186,6 +185,8 @@ public final class TaskListPanel extends ToggleDialog
         });
         tableRowSorter.toggleSortOrder(0); // Start with an initial sort
         super.createLayout(panel, true, Arrays.asList(downloadButton, lockUnlockButton, browseButton));
+        // Existing MapRoulette layers call accept() as soon as we listen to them, which needs the table
+        MainApplication.getLayerManager().addAndFireLayerChangeListener(this);
     }
 
     /**
