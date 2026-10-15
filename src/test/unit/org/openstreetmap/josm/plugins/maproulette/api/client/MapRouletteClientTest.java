@@ -17,6 +17,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -131,6 +132,27 @@ class MapRouletteClientTest {
                 aResponse().withStatus(status).withBody("{\"status\":\"NotAuthorized\",\"message\":\"no\"}")));
         assertThrows(MapRouletteAuthUnavailableException.class,
                 () -> MapRouletteClient.getInstance().get("/project/1", Collections.emptyMap(), ProjectParser::parse));
+    }
+
+    /**
+     * A login that may not use a route (such as bundles on servers that do not allow them for apps) is reported as not
+     * supported, not as another mapper's lock
+     */
+    @Test
+    void testInsufficientScopeIsUnsupported() {
+        WireMocks.current().register(get(urlPathEqualTo(PATH))
+                .willReturn(aResponse().withStatus(403).withBody("{\"error\":\"insufficient_scope\"}")));
+        assertThrows(MapRouletteUnsupportedException.class,
+                () -> MapRouletteClient.getInstance().get("/project/1", Collections.emptyMap(), ProjectParser::parse));
+    }
+
+    @Test
+    void testForbiddenIsNotUnsupported() {
+        WireMocks.current().register(get(urlPathEqualTo(PATH))
+                .willReturn(aResponse().withStatus(403).withBody("{\"status\":\"Forbidden\",\"message\":\"no\"}")));
+        final var exception = assertThrows(MapRouletteForbiddenException.class,
+                () -> MapRouletteClient.getInstance().get("/project/1", Collections.emptyMap(), ProjectParser::parse));
+        assertFalse(exception instanceof MapRouletteUnsupportedException);
     }
 
     @Test
