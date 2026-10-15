@@ -264,7 +264,7 @@ public final class MapRouletteClient {
         case 409 -> new MapRouletteLockHeldException("MapRoulette conflict for " + url + message,
                 serverMessage(safeBody), lockedTaskId(safeBody), bundledTaskIds(safeBody));
         default -> new MapRouletteHttpException("MapRoulette answered HTTP " + status + " for " + url + message, status,
-                safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())));
+                safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())), serverMessage(safeBody));
         };
     }
 
@@ -295,7 +295,7 @@ public final class MapRouletteClient {
      * @return The message, or {@code null} if there is none
      */
     @Nullable
-    static String serverMessage(String body) {
+    private static String serverMessage(String body) {
         final var object = jsonObject(body);
         return object != null && object.get("message")instanceof JsonString value ? value.getString() : null;
     }
