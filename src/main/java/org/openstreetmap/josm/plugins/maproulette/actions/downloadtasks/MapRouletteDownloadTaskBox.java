@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -23,9 +24,12 @@ import org.openstreetmap.josm.io.OsmApiException;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -61,6 +65,26 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
         return tr("Do you want to download {0}", url);
     }
 
+    /**
+     * Remove the tasks that someone else has locked, since starting them fails (#46). MapRoulette hides tasks locked by
+     * others, but not the members of a bundle someone else locked; for those, and for tasks a reviewer claimed, it
+     * reports the holder in {@code lockedBy}. A task can be listed once per lock, so the duplicates are merged.
+     *
+     * @param points The tasks from MapRoulette
+     * @return The tasks that are not locked, or locked by this user
+     */
+    static ClusteredPoint[] withoutLockedByOthers(ClusteredPoint[] points) {
+        // Without a MapRoulette login the user id is unknown, so the tasks this plugin started count as the user's
+        final var mine = ModifiedObjects.getLockedTasks().stream().mapToLong(Task::id).boxed()
+                .collect(Collectors.toSet());
+        final var locked = Arrays.stream(points).filter(p -> p.lockedBy() != null).map(ClusteredPoint::id)
+                .collect(Collectors.toSet());
+        locked.removeAll(mine);
+        final var seen = new HashSet<Long>();
+        return Arrays.stream(points).filter(p -> !locked.contains(p.id()) && seen.add(p.id()))
+                .toArray(ClusteredPoint[]::new);
+    }
+
     private static class DownloadTask extends PleaseWaitRunnable {
         private static final ProgressTaskId PROGRESS_TASK_ID = new ProgressTaskId("maproulette",
                 "download tasks in bbox");
@@ -85,8 +109,8 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
         @Override
         protected void realRun() throws IOException, OsmTransferException {
             try {
-                tasks = TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(), bounds.getMaxLat(),
-                        1_000, 0, null, null, false);
+                tasks = withoutLockedByOthers(TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(),
+                        bounds.getMaxLat(), 1_000, 0, null, null, false));
                 final var challenges = Arrays.stream(tasks).mapToLong(TaskClusteredPoint::parentId).distinct()
                         .toArray();
                 for (var challenge : challenges) {

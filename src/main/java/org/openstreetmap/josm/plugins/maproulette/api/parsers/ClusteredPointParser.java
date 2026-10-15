@@ -80,7 +80,8 @@ public final class ClusteredPointParser {
                     optionalLong(object, "completedTimeSpent"),
                     optionalObject(object, "completedBy", UserParser::parse),
                     PointReviewParser.parse(object.getJsonObject("pointReview")), object.getInt("priority", 0),
-                    optionalLong(object, "bundleId"), object.getBoolean("isBundlePrimary", false));
+                    optionalLong(object, "bundleId"), object.getBoolean("isBundlePrimary", false),
+                    optionalLong(object, "lockedBy"));
         }
         return null;
     }

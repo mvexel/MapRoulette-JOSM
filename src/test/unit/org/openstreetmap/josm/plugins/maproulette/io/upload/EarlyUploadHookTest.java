@@ -101,7 +101,7 @@ class EarlyUploadHookTest {
                 Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", title, 0L, "parentName",
                         new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, TaskStatus.CREATED,
                         null, Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
-                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false)));
+                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null)));
         MainApplication.getLayerManager().addLayer(mrLayer);
         Config.getPref().putInt("message." + EarlyUploadHook.PREF_CHECK_IF_FINISHED + ".value", 0);
         Config.getPref().putBoolean("message." + EarlyUploadHook.PREF_CHECK_IF_FINISHED, false);

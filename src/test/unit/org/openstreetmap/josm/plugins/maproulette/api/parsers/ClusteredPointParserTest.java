@@ -40,7 +40,7 @@ class ClusteredPointParserTest {
                 new PointReview(1, photoMC, new PublicUser(9724, null, "Jenn_Bh", null, null),
                         Instant.parse("2022-10-18T07:09:14.455Z"), null, null, null,
                         Instant.parse("2022-10-18T07:08:52.469Z"), new long[0]),
-                0, null, false);
+                0, null, false, null);
         assertRecordsEqual(expected, actual);
     }
 
