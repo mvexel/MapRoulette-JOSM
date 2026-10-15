@@ -70,6 +70,24 @@ class LockRefresherTest {
     }
 
     /**
+     * A task stopped and started again between two refreshes has a new lock, which is refreshed
+     */
+    @Test
+    @MapRouletteLogin
+    void testRestartedTaskIsRefreshed() {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/5/refreshLock"))
+                .willReturn(aResponse().withStatus(403).withBody("{\"status\":\"Forbidden\",\"message\":\"no\"}")));
+        final var task = task(5);
+        ModifiedObjects.addLockedTask(task);
+        LockRefresher.refreshAll();
+        ModifiedObjects.removeLockedTask(task);
+        ModifiedObjects.addLockedTask(task);
+        LockRefresher.refreshAll();
+        wireMock.verifyThat(exactly(2), getRequestedFor(urlPathEqualTo("/api/v2/task/5/refreshLock")));
+    }
+
+    /**
      * Without a login that may refresh locks, nothing is sent
      */
     @Test

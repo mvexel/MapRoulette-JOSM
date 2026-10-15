@@ -66,6 +66,15 @@ public final class LockRefresher {
     }
 
     /**
+     * Forget that the lock on a task was lost, because the user locked it again
+     *
+     * @param taskId The task
+     */
+    static void forget(long taskId) {
+        LOST.remove(taskId);
+    }
+
+    /**
      * Refresh the locks of all started tasks. Call it off the EDT.
      */
     static void refreshAll() {
