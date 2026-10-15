@@ -13,8 +13,9 @@ public final class Workers {
     }
 
     /**
-     * Run a job on {@link MainApplication#worker}. JOSM's worker only logs an exception thrown by a job; this shows
-     * it to the user as a bug report instead.
+     * Run a job on {@link MainApplication#worker}, and show an exception thrown by the job to the user as a bug report.
+     * JOSM's default exception handler does the same for a plain {@code execute}; reporting here also covers jobs
+     * that would otherwise be passed to {@code submit}, whose exceptions JOSM only logs.
      *
      * @param job The job to run
      */
