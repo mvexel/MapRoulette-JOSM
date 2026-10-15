@@ -11,12 +11,14 @@ import jakarta.json.Json;
 import javax.swing.text.html.Option;
 
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.ClusteredPointParser;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
+import org.openstreetmap.josm.tools.Logging;
 
 /**
  * Task API
@@ -164,9 +166,6 @@ public final class TaskAPI {
     public static boolean updateStatus(long task, TaskStatus status, String comment, String tags, Boolean requestReview,
             Map<String, Option> completionResponses) throws IOException {
         Map<String, String> query = new TreeMap<>();
-        if (comment != null && !comment.isBlank()) {
-            query.put("comment", comment);
-        }
         if (tags != null && !tags.isBlank()) {
             query.put("tags", tags);
         }
@@ -184,6 +183,28 @@ public final class TaskAPI {
             body = null;
         }
         MapRouletteClient.getInstance().put(TASK + "/" + task + "/" + status.code(), query, body, null);
+        if (comment != null && !comment.isBlank()) {
+            try {
+                comment(task, comment);
+            } catch (MapRouletteException e) {
+                // The status is set; failing here would send it again
+                Logging.warn("Could not add the comment to MapRoulette task " + task);
+                Logging.warn(e);
+            }
+        }
         return true;
+    }
+
+    /**
+     * Comment on a task. MapRoulette refuses a comment on the status request from apps, so it goes on its own.
+     *
+     * @param task    The task to comment on
+     * @param comment The comment
+     * @throws MapRouletteException if there was a problem communicating with the server
+     */
+    public static void comment(long task, String comment) throws MapRouletteException {
+        final var body = Json.createObjectBuilder().add("comment", comment).build().toString()
+                .getBytes(StandardCharsets.UTF_8);
+        MapRouletteClient.getInstance().post(TASK + "/" + task + "/comment", Collections.emptyMap(), body, null);
     }
 }
