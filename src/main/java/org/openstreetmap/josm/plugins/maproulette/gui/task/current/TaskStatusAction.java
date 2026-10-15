@@ -18,6 +18,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import javax.swing.Action;
+import javax.swing.JCheckBox;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -34,7 +35,6 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
-import org.openstreetmap.josm.gui.widgets.QuadStateCheckBox;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
@@ -280,8 +280,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         final var panel = new JPanel(new GridBagLayout());
         final var comment = new JosmTextArea();
         final var tagBox = new AutoCompComboBox<String>();
-        final var reviewRequested = new QuadStateCheckBox(tr("Request Review"), QuadStateCheckBox.State.UNSET,
-                QuadStateCheckBox.State.SELECTED, QuadStateCheckBox.State.UNSET, QuadStateCheckBox.State.NOT_SELECTED);
+        // MapRoulette can be asked for a review, but not to skip one the user's settings require
+        final var reviewRequested = new JCheckBox(tr("Request Review"));
         comment.setRows(4);
         comment.setColumns(25);
         final var challenge = loaded.challenge();
@@ -303,7 +303,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 JOptionPane.QUESTION_MESSAGE, null, null);
         if (selection == JOptionPane.OK_OPTION) {
             return new ModifiedTask(task, this.status, comment.getText().trim().isEmpty() ? null : comment.getText(),
-                    tagBox.getText().trim().isEmpty() ? null : tagBox.getText(), null,
+                    tagBox.getText().trim().isEmpty() ? null : tagBox.getText(),
+                    reviewRequested.isSelected() ? Boolean.TRUE : null,
                     CurrentTaskPanel.getSelections(this.currentDocumentProvider.get()));
         }
         return null;
