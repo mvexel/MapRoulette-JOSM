@@ -101,6 +101,21 @@ class MapRouletteClientTest {
     }
 
     /**
+     * MapRoulette refuses {@code requestReview=false}, so only a request for review is sent
+     */
+    @Test
+    @MapRouletteLogin
+    void testOnlyReviewRequestIsSent() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(put(urlPathEqualTo("/api/v2/task/1/1")).willReturn(aResponse().withStatus(204)));
+        TaskAPI.updateStatus(1, TaskStatus.FIXED, null, null, Boolean.FALSE, null);
+        wireMock.verifyThat(putRequestedFor(urlPathEqualTo("/api/v2/task/1/1")).withoutQueryParam("requestReview"));
+        TaskAPI.updateStatus(1, TaskStatus.FIXED, null, null, Boolean.TRUE, null);
+        wireMock.verifyThat(
+                putRequestedFor(urlPathEqualTo("/api/v2/task/1/1")).withQueryParam("requestReview", equalTo("true")));
+    }
+
+    /**
      * MapRoulette no longer accepts API keys, so none may be sent
      */
     @Test
