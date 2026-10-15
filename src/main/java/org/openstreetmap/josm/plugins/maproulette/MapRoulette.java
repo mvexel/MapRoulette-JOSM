@@ -14,6 +14,7 @@ import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRoule
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTask;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.gui.LockRefresher;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
@@ -37,6 +38,7 @@ public class MapRoulette extends Plugin {
         this.getPreferenceSetting().ok();
         // The preferences already did this; spelled out because the stored login depends on it
         MapRouletteAuth.configure();
+        LockRefresher.start();
         UploadAction.registerUploadHook(new EarlyUploadHook());
         UploadAction.registerUploadHook(new LateUploadHook(), true);
         OSMDownloadSource.addDownloadType(new MapRouletteDownloadSource());
