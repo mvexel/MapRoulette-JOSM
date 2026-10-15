@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.LongStream;
 
-import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
@@ -55,7 +55,7 @@ public final class IgnoreList {
         if (location < 0) {
             ignoredTasks = insertIntoArray(ignoredTasks, id, convertToInsertionPoint(location));
             save = true;
-            MainApplication.worker.execute(IgnoreList::save);
+            Workers.execute(IgnoreList::save);
         }
     }
 
@@ -121,7 +121,7 @@ public final class IgnoreList {
         if (location >= 0) {
             ignoredTasks = removeFromArray(ignoredTasks, location);
             save = true;
-            MainApplication.worker.execute(IgnoreList::save);
+            Workers.execute(IgnoreList::save);
         }
     }
 
@@ -158,7 +158,7 @@ public final class IgnoreList {
         if (location < 0) {
             ignoredChallenges = insertIntoArray(ignoredChallenges, id, convertToInsertionPoint(location));
             save = true;
-            MainApplication.worker.execute(IgnoreList::save);
+            Workers.execute(IgnoreList::save);
         }
     }
 
@@ -172,7 +172,7 @@ public final class IgnoreList {
         if (location >= 0) {
             ignoredChallenges = removeFromArray(ignoredChallenges, location);
             save = true;
-            MainApplication.worker.execute(IgnoreList::save);
+            Workers.execute(IgnoreList::save);
         }
     }
 

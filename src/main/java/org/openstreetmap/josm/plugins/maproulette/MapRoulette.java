@@ -20,7 +20,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownlo
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
-import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.tools.Logging;
 
 /**
  * The POJO entry point
@@ -54,12 +54,13 @@ public class MapRoulette extends Plugin {
             newFrame.addToggleDialog(new TaskListPanel());
         } else {
             final var lockedTasks = ModifiedObjects.getLockedTasks();
-            MainApplication.worker.submit(() -> {
+            // JOSM may be shutting down, so log failures instead of showing a dialog
+            MainApplication.worker.execute(() -> {
                 for (var task : lockedTasks) {
                     try {
                         TaskAPI.release(task.id());
-                    } catch (IOException e) {
-                        ExceptionDialogUtil.explainException(e);
+                    } catch (IOException | RuntimeException e) {
+                        Logging.warn(e);
                     }
                 }
             });

@@ -48,6 +48,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Shortcut;
 
@@ -114,12 +115,12 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         }
         final var source = e.getSource();
         // Load the challenge for the feedback dialog on the worker, then show the dialogs on the EDT
-        MainApplication.worker.submit(() -> {
+        Workers.execute(() -> {
             final var loaded = task == null ? null : load(task);
             GuiHelper.runInEDT(() -> {
                 handleTask(loaded);
                 if (!selected.isEmpty() && confirmMarkAll()) {
-                    MainApplication.worker.submit(() -> markAll(selected, source));
+                    Workers.execute(() -> markAll(selected, source));
                 } else {
                     updateButtons(source);
                 }

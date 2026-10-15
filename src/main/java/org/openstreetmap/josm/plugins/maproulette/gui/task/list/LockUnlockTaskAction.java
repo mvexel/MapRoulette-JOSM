@@ -81,7 +81,7 @@ final class LockUnlockTaskAction extends JosmAction {
             ids[j] = model.get(this.table.getRowSorter().convertRowIndexToModel(selected[j])).id();
         }
         final var lockedTasks = new ArrayList<Task>();
-        MainApplication.worker.submit(new PleaseWaitRunnable(tr("Starting MapRoulette tasks")) {
+        MainApplication.worker.execute(new PleaseWaitRunnable(tr("Starting MapRoulette tasks")) {
             @Override
             protected void cancel() {
                 // The requests are short; let them finish
@@ -156,7 +156,7 @@ final class LockUnlockTaskAction extends JosmAction {
             stops.add(new Stop(id, locked, locked == null ? null : ModifiedObjects.getModifiedTask(locked.id())));
         }
         final var results = new ArrayList<Stopped>(stops.size());
-        MainApplication.worker.submit(new PleaseWaitRunnable(tr("Stopping MapRoulette tasks")) {
+        MainApplication.worker.execute(new PleaseWaitRunnable(tr("Stopping MapRoulette tasks")) {
             @Override
             protected void cancel() {
                 // The requests are short; let them finish

@@ -57,6 +57,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClustered
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.widgets.DefaultPanelListCellRenderer;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
@@ -385,12 +386,12 @@ public final class TaskListPanel extends ToggleDialog
                 }
                 this.task = task2;
             }
-            MainApplication.worker.submit(() -> GuiHelper.runInEDT(() -> this.switchType(false)));
+            Workers.execute(() -> GuiHelper.runInEDT(() -> this.switchType(false)));
         }
 
         private void switchType(boolean performDownload) {
             if (performDownload && this.task == null) {
-                MainApplication.worker.execute(this::download);
+                Workers.execute(this::download);
                 new ImageProvider("cancel").getResource().attachImageIcon(this);
                 this.putValue(NAME, tr("Cancel"));
             } else {

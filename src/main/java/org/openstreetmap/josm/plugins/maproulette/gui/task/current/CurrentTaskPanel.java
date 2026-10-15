@@ -42,13 +42,13 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
-import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Shortcut;
@@ -425,7 +425,7 @@ private static class SelectOsmPrimitives extends InnerAction {
         final var task = this.taskSuppler.get();
         if (task != null) {
             // Finding the primitives may need the challenge from the server
-            MainApplication.worker.execute(() -> {
+            Workers.execute(() -> {
                 final var primitives = TaskPrimitives.getPrimitiveIds(task);
                 if (!primitives.isEmpty()) {
                     GuiHelper.runInEDT(() -> {
