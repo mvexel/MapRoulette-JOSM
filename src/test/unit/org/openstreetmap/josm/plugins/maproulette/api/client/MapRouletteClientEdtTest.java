@@ -140,7 +140,7 @@ class MapRouletteClientEdtTest {
         }
 
         @Override
-        public void authenticate(HttpClient request) {
+        public void authenticate(HttpClient request, boolean loginRequired) {
             this.onEdt.add(SwingUtilities.isEventDispatchThread());
         }
 

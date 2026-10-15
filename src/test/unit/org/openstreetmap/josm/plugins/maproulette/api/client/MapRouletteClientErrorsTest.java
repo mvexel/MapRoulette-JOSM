@@ -292,12 +292,12 @@ class MapRouletteClientErrorsTest {
         }
 
         @Override
-        public void authenticate(HttpClient request) {
+        public void authenticate(HttpClient request, boolean loginRequired) {
             this.authenticateCalls.incrementAndGet();
         }
 
         @Override
-        public boolean onUnauthorized() {
+        public boolean onUnauthorized(HttpClient failed) {
             this.unauthorizedCalls.incrementAndGet();
             return this.refreshSucceeds;
         }

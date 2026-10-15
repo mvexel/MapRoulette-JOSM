@@ -103,8 +103,7 @@ public final class BundleAPI {
     @Nonnull
     public static TaskBundle unbundle(TaskBundle original, long... taskIds) throws IOException {
         final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        return client.get(PATH + "/" + original.id() + "/unbundle",
+        return client.getWithLogin(PATH + "/" + original.id() + "/unbundle",
                 Map.of("taskIds", LongStream.of(taskIds).mapToObj(Long::toString).collect(Collectors.joining(","))),
                 BundleAPI::parseBundle);
     }

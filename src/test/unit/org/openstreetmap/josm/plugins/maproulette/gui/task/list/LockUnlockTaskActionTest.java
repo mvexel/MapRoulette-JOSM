@@ -118,7 +118,7 @@ class LockUnlockTaskActionTest {
             }
 
             @Override
-            public void authenticate(HttpClient request) {
+            public void authenticate(HttpClient request, boolean loginRequired) {
                 onEdt.add(SwingUtilities.isEventDispatchThread());
             }
         });
@@ -165,7 +165,7 @@ class LockUnlockTaskActionTest {
             }
 
             @Override
-            public void authenticate(HttpClient request) {
+            public void authenticate(HttpClient request, boolean loginRequired) {
                 onEdt.add(SwingUtilities.isEventDispatchThread());
             }
         });

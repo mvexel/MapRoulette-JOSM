@@ -169,12 +169,12 @@ class MapRouletteClientTest {
             }
 
             @Override
-            public void authenticate(HttpClient client) {
+            public void authenticate(HttpClient client, boolean loginRequired) {
                 client.setHeader("Authorization", "Bearer " + refreshes.get());
             }
 
             @Override
-            public boolean onUnauthorized() {
+            public boolean onUnauthorized(HttpClient failed) {
                 refreshes.incrementAndGet();
                 return true;
             }

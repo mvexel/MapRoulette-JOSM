@@ -35,6 +35,8 @@ public class MapRoulette extends Plugin {
         super(info);
         MapRouletteAuth.deleteCachedApiKeys();
         this.getPreferenceSetting().ok();
+        // The preferences already did this; spelled out because the stored login depends on it
+        MapRouletteAuth.configure();
         UploadAction.registerUploadHook(new EarlyUploadHook());
         UploadAction.registerUploadHook(new LateUploadHook(), true);
         OSMDownloadSource.addDownloadType(new MapRouletteDownloadSource());

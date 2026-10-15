@@ -107,8 +107,7 @@ public final class TaskAPI {
      */
     public static Task start(long task) throws IOException {
         final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        return client.get(TASK + "/" + task + "/start", Collections.emptyMap(),
+        return client.getWithLogin(TASK + "/" + task + "/start", Collections.emptyMap(),
                 body -> (Task) TaskParser.parseTask(body));
     }
 
@@ -121,8 +120,7 @@ public final class TaskAPI {
      */
     public static Task release(long task) throws IOException {
         final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        return client.get(TASK + "/" + task + "/release", Collections.emptyMap(),
+        return client.getWithLogin(TASK + "/" + task + "/release", Collections.emptyMap(),
                 body -> (Task) TaskParser.parseTask(body));
     }
 
@@ -135,8 +133,7 @@ public final class TaskAPI {
      */
     public static Task refreshLock(long task) throws IOException {
         final var client = MapRouletteClient.getInstance();
-        client.requireAuth();
-        return client.get(TASK + "/" + task + "/refreshLock", Collections.emptyMap(),
+        return client.getWithLogin(TASK + "/" + task + "/refreshLock", Collections.emptyMap(),
                 body -> (Task) TaskParser.parseTask(body));
     }
 

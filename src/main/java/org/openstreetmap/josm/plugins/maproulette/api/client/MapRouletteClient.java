@@ -93,6 +93,13 @@ public final class MapRouletteClient {
      */
     public void setAuthProvider(@Nonnull AuthProvider provider) {
         this.auth = Objects.requireNonNull(provider, "provider");
+        fireAuthChanged();
+    }
+
+    /**
+     * Tell the listeners that the login changed, e.g. the user logged in or out. Listeners are told on the EDT.
+     */
+    public void fireAuthChanged() {
         GuiHelper.runInEDT(() -> this.authListeners.fireEvent(Runnable::run));
     }
 
@@ -136,7 +143,24 @@ public final class MapRouletteClient {
      * @throws MapRouletteException if the request failed
      */
     public <T> T get(String path, Map<String, String> query, ResponseParser<T> parser) throws MapRouletteException {
-        return request("GET", path, query, null, null, parser);
+        return request("GET", path, query, null, null, parser, false);
+    }
+
+    /**
+     * GET a path that changes something, like starting a task. This needs a login: without one it fails before
+     * sending.
+     *
+     * @param path   The path below the API base URL, starting with {@code /}
+     * @param query  The query parameters
+     * @param parser The response parser
+     * @param <T>    The result type
+     * @return The parsed response
+     * @throws MapRouletteException if the request failed
+     */
+    public <T> T getWithLogin(String path, Map<String, String> query, ResponseParser<T> parser)
+            throws MapRouletteException {
+        requireAuth();
+        return request("GET", path, query, null, null, parser, true);
     }
 
     /**
@@ -153,7 +177,7 @@ public final class MapRouletteClient {
     public <T> T put(String path, Map<String, String> query, @Nullable byte[] jsonBody,
             @Nullable ResponseParser<T> parser) throws MapRouletteException {
         requireAuth();
-        return request("PUT", path, query, jsonBody, JSON, parser);
+        return request("PUT", path, query, jsonBody, JSON, parser, true);
     }
 
     /**
@@ -169,7 +193,7 @@ public final class MapRouletteClient {
      * @throws MapRouletteException if the request failed
      */
     public <T> T putRead(String path, Map<String, String> query, ResponseParser<T> parser) throws MapRouletteException {
-        return request("PUT", path, query, null, null, parser);
+        return request("PUT", path, query, null, null, parser, false);
     }
 
     /**
@@ -186,7 +210,7 @@ public final class MapRouletteClient {
     public <T> T post(String path, Map<String, String> query, @Nullable byte[] jsonBody,
             @Nullable ResponseParser<T> parser) throws MapRouletteException {
         requireAuth();
-        return request("POST", path, query, jsonBody, JSON, parser);
+        return request("POST", path, query, jsonBody, JSON, parser, true);
     }
 
     /**
@@ -197,11 +221,12 @@ public final class MapRouletteClient {
      */
     public void delete(String path) throws MapRouletteException {
         requireAuth();
-        request("DELETE", path, Collections.emptyMap(), null, null, null);
+        request("DELETE", path, Collections.emptyMap(), null, null, null, true);
     }
 
     private <T> T request(String method, String path, Map<String, String> query, @Nullable byte[] body,
-            @Nullable String contentType, @Nullable ResponseParser<T> parser) throws MapRouletteException {
+            @Nullable String contentType, @Nullable ResponseParser<T> parser, boolean loginRequired)
+            throws MapRouletteException {
         final var url = url(path, query);
         checkThread(method, url);
         final var currentAuth = this.auth;
@@ -215,10 +240,10 @@ public final class MapRouletteClient {
                 client.setRequestBody(new byte[0]);
             }
             try {
-                currentAuth.authenticate(client);
+                currentAuth.authenticate(client, loginRequired);
                 final var response = client.connect();
                 final var status = response.getResponseCode();
-                if (status == 401 && attempt == 0 && currentAuth.onUnauthorized()) {
+                if (status == 401 && attempt == 0 && currentAuth.onUnauthorized(client)) {
                     continue;
                 }
                 if (status >= 400) {
