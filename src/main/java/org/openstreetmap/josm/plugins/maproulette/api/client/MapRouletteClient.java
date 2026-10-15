@@ -147,6 +147,23 @@ public final class MapRouletteClient {
     }
 
     /**
+     * GET a path that changes something, like starting a task. This needs a login: without one it fails before
+     * sending.
+     *
+     * @param path   The path below the API base URL, starting with {@code /}
+     * @param query  The query parameters
+     * @param parser The response parser
+     * @param <T>    The result type
+     * @return The parsed response
+     * @throws MapRouletteException if the request failed
+     */
+    public <T> T getWithLogin(String path, Map<String, String> query, ResponseParser<T> parser)
+            throws MapRouletteException {
+        requireAuth();
+        return request("GET", path, query, null, null, parser, true);
+    }
+
+    /**
      * PUT to a path. This needs a login: without one it fails before sending.
      *
      * @param path     The path below the API base URL, starting with {@code /}

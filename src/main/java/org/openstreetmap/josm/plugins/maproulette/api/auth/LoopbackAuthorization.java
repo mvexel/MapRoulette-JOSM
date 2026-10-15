@@ -32,17 +32,20 @@ final class LoopbackAuthorization implements OAuthAuthProvider.Authorizer {
      */
     private static final Duration TIMEOUT = Duration.ofMinutes(5);
     /**
-     * The login the user is doing right now, so it can be cancelled
+     * The login the user is doing right now, so it can be cancelled. One for all servers: logins share remote
+     * control, which the first one would otherwise stop under the second.
      */
-    private volatile CompletableFuture<String> pending;
+    private static CompletableFuture<String> pending;
 
     @Override
     public String authorize(URI authorizeUri, String state) throws MapRouletteException, InterruptedException {
-        if (this.pending != null) {
-            throw new MapRouletteException(tr("A MapRoulette login is already waiting for the browser."));
-        }
         final var code = new CompletableFuture<String>();
-        this.pending = code;
+        synchronized (LoopbackAuthorization.class) {
+            if (pending != null) {
+                throw new MapRouletteException(tr("A MapRoulette login is already waiting for the browser."));
+            }
+            pending = code;
+        }
         AuthorizationHandler.addAuthorizationConsumer(state, new CodeConsumer(state, code));
         // Like JOSM's own OSM login: run remote control just for the login if the user has it off
         final var startRemoteControl = !RemoteControl.PROP_REMOTECONTROL_ENABLED.get();
@@ -64,7 +67,9 @@ final class LoopbackAuthorization implements OAuthAuthProvider.Authorizer {
         } catch (ExecutionException e) {
             throw new MapRouletteException(tr("The MapRoulette login failed."), e.getCause());
         } finally {
-            this.pending = null;
+            synchronized (LoopbackAuthorization.class) {
+                pending = null;
+            }
             if (startRemoteControl) {
                 RemoteControl.stop();
             }
@@ -73,7 +78,10 @@ final class LoopbackAuthorization implements OAuthAuthProvider.Authorizer {
 
     @Override
     public void cancel() {
-        final var code = this.pending;
+        final CompletableFuture<String> code;
+        synchronized (LoopbackAuthorization.class) {
+            code = pending;
+        }
         if (code != null) {
             code.cancel(false);
         }

@@ -5,11 +5,13 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.IOException;
 import java.net.Authenticator;
+import java.net.ConnectException;
 import java.net.MalformedURLException;
 import java.net.PasswordAuthentication;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -326,6 +328,11 @@ public final class OAuthAuthProvider implements AuthProvider {
             OAuthTokens received = null;
             try {
                 received = postToken(body);
+            } catch (UnknownHostException | ConnectException e) {
+                // The request never reached MapRoulette (offline), so the refresh token is still good
+                Logging.warn("Could not reach MapRoulette to refresh the login");
+                Logging.debug(e);
+                return used;
             } catch (IOException | JsonException | NullPointerException | ClassCastException | ArithmeticException e) {
                 // The refresh token may have been used up even if the answer got lost, and using it again would
                 // revoke the login, so the user has to log in again

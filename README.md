@@ -4,6 +4,13 @@ There are two methods to download tasks from MapRoulette.
 1. From the JOSM `Download data` window (`OpenStreetMap data`, `Raw GPS data`, `Notes`, ..., `MapRoulette Tasks`)
 2. From the `MapRoulette Tasks` toggle dialog (`Download Data`) which downloads data in the current viewport
 
+## Logging in
+Starting tasks and setting their status needs a MapRoulette login. Log in from `Preferences` > `MapRoulette` >
+`Login`: JOSM opens MapRoulette in your browser, and the browser returns to JOSM through remote control (port 8111).
+Only MapRoulette servers that accept logins from JOSM offer this (for now the `mr-api.osm.lol` test server).
+The login is kept like JOSM's own OSM login: in the JOSM preferences, unless a password manager plugin is installed.
+JOSM's trace logging (`--trace`) writes request bodies, including the login's refresh token, to the log.
+
 ## Workflow
 1. Select a MapRoulette task in the mapview *or* in the `MapRoulette Tasks` window
 2. Click on `Start Task` -- this will "lock" the task on MapRoulette until you finish and click on `Stop Task`.

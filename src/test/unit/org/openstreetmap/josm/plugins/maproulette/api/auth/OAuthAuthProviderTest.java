@@ -28,6 +28,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -219,6 +220,55 @@ class OAuthAuthProviderTest {
                         .find(com.github.tomakehurst.wiremock.client.WireMock
                                 .getRequestedFor(urlPathEqualTo("/api/v2/project/1")))
                         .get(0).getHeader("Authorization"));
+    }
+
+    /**
+     * Start, release and lock refresh are GETs that change the task, so they need the token
+     */
+    @Test
+    void testLockingGetsCarryToken() throws Exception {
+        MapRouletteClient.getInstance().setAuthProvider(loggedIn());
+        for (var action : List.of("start", "release", "refreshLock")) {
+            this.wireMock.register(com.github.tomakehurst.wiremock.client.WireMock
+                    .get(urlPathEqualTo("/api/v2/task/1/" + action)).willReturn(aResponse().withStatus(400)));
+        }
+        assertThrows(Exception.class, () -> TaskAPI.start(1));
+        assertThrows(Exception.class, () -> TaskAPI.release(1));
+        assertThrows(Exception.class, () -> TaskAPI.refreshLock(1));
+        for (var action : List.of("start", "release", "refreshLock")) {
+            this.wireMock.verifyThat(com.github.tomakehurst.wiremock.client.WireMock
+                    .getRequestedFor(urlPathEqualTo("/api/v2/task/1/" + action))
+                    .withHeader("Authorization", equalTo("Bearer " + ACCESS_1)));
+        }
+    }
+
+    /**
+     * A refresh that never reached MapRoulette (offline) keeps the login. One whose answer got lost ends it, because
+     * the refresh token may have been used up.
+     */
+    @Test
+    void testOfflineRefreshKeepsLogin() throws Exception {
+        // Nothing listens on port 1, so the connection is refused
+        final var offlineRoot = "http://127.0.0.1:1";
+        final var tokens = OAuthTokens.fromTokenResponse(tokenResponse(ACCESS_1, REFRESH_1), this.clock.instant());
+        CredentialsManager.getInstance().store(Authenticator.RequestorType.SERVER,
+                OAuthAuthProvider.credentialsHost("127.0.0.1"),
+                new java.net.PasswordAuthentication("maproulette-josm", tokens.toStorage().toCharArray()));
+        final var offline = new OAuthAuthProvider(offlineRoot, this.browser, this.clock);
+        offline.loadStored();
+        this.clock.now = this.clock.now.plusSeconds(900);
+        final var client = HttpClient.create(URI.create(offlineRoot + "/api/v2/task/1/1").toURL(), "PUT");
+        offline.authenticate(client, true);
+        assertTrue(offline.isAvailable());
+        assertEquals("Bearer " + ACCESS_1, client.getRequestHeader("Authorization"));
+        offline.logOut();
+
+        final var provider = loggedIn();
+        this.wireMock.register(post(urlPathEqualTo(TOKEN)).willReturn(
+                aResponse().withFault(com.github.tomakehurst.wiremock.http.Fault.CONNECTION_RESET_BY_PEER)));
+        this.clock.now = this.clock.now.plusSeconds(900);
+        assertThrows(MapRouletteAuthUnavailableException.class, () -> provider.authenticate(request(), true));
+        assertFalse(provider.isAvailable(), "A lost answer may have used up the refresh token");
     }
 
     @Test
