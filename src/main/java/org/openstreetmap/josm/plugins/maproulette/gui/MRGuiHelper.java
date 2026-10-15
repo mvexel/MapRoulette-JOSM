@@ -3,7 +3,6 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
@@ -14,11 +13,9 @@ import java.util.stream.Stream;
 
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
-import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.markdown.SelectParser;
-import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.Utils;
 
 import jakarta.annotation.Nonnull;
@@ -61,15 +58,10 @@ public final class MRGuiHelper {
         }
         final String instruction;
         if (Utils.isStripEmpty(currentTask.instruction())) {
-            Challenge challenge;
-            try {
-                challenge = ChallengeCache.challenge(currentTask.parentId());
-            } catch (IOException ioException) {
-                ExceptionDialogUtil.explainException(ioException);
-                challenge = null;
-            }
+            // Called on the EDT, so only use a cached challenge; a missing one is fetched in the background
+            final var challenge = ChallengeCache.cached(currentTask.parentId()).orElse(null);
             if (challenge == null) {
-                instruction = tr("Could not fetch instruction from parent challenge");
+                instruction = tr("The instructions from the challenge are not loaded yet");
             } else if (!Utils.isStripEmpty(challenge.general().instruction())) {
                 instruction = challenge.general().instruction();
             } else if (!Utils.isStripEmpty(challenge.description())) {

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -31,11 +32,14 @@ import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.gui.widgets.QuadStateCheckBox;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
 import org.openstreetmap.josm.plugins.maproulette.data.ApplyCooperativeChange;
@@ -102,40 +106,104 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        final var selected = new ArrayList<>(
+        final var selected = new ArrayList<TaskClusteredPoint>(
                 MainApplication.getMap().getToggleDialog(TaskListPanel.class).getSelected());
         final var task = this.currentTaskProvider.get();
         if (task != null) {
             selected.removeIf(p -> p.id() == task.id());
         }
-        handleTask(task);
-        if (!selected.isEmpty()) {
-            final var markAll = ConditionalOptionPaneUtil.showConfirmationDialog("TaskStatusAction.bulkUpdate",
-                    MainApplication.getMainFrame(),
-                    tr("<html>Mark all selected tasks?<br>This will apply all tag fixes and geometry fixes!</html>"),
-                    tr("Mark all selected tasks?"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
-                    JOptionPane.YES_OPTION);
-            if (markAll) {
-                ConditionalOptionPaneUtil.startBulkOperation("maproulette.task.feedback");
-                try {
-                    for (var toMark : selected) {
-                        if (toMark instanceof Task t) {
-                            handleTask(t);
-                        } else {
-                            handleTask(TaskCache.get(toMark.id()));
-                        }
-                    }
-                } catch (IOException ioException) {
-                    ExceptionDialogUtil.explainException(ioException);
-                } finally {
-                    ConditionalOptionPaneUtil.endBulkOperation("maproulette.task.feedback");
+        final var source = e.getSource();
+        // Load the challenge for the feedback dialog on the worker, then show the dialogs on the EDT
+        MainApplication.worker.submit(() -> {
+            final var loaded = task == null ? null : load(task);
+            GuiHelper.runInEDT(() -> {
+                handleTask(loaded);
+                if (!selected.isEmpty() && confirmMarkAll()) {
+                    MainApplication.worker.submit(() -> markAll(selected, source));
+                } else {
+                    updateButtons(source);
                 }
-            }
-        }
+            });
+        });
+    }
 
+    /**
+     * Ask whether to mark all selected tasks
+     *
+     * @return {@code true} if the user agreed
+     */
+    private static boolean confirmMarkAll() {
+        return ConditionalOptionPaneUtil.showConfirmationDialog("TaskStatusAction.bulkUpdate",
+                MainApplication.getMainFrame(),
+                tr("<html>Mark all selected tasks?<br>This will apply all tag fixes and geometry fixes!</html>"),
+                tr("Mark all selected tasks?"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
+                JOptionPane.YES_OPTION);
+    }
+
+    /**
+     * Load the selected tasks on the worker and mark them on the EDT. Must not be called on the EDT.
+     *
+     * @param selected The selected tasks
+     * @param source   The source of the action event
+     */
+    private void markAll(List<TaskClusteredPoint> selected, Object source) {
+        final var loaded = new ArrayList<LoadedTask>(selected.size());
+        IOException failure = null;
+        try {
+            for (var toMark : selected) {
+                loaded.add(load(toMark instanceof Task t ? t : TaskCache.get(toMark.id())));
+            }
+        } catch (IOException ioException) {
+            failure = ioException;
+        }
+        final var error = failure;
+        GuiHelper.runInEDT(() -> {
+            ConditionalOptionPaneUtil.startBulkOperation("maproulette.task.feedback");
+            try {
+                loaded.forEach(this::handleTask);
+                if (error != null) {
+                    ExceptionDialogUtil.explainException(error);
+                }
+            } finally {
+                ConditionalOptionPaneUtil.endBulkOperation("maproulette.task.feedback");
+            }
+            updateButtons(source);
+        });
+    }
+
+    /**
+     * A task with the challenge its feedback dialog needs
+     *
+     * @param task           The task
+     * @param challenge      The task's challenge, or {@code null} if it could not be loaded
+     * @param challengeError Why the challenge could not be loaded, or {@code null}
+     */
+    private record LoadedTask(Task task, Challenge challenge, IOException challengeError) {
+    }
+
+    /**
+     * Load the challenge for a task. Must not be called on the EDT.
+     *
+     * @param task The task
+     * @return The task with its challenge
+     */
+    private static LoadedTask load(Task task) {
+        try {
+            return new LoadedTask(task, ChallengeCache.challenge(task.parentId()), null);
+        } catch (IOException ioException) {
+            return new LoadedTask(task, null, ioException);
+        }
+    }
+
+    /**
+     * Use the first enabled action on the button the action came from, and update the panel's actions
+     *
+     * @param source The source of the action event
+     */
+    private void updateButtons(Object source) {
         // Use the first enabled action (not this, in otherwords)
         SideButton button = null;
-        if (e.getSource()instanceof JMenuItem menuItem && menuItem.getParent()instanceof JPopupMenu menu
+        if (source instanceof JMenuItem menuItem && menuItem.getParent()instanceof JPopupMenu menu
                 && menu.getInvoker()instanceof SideButton sideButton) {
             if (sideButton.getAction() == this) {
                 final var newAction = Stream.of(menu.getSubElements()).filter(JMenuItem.class::isInstance)
@@ -145,7 +213,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
             }
             button = sideButton;
             sideButton.setAction(this);
-        } else if (e.getSource()instanceof SideButton sideButton) {
+        } else if (source instanceof SideButton sideButton) {
             button = sideButton;
         }
         if (button != null && button.getParent().getParent().getParent()instanceof CurrentTaskPanel panel) {
@@ -155,9 +223,10 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         }
     }
 
-    private void handleTask(Task task) {
+    private void handleTask(LoadedTask loaded) {
+        final var task = loaded == null ? null : loaded.task();
         if (task != null) {
-            final var modifiedTask = getModifiedTask(task);
+            final var modifiedTask = getModifiedTask(loaded);
             if (modifiedTask == null) {
                 return;
             }
@@ -205,7 +274,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 .ifPresent(p -> p.refreshModel(task));
     }
 
-    private ModifiedTask getModifiedTask(Task task) {
+    private ModifiedTask getModifiedTask(LoadedTask loaded) {
+        final var task = loaded.task();
         final var panel = new JPanel(new GridBagLayout());
         final var comment = new JosmTextArea();
         final var tagBox = new AutoCompComboBox<String>();
@@ -213,15 +283,15 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 QuadStateCheckBox.State.SELECTED, QuadStateCheckBox.State.UNSET, QuadStateCheckBox.State.NOT_SELECTED);
         comment.setRows(4);
         comment.setColumns(25);
-        try {
-            final var challenge = ChallengeCache.challenge(task.parentId());
+        final var challenge = loaded.challenge();
+        if (challenge != null) {
             if (challenge.extra().preferredTags() != null) {
                 tagBox.getModel().addAllElements(Arrays.asList(challenge.extra().preferredTags().split(",")));
             }
             tagBox.setEditable(!challenge.extra().limitTags());
-        } catch (IOException ioException) {
+        } else {
             tagBox.setEditable(true);
-            ExceptionDialogUtil.explainException(ioException);
+            ExceptionDialogUtil.explainException(loaded.challengeError());
         }
         panel.add(comment, GBC.eol().fill(GBC.BOTH));
         panel.add(tagBox, GBC.eol().fill(GBC.HORIZONTAL));

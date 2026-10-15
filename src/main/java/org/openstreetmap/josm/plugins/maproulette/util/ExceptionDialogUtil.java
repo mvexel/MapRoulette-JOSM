@@ -33,18 +33,21 @@ public final class ExceptionDialogUtil {
     }
 
     /**
-     * Explain exceptions
+     * Explain exceptions. This may be called from any thread; the dialog is shown on the EDT.
      * @param exception The exception to explain to the user
      */
     public static void explainException(Exception exception) {
+        GuiHelper.runInEDT(() -> explainExceptionOnEdt(exception));
+    }
+
+    private static void explainExceptionOnEdt(Exception exception) {
         if (exception.getClass() == MapRouletteException.class && exception.getCause()instanceof IOException cause) {
             // A connection problem: explain the underlying exception
-            explainException(cause);
+            explainExceptionOnEdt(cause);
         } else if (exception instanceof MapRouletteAuthUnavailableException) {
-            final var message = MapRouletteAuth.unavailableMessage();
-            GuiHelper.runInEDT(() -> ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in",
-                    MainApplication.getMainFrame(), message, tr("MapRoulette login unavailable"),
-                    JOptionPane.INFORMATION_MESSAGE));
+            ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in",
+                    MainApplication.getMainFrame(), MapRouletteAuth.unavailableMessage(),
+                    tr("MapRoulette login unavailable"), JOptionPane.INFORMATION_MESSAGE);
         } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
             if (lockHeld.heldTaskId().isPresent()) {
                 showErrorDialog(

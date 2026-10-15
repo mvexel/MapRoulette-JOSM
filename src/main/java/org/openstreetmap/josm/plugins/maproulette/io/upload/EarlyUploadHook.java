@@ -40,6 +40,7 @@ import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -83,14 +84,34 @@ public final class EarlyUploadHook implements UploadHook {
      */
     private static final Pattern ID_TYPE_VERSION_PATTERN = Pattern.compile("(\\d+)_(n|node|w|way|r|rel|relation)_\\d+");
 
+    /**
+     * JOSM calls this on the worker, and {@link #modifyChangesetTags(Map)} afterwards on the EDT
+     */
     @Override
     public boolean checkUpload(APIDataSet apiDataSet) {
         try {
             return realCheckUpload(apiDataSet);
         } catch (RuntimeException exception) {
             BugReport.intercept(exception).warn();
+        } finally {
+            cacheChallenges();
         }
         return true;
+    }
+
+    /**
+     * Cache the challenges of the modified tasks, for the changeset tags
+     */
+    private static void cacheChallenges() {
+        final var challenges = ModifiedObjects.getModifiedTasks().stream().mapToLong(entry -> entry.task().parentId())
+                .distinct().toArray();
+        for (var challenge : challenges) {
+            try {
+                ChallengeCache.challenge(challenge);
+            } catch (IOException ioException) {
+                ExceptionDialogUtil.explainException(ioException);
+            }
+        }
     }
 
     private boolean realCheckUpload(APIDataSet apiDataSet) {
@@ -120,8 +141,10 @@ public final class EarlyUploadHook implements UploadHook {
         ConditionalOptionPaneUtil.startBulkOperation(PREF_CHECK_IF_FINISHED);
         for (var task : possibleTasks) {
             if (ids.containsAll(TaskPrimitives.getPrimitiveIds(task))) {
+                // Look up the primitives here; the panel is built on the EDT, which must not wait for the server
+                final var primitiveIdMap = TaskPrimitives.getPrimitiveIdMap(task);
                 final var descriptivePanel = GuiHelper
-                        .runInEDTAndWaitAndReturn(() -> createDescriptivePanel(task, apiDataSet));
+                        .runInEDTAndWaitAndReturn(() -> createDescriptivePanel(task, apiDataSet, primitiveIdMap));
                 Objects.requireNonNull(descriptivePanel);
                 final var didFix = GuiHelper.runInEDTAndWaitAndReturn(
                         () -> ConditionalOptionPaneUtil.showConfirmationDialog(PREF_CHECK_IF_FINISHED,
@@ -183,12 +206,11 @@ public final class EarlyUploadHook implements UploadHook {
         return null;
     }
 
-    private static JComponent createDescriptivePanel(Task task, APIDataSet dataSet) {
+    private static JComponent createDescriptivePanel(Task task, APIDataSet dataSet, Map<PrimitiveId, IPrimitive> map) {
         final var panel = new JPanel(new GridBagLayout());
         final var instructionPane = new JMultilineLabel(MRGuiHelper.getInstructionText(task));
         panel.add(new JLabel(tr("Instructions:")), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
         panel.add(instructionPane, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
-        final var map = TaskPrimitives.getPrimitiveIdMap(task);
         for (var taskPrimitive : task.geometries().allPrimitives()) {
             if (taskPrimitive.isTagged()) {
                 final var id = map.entrySet().stream().filter(entry -> entry.getValue() == taskPrimitive)
@@ -235,17 +257,15 @@ public final class EarlyUploadHook implements UploadHook {
                 tagBuilder.append(';');
             }
             tagBuilder.append(entry.task().id());
-            try {
-                final var challengeGeneral = ChallengeCache.challenge(entry.task().parentId()).general();
+            // Called on the EDT; checkUpload cached the challenges (and explained any failure)
+            ChallengeCache.cached(entry.task().parentId()).map(Challenge::general).ifPresent(challengeGeneral -> {
                 if (!Utils.isStripEmpty(challengeGeneral.checkinComment())) {
                     changesetComments.add(challengeGeneral.checkinComment());
                 }
                 if (!Utils.isStripEmpty(challengeGeneral.checkinSource())) {
                     sourceComments.add(challengeGeneral.checkinSource());
                 }
-            } catch (IOException ioException) {
-                ExceptionDialogUtil.explainException(ioException);
-            }
+            });
         }
 
         if (!changesetComments.isEmpty()) {

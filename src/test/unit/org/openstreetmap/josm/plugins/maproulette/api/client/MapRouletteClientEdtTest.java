@@ -21,7 +21,6 @@ import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -70,10 +69,9 @@ class MapRouletteClientEdtTest {
     }
 
     /**
-     * The guard only warns until the EDT callers are moved off it (contract, threading rule)
+     * The client refuses IO on the EDT (contract, threading rule)
      */
     @Test
-    @Disabled("The client guard throws only once #32, #33 and #34 are done; enable it in that PR")
     void testClientRejectsCallsOnEdt() throws Exception {
         WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
         GuiHelper.runInEDTAndWaitWithException(() -> assertThrows(IllegalStateException.class,

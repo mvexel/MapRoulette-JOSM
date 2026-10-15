@@ -340,15 +340,15 @@ public final class MapRouletteClient {
     }
 
     /**
-     * Log MapRoulette IO on the EDT. This will throw once all callers run off the EDT (#32–#34).
+     * Refuse MapRoulette IO on the EDT, where it would freeze the UI
      *
      * @param method The request method
      * @param url    The request URL
+     * @throws IllegalStateException if called on the EDT
      */
     private static void checkThread(String method, URL url) {
         if (SwingUtilities.isEventDispatchThread()) {
-            Logging.log(Logging.LEVEL_WARN, "MapRoulette IO on the EDT: " + method + ' ' + url,
-                    new IllegalStateException("MapRoulette IO on EDT"));
+            throw new IllegalStateException("MapRoulette IO on EDT: " + method + ' ' + url);
         }
     }
 

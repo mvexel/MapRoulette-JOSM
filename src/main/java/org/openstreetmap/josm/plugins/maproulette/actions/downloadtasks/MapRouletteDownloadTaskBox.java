@@ -24,9 +24,10 @@ import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
-import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
+import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
+import org.openstreetmap.josm.tools.Logging;
 
 /**
  * A download task for MapRoulette data
@@ -86,10 +87,17 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
             try {
                 tasks = TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(), bounds.getMaxLat(),
                         1_000, 0, null, null, false);
-                for (var task : tasks) {
+                final var challenges = Arrays.stream(tasks).mapToLong(TaskClusteredPoint::parentId).distinct()
+                        .toArray();
+                for (var challenge : challenges) {
                     if (!this.cancelled && !this.getProgressMonitor().isCanceled()) {
-                        // Force cache the challenges
-                        TaskCache.isHidden(task);
+                        // Cache the challenges so hidden ones are filtered out before the layer is shown
+                        try {
+                            ChallengeCache.challenge(challenge);
+                        } catch (IOException ioException) {
+                            // The tasks are shown; the layer fetches the challenge again later
+                            Logging.trace(ioException);
+                        }
                     }
                 }
             } catch (MapRouletteAuthUnavailableException unauthorizedException) {
