@@ -37,6 +37,8 @@ public final class ModifiedObjects {
      * @return {@code true} if the task list changed
      */
     public static boolean addLockedTask(Task task) {
+        // A new lock: refresh it even if the old one was lost
+        LockRefresher.forget(task.id());
         return LOCKED_TASK_MAP.put(task.id(), task) == null;
     }
 
