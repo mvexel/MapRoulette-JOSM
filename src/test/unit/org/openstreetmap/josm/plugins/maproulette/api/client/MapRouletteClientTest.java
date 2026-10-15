@@ -4,11 +4,13 @@ package org.openstreetmap.josm.plugins.maproulette.api.client;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
+import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.matching;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
@@ -79,7 +81,22 @@ class MapRouletteClientTest {
         wireMock.verifyThat(putRequestedFor(urlPathEqualTo("/api/v2/task/1/1")).withQueryParam("tags", equalTo("road"))
                 .withoutQueryParam("comment"));
         wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/api/v2/task/1/comment")).withoutQueryParam("comment")
+                .withHeader("Content-Type", containing("application/json"))
+                .withHeader("Content-Length", matching("[1-9][0-9]*")).withoutHeader("Transfer-Encoding")
                 .withRequestBody(equalToJson("{\"comment\":\"Fixed a & b #1\"}")));
+    }
+
+    /**
+     * A lost comment does not undo or repeat the status change
+     */
+    @Test
+    @MapRouletteLogin
+    void testFailedCommentKeepsStatus() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(put(urlPathEqualTo("/api/v2/task/1/1")).willReturn(aResponse().withStatus(204)));
+        wireMock.register(post(urlPathEqualTo("/api/v2/task/1/comment")).willReturn(aResponse().withStatus(500)));
+        assertTrue(TaskAPI.updateStatus(1, TaskStatus.FIXED, "Fixed", null, null, null));
+        wireMock.verifyThat(exactly(1), putRequestedFor(urlPathEqualTo("/api/v2/task/1/1")));
     }
 
     /**
