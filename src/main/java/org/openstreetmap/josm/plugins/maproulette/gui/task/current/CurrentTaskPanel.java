@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 
@@ -89,12 +88,13 @@ public final class CurrentTaskPanel extends ToggleDialog {
      */
     private final Runnable authListener = this::refreshActions;
     /**
-     * Shows the instructions once the challenge they come from arrives in the background
+     * Shows the instructions, and updates the actions, once the challenge of the task arrives in the background
      */
     private final Runnable challengeListener = () -> {
         if (this.instructionPending) {
             this.refreshPanel();
         }
+        this.refreshActions();
     };
     /**
      * The current task
@@ -441,8 +441,9 @@ private static class SelectOsmPrimitives extends InnerAction {
     public void updateEnabledState() {
         if (this.taskSuppler != null) { // This check is only needed for the constructor. Watch JEP draft 8300786.
             final var task = this.taskSuppler.get();
-            this.setEnabled(!Optional.ofNullable(task).map(TaskPrimitives::getPrimitiveIds)
-                    .orElse(Collections.emptyList()).isEmpty());
+            // Called on the EDT: until the challenge arrives, stay enabled for any task and let the worker find out
+            this.setEnabled(task != null
+                    && TaskPrimitives.cachedPrimitiveIds(task).map(ids -> !ids.isEmpty()).orElse(Boolean.TRUE));
         }
     }
 }}

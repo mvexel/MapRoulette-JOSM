@@ -13,6 +13,7 @@ import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeExtra;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
@@ -50,6 +51,20 @@ public final class TaskPrimitives {
     }
 
     /**
+     * Get the primitive ids for a task without asking the server, for use on the EDT
+     *
+     * @param task The task to look through
+     * @return The primitive ids from the task, or empty if the challenge of the task is not cached yet
+     */
+    @Nonnull
+    public static Optional<Collection<PrimitiveId>> cachedPrimitiveIds(@Nullable Task task) {
+        if (task == null) {
+            return Optional.of(Collections.emptySet());
+        }
+        return ChallengeCache.cached(task.parentId()).map(challenge -> getPrimitiveIdMap(task, challenge).keySet());
+    }
+
+    /**
      * Get the primitive id map for a task
      *
      * @param task The task to look for primitive mappings
@@ -58,20 +73,36 @@ public final class TaskPrimitives {
     @Nonnull
     public static Map<PrimitiveId, IPrimitive> getPrimitiveIdMap(@Nullable Task task) {
         if (task != null) {
+            Challenge challenge = null;
             try {
-                final var challenge = ChallengeCache.challenge(task.parentId());
-                final var property = challenge.extra().osmIdProperty();
-                if (!Utils.isStripEmpty(property)) {
-                    return getPrimitiveIdMap(task, property);
-                }
+                challenge = ChallengeCache.challenge(task.parentId());
             } catch (IOException ioException) {
                 ExceptionDialogUtil.explainException(ioException);
             }
-            for (var defaultProperty : ChallengeExtra.DEFAULT_OSM_ID_PROPERTIES) {
-                final var primitives = getPrimitiveIdMap(task, defaultProperty);
-                if (!primitives.isEmpty()) {
-                    return primitives;
-                }
+            return getPrimitiveIdMap(task, challenge);
+        }
+        return Collections.emptyMap();
+    }
+
+    /**
+     * Get the primitive id map for a task
+     *
+     * @param task      The task to look for primitive mappings
+     * @param challenge The challenge of the task, or {@code null} if it could not be loaded
+     * @return The map of primitive id to primitive
+     */
+    @Nonnull
+    private static Map<PrimitiveId, IPrimitive> getPrimitiveIdMap(@Nonnull Task task, @Nullable Challenge challenge) {
+        if (challenge != null) {
+            final var property = challenge.extra().osmIdProperty();
+            if (!Utils.isStripEmpty(property)) {
+                return getPrimitiveIdMap(task, property);
+            }
+        }
+        for (var defaultProperty : ChallengeExtra.DEFAULT_OSM_ID_PROPERTIES) {
+            final var primitives = getPrimitiveIdMap(task, defaultProperty);
+            if (!primitives.isEmpty()) {
+                return primitives;
             }
         }
         return Collections.emptyMap();
