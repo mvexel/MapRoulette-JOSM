@@ -70,7 +70,7 @@ class LockUnlockTaskActionTest {
                 Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
                         new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, TaskStatus.CREATED,
                         null, Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
-                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false))));
+                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null))));
         this.table = new JTable(this.model);
         this.table.setRowSorter(new TableRowSorter<>(this.model));
         this.table.getSelectionModel().setSelectionInterval(0, 0);

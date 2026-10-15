@@ -37,12 +37,14 @@ import jakarta.annotation.Nullable;
  * @param priority           The priority of the task
  * @param bundleId           The bundle for this task
  * @param isBundlePrimary    If the bundle is the primary bundle
+ * @param lockedBy           The MapRoulette user id holding a lock on the task or its bundle, if any
  */
 public record ClusteredPoint(long id, long owner, @Nonnull String ownerName, String title, long parentId, @Nonnull String parentName,
                              @Nonnull Point location, @Nullable Object bounding, @Nonnull String blurb, @Nonnull Instant modified,
                              @Nullable Difficulty difficulty, int type, @Nullable TaskStatus status, @Nullable String cooperativeWork,
                              @Nullable Instant mappedOn, @Nullable Long completedTimeSpent, @Nullable BaseUser completedBy,
-                             PointReview pointReview, int priority, @Nullable Long bundleId, @Nullable Boolean isBundlePrimary)
+                             PointReview pointReview, int priority, @Nullable Long bundleId, @Nullable Boolean isBundlePrimary,
+                             @Nullable Long lockedBy)
         implements TaskClusteredPoint {
 
     /**
