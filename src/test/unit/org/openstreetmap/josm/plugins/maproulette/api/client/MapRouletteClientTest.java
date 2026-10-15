@@ -5,9 +5,12 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -70,9 +73,13 @@ class MapRouletteClientTest {
     void testUpdateStatusSendsCommentIntact() throws Exception {
         final var wireMock = WireMocks.current();
         wireMock.register(put(urlPathEqualTo("/api/v2/task/1/1")).willReturn(aResponse().withStatus(204)));
+        wireMock.register(post(urlPathEqualTo("/api/v2/task/1/comment")).willReturn(aResponse().withStatus(201)));
         assertTrue(TaskAPI.updateStatus(1, TaskStatus.FIXED, "Fixed a & b #1", "road", null, null));
-        wireMock.verifyThat(putRequestedFor(urlPathEqualTo("/api/v2/task/1/1"))
-                .withQueryParam("comment", equalTo("Fixed a & b #1")).withQueryParam("tags", equalTo("road")));
+        // MapRoulette refuses a comment on the status request from apps, so it is sent on its own
+        wireMock.verifyThat(putRequestedFor(urlPathEqualTo("/api/v2/task/1/1")).withQueryParam("tags", equalTo("road"))
+                .withoutQueryParam("comment"));
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo("/api/v2/task/1/comment")).withoutQueryParam("comment")
+                .withRequestBody(equalToJson("{\"comment\":\"Fixed a & b #1\"}")));
     }
 
     /**
