@@ -118,6 +118,8 @@ class EarlyUploadHookTest {
                     new ModifiedTask(new Task(i, "", null, null, 15318, null, null, null, null, null, null, null, null,
                             null, 0, null, null, null, false, null, null), TaskStatus.FIXED, null, null, null, null));
         }
+        // JOSM calls checkUpload first, which caches the challenges that modifyChangesetTags reads
+        assertTrue(hook.checkUpload(new APIDataSet(new DataSet())));
         final var map = new HashMap<String, String>();
         hook.modifyChangesetTags(map);
         assertEquals(4, map.size());
