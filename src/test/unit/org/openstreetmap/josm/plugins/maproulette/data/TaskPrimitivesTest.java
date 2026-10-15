@@ -11,11 +11,13 @@ import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 
 /**
  * Test class for {@link TaskPrimitives}
  */
 @MapRouletteConfig
+@MapRouletteLogin
 class TaskPrimitivesTest {
     @Test
     void testGetPrimitiveIdsNode() {

@@ -1,9 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api;
 
-import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
-import static org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils.put;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -11,18 +8,15 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import jakarta.json.Json;
-import jakarta.json.JsonException;
 import javax.swing.text.html.Option;
 
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.ClusteredPointParser;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
-import org.openstreetmap.josm.plugins.maproulette.util.HttpClientUtils;
-import org.openstreetmap.josm.tools.JosmRuntimeException;
-import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Task API
@@ -90,20 +84,14 @@ public final class TaskAPI {
         if (includeTags) {
             query.put("includeTags", "true");
         }
-        final var client = put(getBaseUrl() + TASKS + "/box/" + minLon + "/" + minLat + "/" + maxLon + "/" + maxLat,
-                query);
-        try (var inputstream = client.connect().getContent()) {
-            if (ClusteredPointParser.parse(inputstream)instanceof ClusteredPoint[] points) {
-                return points;
-            }
-            throw new IOException("Unexpected MapRoulette response from " + client.getURL().toExternalForm());
-        } catch (JsonException | IllegalArgumentException | JosmRuntimeException e) {
-            // Let the caller tell the user, instead of silently showing no tasks
-            throw new IOException("Could not read the MapRoulette response from " + client.getURL().toExternalForm(),
-                    e);
-        } finally {
-            client.disconnect();
+        final var path = TASKS + "/box/" + minLon + "/" + minLat + "/" + maxLon + "/" + maxLat;
+        final var result = MapRouletteClient.getInstance().putForm(path, query, ClusteredPointParser::parse);
+        if (result instanceof ClusteredPoint[] points) {
+            return points;
         }
+        // Let the caller tell the user, instead of silently showing no tasks
+        throw new MapRouletteParseException("Unexpected MapRoulette response from " + path,
+                new IllegalArgumentException(String.valueOf(result)));
     }
 
     /**
@@ -114,12 +102,8 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static Task get(long task) throws IOException {
-        final var client = HttpClientUtils.get(getBaseUrl() + TASK + "/" + task);
-        try (var inputstream = client.connect().getContent()) {
-            return (Task) TaskParser.parseTask(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().get(TASK + "/" + task, Collections.emptyMap(),
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -128,15 +112,16 @@ public final class TaskAPI {
      * @param task The task to start
      * @return The updated task
      * @throws IOException if there was a problem communicating with the server
-     * @throws UnauthorizedException If we aren't authorized for the server
+     * @throws org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException if the user
+     *         can't log in to MapRoulette
+     * @throws org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException if the user already
+     *         holds another task
      */
     public static Task start(long task) throws IOException {
-        final var client = HttpClientUtils.get(getBaseUrl() + TASK + "/" + task + "/start");
-        try (var inputstream = client.connect().getContent()) {
-            return (Task) TaskParser.parseTask(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        final var client = MapRouletteClient.getInstance();
+        client.requireAuth();
+        return client.get(TASK + "/" + task + "/start", Collections.emptyMap(),
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -147,12 +132,10 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static Task release(long task) throws IOException {
-        final var client = HttpClientUtils.get(getBaseUrl() + TASK + "/" + task + "/release");
-        try (var inputstream = client.connect().getContent()) {
-            return (Task) TaskParser.parseTask(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        final var client = MapRouletteClient.getInstance();
+        client.requireAuth();
+        return client.get(TASK + "/" + task + "/release", Collections.emptyMap(),
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -163,12 +146,10 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static Task refreshLock(long task) throws IOException {
-        final var client = HttpClientUtils.get(getBaseUrl() + TASK + "/" + task + "/refreshLock");
-        try (var inputstream = client.connect().getContent()) {
-            return (Task) TaskParser.parseTask(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        final var client = MapRouletteClient.getInstance();
+        client.requireAuth();
+        return client.get(TASK + "/" + task + "/refreshLock", Collections.emptyMap(),
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -179,12 +160,8 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static Task changeset(long task) throws IOException {
-        final var client = put(getBaseUrl() + TASK + "/" + task + "/changeset", Collections.emptyMap());
-        try (var inputstream = client.connect().getContent()) {
-            return (Task) TaskParser.parseTask(inputstream);
-        } finally {
-            client.disconnect();
-        }
+        return MapRouletteClient.getInstance().put(TASK + "/" + task + "/changeset", Collections.emptyMap(), null,
+                body -> (Task) TaskParser.parseTask(body));
     }
 
     /**
@@ -196,7 +173,7 @@ public final class TaskAPI {
      * @param tags          The tags to use
      * @param requestReview Request review (or not), overrides user settings
      * @param completionResponses The completion responses
-     * @return {@code true} if the task update was successful
+     * @return {@code true}; failures throw
      * @throws IOException if there was a problem communicating with the server
      */
     public static boolean updateStatus(long task, TaskStatus status, String comment, String tags, Boolean requestReview,
@@ -221,18 +198,7 @@ public final class TaskAPI {
         } else {
             body = null;
         }
-        @SuppressWarnings("EnumOrdinal")
-        final var client = put(getBaseUrl() + TASK + "/" + task + "/" + status.code(), query, body);
-        client.setHeader("content-type", "text/json");
-        try {
-            final var response = client.connect();
-            final var content = response.fetchContent();
-            if (!Utils.isStripEmpty(content)) {
-                Logging.info(content);
-            }
-            return response.getResponseCode() == 204;
-        } finally {
-            client.disconnect();
-        }
+        MapRouletteClient.getInstance().put(TASK + "/" + task + "/" + status.code(), query, body, null);
+        return true;
     }
 }

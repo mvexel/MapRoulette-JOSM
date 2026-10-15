@@ -5,13 +5,15 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.EnumSet;
+import java.util.Set;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
-import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.tools.HttpClient;
 
 /**
@@ -24,10 +26,15 @@ public @interface MapRouletteLogin {
     class Extension implements BeforeEachCallback, AfterEachCallback {
         @Override
         public void beforeEach(ExtensionContext context) {
-            MapRouletteAuth.setProvider(new AuthProvider() {
+            MapRouletteClient.getInstance().setAuthProvider(new AuthProvider() {
                 @Override
                 public boolean isAvailable() {
                     return true;
+                }
+
+                @Override
+                public Set<Capability> capabilities() {
+                    return EnumSet.allOf(Capability.class);
                 }
 
                 @Override
@@ -39,7 +46,7 @@ public @interface MapRouletteLogin {
 
         @Override
         public void afterEach(ExtensionContext context) {
-            MapRouletteAuth.setProvider(AuthProvider.NONE);
+            MapRouletteClient.getInstance().setAuthProvider(AuthProvider.NONE);
         }
     }
 }

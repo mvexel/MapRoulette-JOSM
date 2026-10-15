@@ -44,6 +44,7 @@ import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
 import org.openstreetmap.josm.plugins.maproulette.api.MRColors;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -85,6 +86,10 @@ public final class TaskListPanel extends ToggleDialog
      * The test registered with {@link HiddenList}, kept so it can be removed again
      */
     private final LongPredicate hiddenTest = this::isHidden;
+    /**
+     * Re-evaluates Start/Stop when the MapRoulette login changes
+     */
+    private final Runnable authListener;
 
     /**
      * Create a new task list panel
@@ -99,7 +104,10 @@ public final class TaskListPanel extends ToggleDialog
         MainApplication.getLayerManager().addAndFireLayerChangeListener(this);
         table = new JTable(model);
         final var downloadButton = new SideButton(new DownloadDataAction());
-        final var lockUnlockButton = new SideButton(new LockUnlockTaskAction(table));
+        final var lockUnlockAction = new LockUnlockTaskAction(table);
+        final var lockUnlockButton = new SideButton(lockUnlockAction);
+        this.authListener = lockUnlockAction::updateEnabledState;
+        MapRouletteClient.getInstance().addAuthListener(this.authListener);
         final var browseButton = new SideButton(new OpenInBrowserAction(table));
         final var tableRowSorter = new TableRowSorter<>(model);
         final var menu = new JPopupMenu();
@@ -214,6 +222,7 @@ public final class TaskListPanel extends ToggleDialog
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this.model);
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
         HiddenList.removeListUpdater(this.hiddenTest);
+        MapRouletteClient.getInstance().removeAuthListener(this.authListener);
     }
 
     /**

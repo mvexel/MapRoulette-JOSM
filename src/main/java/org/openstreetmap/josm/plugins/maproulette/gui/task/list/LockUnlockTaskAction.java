@@ -21,6 +21,7 @@ import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
@@ -80,6 +81,10 @@ final class LockUnlockTaskAction extends JosmAction {
                 final var lockedTask = TaskAPI.start(task.id());
                 ModifiedObjects.addLockedTask(lockedTask);
                 selectedTasks.add(lockedTask);
+            } catch (MapRouletteLockHeldException e) {
+                // MapRoulette allows one lock per user, so the remaining rows would fail the same way
+                ExceptionDialogUtil.explainException(e);
+                break;
             } catch (IOException e) {
                 ExceptionDialogUtil.explainException(e);
             }
@@ -151,7 +156,7 @@ final class LockUnlockTaskAction extends JosmAction {
     }
 
     @Override
-    protected void updateEnabledState() {
+    public void updateEnabledState() {
         if (this.table != null && !this.table.getSelectionModel().isSelectionEmpty()) {
             updateStartOrStop();
             if (MapRouletteAuth.isAvailable()) {

@@ -5,20 +5,18 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GraphicsEnvironment;
 import java.util.Collection;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.JOptionPane;
 
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
 
-import jakarta.annotation.Nonnull;
-
 /**
- * The MapRoulette login used by the plugin
+ * What the plugin tells the user about the MapRoulette login, and clean-up of the old API key
  */
 public final class MapRouletteAuth {
     /**
@@ -29,32 +27,9 @@ public final class MapRouletteAuth {
      * Whether the user has been told that login is unavailable in this session
      */
     private static final AtomicBoolean UNAVAILABLE_NOTICE_SHOWN = new AtomicBoolean();
-    /**
-     * The current provider
-     */
-    private static volatile AuthProvider provider = AuthProvider.NONE;
 
     private MapRouletteAuth() {
         // Hide constructor
-    }
-
-    /**
-     * Get the current provider
-     *
-     * @return The provider
-     */
-    @Nonnull
-    public static AuthProvider getProvider() {
-        return provider;
-    }
-
-    /**
-     * Set the provider
-     *
-     * @param newProvider The provider to use
-     */
-    public static void setProvider(@Nonnull AuthProvider newProvider) {
-        provider = Objects.requireNonNull(newProvider, "newProvider");
     }
 
     /**
@@ -63,7 +38,7 @@ public final class MapRouletteAuth {
      * @return {@code true} if start, stop and task status are available
      */
     public static boolean isAvailable() {
-        return provider.isAvailable();
+        return MapRouletteClient.getInstance().auth().isAvailable();
     }
 
     /**

@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.util;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static java.net.HttpURLConnection.HTTP_OK;
 
+import java.io.File;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -98,7 +99,8 @@ public @interface MapRouletteConfig {
             final ResponseDefinition responseDefinition = serveEvent.getResponseDefinition();
             if (request.getUrl().startsWith("/api/v2/task/") && request.getUrl().matches("/api/v2/task/\\d+")) {
                 final var file = files.getTextFileNamed(request.getUrl().substring(1) + "/start");
-                if (file != null) {
+                // Only tasks with a recorded start response; other stubs (and missing files) pass through
+                if (file != null && file.getPath() != null && new File(file.getPath()).isFile()) {
                     final var builder = responseDefinition.wasConfigured()
                             ? ResponseDefinitionBuilder.like(responseDefinition)
                             : ResponseDefinitionBuilder.responseDefinition();

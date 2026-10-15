@@ -5,9 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.openstreetmap.josm.plugins.maproulette.util.RecordAssertion.assertRecordsEqual;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -59,8 +58,7 @@ class ClusteredPointParserTest {
                 .readString(Path.of(
                         "src/test/resources/__files/api/v2/tasks/box/-108.4962538/39.082404/-108.4962538/39.082404"))
                 .replace("\"bounding\": \"\",", replacement);
-        final var points = (ClusteredPoint[]) ClusteredPointParser
-                .parse(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        final var points = (ClusteredPoint[]) ClusteredPointParser.parse(new StringReader(json));
         assertEquals(1, points.length);
         assertEquals(136226437L, points[0].id());
         assertNull(points[0].bounding());

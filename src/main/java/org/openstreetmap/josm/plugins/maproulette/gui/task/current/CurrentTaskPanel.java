@@ -38,6 +38,7 @@ import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
@@ -81,6 +82,10 @@ public final class CurrentTaskPanel extends ToggleDialog {
      */
     private final InnerAction[] actions;
     /**
+     * Re-evaluates the actions when the MapRoulette login changes
+     */
+    private final Runnable authListener = this::refreshActions;
+    /**
      * The current task
      */
     private Task task;
@@ -120,6 +125,19 @@ public final class CurrentTaskPanel extends ToggleDialog {
         this.panel.add(this.instructionPane, gbc);
         this.panel.add(this.cooperativeWork, gbc);
         super.createLayout(this.panel.getVerticalScrollPane(), false, sideButtons);
+        MapRouletteClient.getInstance().addAuthListener(this.authListener);
+    }
+
+    @Override
+    public void destroy() {
+        MapRouletteClient.getInstance().removeAuthListener(this.authListener);
+        super.destroy();
+    }
+
+    private void refreshActions() {
+        for (var action : this.actions) {
+            action.updateEnabledState();
+        }
     }
 
     @Override

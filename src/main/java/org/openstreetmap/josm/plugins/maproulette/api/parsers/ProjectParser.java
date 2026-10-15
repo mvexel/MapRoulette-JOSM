@@ -4,7 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalArray;
 import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtils.optionalInstant;
 
-import java.io.InputStream;
+import java.io.Reader;
 
 import org.openstreetmap.josm.plugins.maproulette.api.model.Project;
 
@@ -21,14 +21,14 @@ public final class ProjectParser {
     }
 
     /**
-     * Parse a project from an {@link InputStream}
+     * Parse a project from a response body
      *
-     * @param inputStream The stream to parse
+     * @param body The response body
      * @return The parsed project
      */
     @Nonnull
-    public static Project parse(InputStream inputStream) {
-        try (final var reader = Json.createReader(inputStream)) {
+    public static Project parse(Reader body) {
+        try (final var reader = Json.createReader(body)) {
             final var structure = reader.read();
             if (structure.getValueType() == JsonValue.ValueType.OBJECT) {
                 final var obj = structure.asJsonObject();

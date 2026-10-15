@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.openstreetmap.josm.plugins.maproulette.util.RecordAssertion.assertRecordsEqual;
 
-import java.io.ByteArrayInputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,11 +33,13 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskReviewFields;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 
 /**
  * Test class for {@link TaskParser}
  */
 @MapRouletteConfig
+@MapRouletteLogin
 class TaskParserTest {
     /**
      * Check that a task is correctly parsed
@@ -127,7 +129,7 @@ class TaskParserTest {
                 + "\"}},";
         final var json = Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start"))
                 .replaceFirst("\\{", cooperativeWork);
-        final var task = (Task) TaskParser.parseTask(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        final var task = (Task) TaskParser.parseTask(new StringReader(json));
         assertNull(task.cooperativeWork());
         assertTrue(handler.getRecords().stream()
                 .anyMatch(r -> r.getLevel().intValue() >= Level.WARNING.intValue() && r.getMessage().contains("OSC")));

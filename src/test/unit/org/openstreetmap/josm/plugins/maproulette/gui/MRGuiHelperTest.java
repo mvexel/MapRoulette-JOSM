@@ -4,8 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -47,7 +46,7 @@ class MRGuiHelperTest {
         final var json = Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start"))
                 .replace("\"instruction\": \"\"", "\"instruction\": \"Street: {{addr:street}}\"")
                 .replace("Chatham Hill Road", "Costs $1 \\\\ Road");
-        final var task = (Task) TaskParser.parseTask(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        final var task = (Task) TaskParser.parseTask(new StringReader(json));
         final var instructions = assertDoesNotThrow(() -> MRGuiHelper.getInstructionText(task));
         assertEquals("<html><p>Street: Costs $1 \\ Road</p>\n</html>", instructions);
     }

@@ -9,11 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 
 /**
  * Test class for {@link GeometryParser}
  */
 @MapRouletteConfig
+@MapRouletteLogin
 class GeometryParserTest {
     @Test
     void testGeometryTask32402008() {
