@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,6 +10,7 @@ import java.awt.event.ActionEvent;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,6 +31,7 @@ import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
+import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -120,6 +123,17 @@ public class TaskListPanelTest {
         MainApplication.getLayerManager()
                 .addLayer(new OsmDataLayer(new DataSet(), "testDestroyRemovesListeners", null));
         assertEquals(0, layerEvents.get(), "The destroyed panel should not get layer events");
+    }
+
+    /**
+     * Opening the panel when a MapRoulette layer already exists must not fail
+     */
+    @Test
+    void testOpenWithExistingLayer() {
+        MainApplication.getLayerManager()
+                .addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), Collections.emptySet()));
+        final var panel = assertDoesNotThrow(TaskListPanel::new);
+        panel.destroy();
     }
 
     private static List<LongPredicate> getHiddenListTests() throws ReflectiveOperationException {

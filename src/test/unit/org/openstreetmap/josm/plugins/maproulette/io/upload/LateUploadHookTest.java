@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.awt.Component;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -28,14 +29,22 @@ import javax.swing.text.html.Option;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.TestUtils;
+import org.openstreetmap.josm.data.APIDataSet;
+import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteHttpException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
@@ -71,7 +80,7 @@ class LateUploadHookTest {
                 throw new IllegalStateException("Unexpected server response");
             }
         };
-        assertDoesNotThrow(() -> new LateUploadHook().modifyChangesetTags(new HashMap<>()));
+        assertDoesNotThrow(() -> hook(true).modifyChangesetTags(new HashMap<>()));
         assertDoesNotThrow(LateUploadHookTest::sync);
     }
 
@@ -85,7 +94,7 @@ class LateUploadHookTest {
         ModifiedObjects.addModifiedTask(modifiedTask);
         final var wireMock = WireMocks.current();
         final int requestsBefore = wireMock.find(anyRequestedFor(anyUrl())).size();
-        new LateUploadHook().modifyChangesetTags(new HashMap<>());
+        hook(true).modifyChangesetTags(new HashMap<>());
         wireMock.verifyThat(exactly(requestsBefore), anyRequestedFor(anyUrl()));
         assertEquals(modifiedTask, ModifiedObjects.getModifiedTask(task.id()));
     }
@@ -127,7 +136,7 @@ class LateUploadHookTest {
             }
         });
         try {
-            GuiHelper.runInEDTAndWaitWithException(() -> new LateUploadHook().modifyChangesetTags(new HashMap<>()));
+            GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
             sync();
             assertEquals(List.of(false, false, false), onEdt);
             wireMock.verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
@@ -139,7 +148,203 @@ class LateUploadHookTest {
         }
     }
 
+    /**
+     * Only FIXED waits for the upload: other statuses are still sent before it
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testOtherStatusSentBeforeUpload() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.SKIPPED);
+        ModifiedObjects.addModifiedTask(new ModifiedTask(task, TaskStatus.SKIPPED, null, null, null, null));
+        final var node = uploadedNode(true);
+        final var hook = hook(true);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+        });
+        sync();
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.SKIPPED.code())));
+        assertNull(ModifiedObjects.getModifiedTask(task.id()));
+    }
+
+    /**
+     * FIXED is sent after a successful upload, then the task is linked to the closed changeset (#45)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFixedSentAfterSuccessfulUpload() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.addModifiedTask(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null));
+        final var node = uploadedNode(false);
+        final var hook = hook(true);
+        final var sentBeforeUpload = new boolean[1];
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+            // What JOSM does next in the same EDT event: queue the upload, which succeeds
+            MainApplication.worker.execute(() -> {
+                sentBeforeUpload[0] = !WireMocks.current()
+                        .find(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code()))).isEmpty();
+                GuiHelper.runInEDTAndWait(() -> node.setModified(false));
+            });
+        });
+        sync();
+        assertFalse(sentBeforeUpload[0], "FIXED must wait for the upload");
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code())));
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+        assertNull(ModifiedObjects.getModifiedTask(task.id()));
+    }
+
+    /**
+     * A failed or cancelled upload leaves the primitives modified: FIXED is kept for the next upload (#45)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFixedHeldAfterFailedUpload() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        final var modifiedTask = new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null);
+        ModifiedObjects.addModifiedTask(modifiedTask);
+        final var node = uploadedNode(false);
+        final var hook = hook(true);
+        TestUtils.assumeWorkingJMockit();
+        new MockUp<ConditionalOptionPaneUtil>() {
+            @Mock
+            void showMessageDialog(String preferenceKey, Component parent, Object message, String title,
+                    int messageType) {
+                // The held message; nothing to click in a test
+            }
+        };
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+        });
+        sync();
+        WireMocks.current().verifyThat(exactly(0),
+                putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code())));
+        assertEquals(modifiedTask, ModifiedObjects.getModifiedTask(task.id()));
+    }
+
+    /**
+     * MapRoulette only links a task to a closed changeset, so an open one is not linked (#45)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testOpenChangesetNotLinked() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.addModifiedTask(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null));
+        final var node = uploadedNode(true);
+        final var hook = hook(false);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+        });
+        sync();
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code())));
+        WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+    }
+
+    /**
+     * A status MapRoulette rejects (an invalid status change or a paused challenge) is dropped, not sent with every
+     * later upload
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testRejectedStatusDropped() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = "/api/v2/task/" + task.id();
+        WireMocks.current().register(
+                put(urlPathEqualTo(taskPath + "/" + TaskStatus.SKIPPED.code())).willReturn(aResponse().withStatus(400)
+                        .withBody("{\"status\":\"KO\",\"message\":\"Invalid task status supplied.\"}")));
+        ModifiedObjects.addModifiedTask(new ModifiedTask(task, TaskStatus.SKIPPED, null, null, null, null));
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
+        sync();
+        assertNull(ModifiedObjects.getModifiedTask(task.id()));
+        assertEquals(1, explained.size(), "The user is told");
+        assertEquals("Invalid task status supplied.",
+                ((MapRouletteHttpException) explained.get(0)).serverMessage().orElseThrow(),
+                "with MapRoulette's reason");
+    }
+
+    /**
+     * Stub the MapRoulette calls for sending a status
+     *
+     * @param id     The task id
+     * @param status The status
+     * @return The task path
+     */
+    private static String stub(long id, TaskStatus status) {
+        final var wireMock = WireMocks.current();
+        final var taskPath = "/api/v2/task/" + id;
+        wireMock.register(put(urlPathEqualTo(taskPath + "/" + status.code())).willReturn(aResponse().withStatus(200)));
+        wireMock.register(get(urlPathEqualTo(taskPath + "/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/147197178/start")));
+        wireMock.register(put(urlPathEqualTo(taskPath + "/changeset"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/147197178/start")));
+        return taskPath;
+    }
+
+    /**
+     * Create a modified node to upload
+     *
+     * @param uploaded {@code true} if the upload succeeds (the node is not modified afterwards)
+     * @return The node
+     */
+    private static Node uploadedNode(boolean uploaded) {
+        final var node = new Node(LatLon.ZERO);
+        node.setOsmId(1, 1);
+        node.setModified(true);
+        new DataSet().addPrimitive(node);
+        if (uploaded) {
+            node.setModified(false);
+        }
+        return node;
+    }
+
+    /**
+     * Create the hook without the upload dialog
+     *
+     * @param closesChangeset {@code true} if the changeset is closed after the upload
+     * @return The hook
+     */
+    private static LateUploadHook hook(boolean closesChangeset) {
+        return new LateUploadHook() {
+            @Override
+            boolean isChangesetClosedAfterUpload() {
+                return closesChangeset;
+            }
+        };
+    }
+
+    /**
+     * Wait for the hook's jobs: the EDT event that queues the FIXED job, the worker, then the listeners on the EDT
+     *
+     * @throws Exception if the test fails
+     */
     private static void sync() throws Exception {
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
         MainApplication.worker.submit(() -> {
             /* Sync worker */ }).get(10, TimeUnit.SECONDS);
         GuiHelper.runInEDTAndWait(() -> {

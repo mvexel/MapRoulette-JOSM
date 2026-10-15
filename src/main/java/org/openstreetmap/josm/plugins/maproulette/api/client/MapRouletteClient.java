@@ -264,7 +264,7 @@ public final class MapRouletteClient {
         case 409 -> new MapRouletteLockHeldException("MapRoulette conflict for " + url + message,
                 serverMessage(safeBody), lockedTaskId(safeBody), bundledTaskIds(safeBody));
         default -> new MapRouletteHttpException("MapRoulette answered HTTP " + status + " for " + url + message, status,
-                safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())));
+                safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())), serverMessage(safeBody));
         };
     }
 
