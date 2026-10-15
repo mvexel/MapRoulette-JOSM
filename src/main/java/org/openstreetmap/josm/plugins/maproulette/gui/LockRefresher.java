@@ -6,6 +6,9 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import javax.swing.JOptionPane;
 import javax.swing.Timer;
@@ -17,6 +20,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -30,6 +34,10 @@ public final class LockRefresher {
      */
     static final Duration INTERVAL = Duration.ofMinutes(30);
     private static Timer timer;
+    /**
+     * The tasks the user was told they no longer hold, so they are told only once
+     */
+    private static final Set<Long> LOST = ConcurrentHashMap.newKeySet();
 
     private LockRefresher() {
         // Hide constructor
@@ -62,22 +70,28 @@ public final class LockRefresher {
      */
     static void refreshAll() {
         final var tasks = ModifiedObjects.getLockedTasks();
+        // A task that left the locked list may be started again later
+        LOST.retainAll(tasks.stream().map(Task::id).collect(Collectors.toSet()));
         if (tasks.isEmpty() || !MapRouletteClient.getInstance().auth().capabilities()
                 .contains(AuthProvider.Capability.REFRESH_LOCK)) {
             // Checked here, not at tick time: the user may log out in between
             return;
         }
         for (var task : tasks) {
+            if (LOST.contains(task.id())) {
+                continue;
+            }
             try {
                 TaskAPI.refreshLock(task.id());
             } catch (MapRouletteForbiddenException | MapRouletteNotFoundException e) {
                 // Someone else has the task now, or it is gone
                 Logging.warn("MapRoulette task " + task.id() + " is no longer locked by you");
                 Logging.debug(e);
+                LOST.add(task.id());
                 tell(tr("MapRoulette task {0} is no longer locked by you. Someone else may be working on it.",
                         task.id()));
-            } catch (IOException e) {
-                // Tried again at the next interval
+            } catch (IOException | RuntimeException e) {
+                // Tried again at the next interval; one bad task must not stop the others
                 Logging.warn("Could not refresh the lock on MapRoulette task " + task.id());
                 Logging.debug(e);
             }

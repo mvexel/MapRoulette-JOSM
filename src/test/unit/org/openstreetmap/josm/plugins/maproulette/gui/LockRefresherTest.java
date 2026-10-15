@@ -49,6 +49,27 @@ class LockRefresherTest {
     }
 
     /**
+     * A lost lock is reported once, not at every refresh, and again only after the task is started again
+     */
+    @Test
+    @MapRouletteLogin
+    void testLostLockReportedOnce() {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/4/refreshLock"))
+                .willReturn(aResponse().withStatus(403).withBody("{\"status\":\"Forbidden\",\"message\":\"no\"}")));
+        final var task = task(4);
+        ModifiedObjects.addLockedTask(task);
+        LockRefresher.refreshAll();
+        LockRefresher.refreshAll();
+        wireMock.verifyThat(exactly(1), getRequestedFor(urlPathEqualTo("/api/v2/task/4/refreshLock")));
+        ModifiedObjects.removeLockedTask(task);
+        LockRefresher.refreshAll();
+        ModifiedObjects.addLockedTask(task);
+        LockRefresher.refreshAll();
+        wireMock.verifyThat(exactly(2), getRequestedFor(urlPathEqualTo("/api/v2/task/4/refreshLock")));
+    }
+
+    /**
      * Without a login that may refresh locks, nothing is sent
      */
     @Test
