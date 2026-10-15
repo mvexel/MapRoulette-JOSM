@@ -39,7 +39,8 @@ public final class TaskAPI {
     }
 
     /**
-     * Get tasks in a bounding box
+     * Get tasks in a bounding box. Tasks locked by other mappers are left out: the server's {@code excludeLocked}
+     * parameter actually means "ignore locks", so it is never sent.
      *
      * @param minLat            The minimum latitude for the bounding box (left)
      * @param minLon            The minimum longitude for the bounding box (bottom)
@@ -47,7 +48,6 @@ public final class TaskAPI {
      * @param maxLon            The maximum longitude for the bounding box (top)
      * @param limit             Limit the number of results returned in the response
      * @param page              Used to paginate through the responses
-     * @param excludeLocked     {@code true} will ignore the lock status of tasks
      * @param sort              Unknown
      * @param order             ASC/DESC
      * @param includeTotal      Include total
@@ -55,16 +55,13 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server, or its response could not be read
      */
     public static ClusteredPoint[] box(double minLon, double minLat, double maxLon, double maxLat, int limit, int page,
-            boolean excludeLocked, String sort, String order, boolean includeTotal) throws IOException {
+            String sort, String order, boolean includeTotal) throws IOException {
         Map<String, String> query = new TreeMap<>();
         if (limit > 0) {
             query.put("limit", String.valueOf(limit));
         }
         if (page > 0) {
             query.put("page", String.valueOf(page));
-        }
-        if (excludeLocked) {
-            query.put("excludeLocked", "true");
         }
         if (sort != null && !sort.isBlank()) {
             query.put("sort", sort);

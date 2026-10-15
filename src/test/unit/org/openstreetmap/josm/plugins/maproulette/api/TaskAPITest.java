@@ -35,11 +35,12 @@ class TaskAPITest {
     void testBoxSurfacesUnreadableResponses(String body) {
         WireMocks.current().register(
                 put(urlPathMatching("/api/v2/tasks/box/.*")).willReturn(aResponse().withStatus(502).withBody(body)));
-        assertThrows(IOException.class, () -> TaskAPI.box(1, 2, 3, 4, 10, 0, true, null, null, false));
+        assertThrows(IOException.class, () -> TaskAPI.box(1, 2, 3, 4, 10, 0, null, null, false));
     }
 
     /**
-     * The server reads the box parameters from the query string only, and the box needs no login
+     * The server reads the box parameters from the query string only, and the box needs no login. excludeLocked is not
+     * sent: on the server it means "ignore locks", so leaving it out keeps other mappers' locked tasks hidden.
      *
      * @throws IOException if the request fails
      */
@@ -47,11 +48,11 @@ class TaskAPITest {
     void testBoxSendsParametersInQuery() throws IOException {
         WireMocks.current().register(put(urlPathMatching("/api/v2/tasks/box/.*"))
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json").withBody("[]")));
-        assertEquals(0, TaskAPI.box(1, 2, 3, 4, 1_000, 2, true, null, null, false).length);
+        assertEquals(0, TaskAPI.box(1, 2, 3, 4, 1_000, 2, null, null, false).length);
         WireMocks.current()
                 .verifyThat(putRequestedFor(urlPathMatching("/api/v2/tasks/box/1\\.0/2\\.0/3\\.0/4\\.0"))
                         .withQueryParam("limit", equalTo("1000")).withQueryParam("page", equalTo("2"))
-                        .withQueryParam("excludeLocked", equalTo("true")).withQueryParam("includeGeometries", absent())
+                        .withQueryParam("excludeLocked", absent()).withQueryParam("includeGeometries", absent())
                         .withQueryParam("includeTags", absent()));
     }
 }

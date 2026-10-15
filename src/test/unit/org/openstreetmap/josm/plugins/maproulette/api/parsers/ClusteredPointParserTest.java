@@ -29,8 +29,7 @@ import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 class ClusteredPointParserTest {
     @Test
     void testTask136226437() throws IOException {
-        final var box = TaskAPI.box(-108.4962538, 39.082404, -108.4962538, 39.082404, 1_000, 0, true, null, null,
-                false);
+        final var box = TaskAPI.box(-108.4962538, 39.082404, -108.4962538, 39.082404, 1_000, 0, null, null, false);
         assertEquals(1, box.length);
         final var photoMC = new PublicUser(11197, null, "Photo_MC", null, null);
         final var actual = box[0];
