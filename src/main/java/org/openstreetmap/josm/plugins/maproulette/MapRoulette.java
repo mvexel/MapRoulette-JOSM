@@ -21,6 +21,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePre
 import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 
 /**
  * The POJO entry point
@@ -54,7 +55,7 @@ public class MapRoulette extends Plugin {
             newFrame.addToggleDialog(new TaskListPanel());
         } else {
             final var lockedTasks = ModifiedObjects.getLockedTasks();
-            MainApplication.worker.submit(() -> {
+            Workers.execute(() -> {
                 for (var task : lockedTasks) {
                     try {
                         TaskAPI.release(task.id());

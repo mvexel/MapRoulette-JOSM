@@ -15,7 +15,6 @@ import javax.swing.table.DefaultTableColumnModel;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
 
-import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
 import org.openstreetmap.josm.gui.preferences.SubPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.TabPreferenceSetting;
@@ -27,6 +26,7 @@ import org.openstreetmap.josm.plugins.maproulette.api_caching.ProjectCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
 import org.openstreetmap.josm.plugins.maproulette.data.IgnoreList;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 
 /**
@@ -72,7 +72,7 @@ public class MapRouletteTaskListPreferences implements SubPreferenceSetting {
         ((NonEditableTableModel) table.getModel()).setColumnClass(3, Long.class);
         ((NonEditableTableModel) table.getModel()).setColumnEditable(4);
         ((NonEditableTableModel) table.getModel()).setColumnClass(4, Boolean.class);
-        MainApplication.worker.execute(() -> {
+        Workers.execute(() -> {
             try {
                 for (var row = 0; row < ignoredTasks.length; row++) {
                     final var task = TaskCache.get(ignoredTasks[row]);
@@ -108,7 +108,7 @@ public class MapRouletteTaskListPreferences implements SubPreferenceSetting {
         ((NonEditableTableModel) table.getModel()).setColumnClass(2, Long.class);
         ((NonEditableTableModel) table.getModel()).setColumnEditable(3);
         ((NonEditableTableModel) table.getModel()).setColumnClass(3, Boolean.class);
-        MainApplication.worker.execute(() -> {
+        Workers.execute(() -> {
             try {
                 for (var row = 0; row < ignoredChallenges.length; row++) {
                     final var challenge = ChallengeCache.challenge(ignoredChallenges[row]);
