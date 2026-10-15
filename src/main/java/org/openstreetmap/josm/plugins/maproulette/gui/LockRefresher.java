@@ -61,10 +61,13 @@ public final class LockRefresher {
      * Refresh the locks of all started tasks. Call it off the EDT.
      */
     static void refreshAll() {
-        if (!MapRouletteClient.getInstance().auth().capabilities().contains(AuthProvider.Capability.REFRESH_LOCK)) {
+        final var tasks = ModifiedObjects.getLockedTasks();
+        if (tasks.isEmpty() || !MapRouletteClient.getInstance().auth().capabilities()
+                .contains(AuthProvider.Capability.REFRESH_LOCK)) {
+            // Checked here, not at tick time: the user may log out in between
             return;
         }
-        for (var task : ModifiedObjects.getLockedTasks()) {
+        for (var task : tasks) {
             try {
                 TaskAPI.refreshLock(task.id());
             } catch (MapRouletteForbiddenException | MapRouletteNotFoundException e) {
