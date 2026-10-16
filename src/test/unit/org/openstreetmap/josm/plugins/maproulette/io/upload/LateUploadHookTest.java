@@ -29,6 +29,8 @@ import javax.swing.text.html.Option;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -45,6 +47,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
@@ -311,6 +314,49 @@ class LateUploadHookTest {
         assertEquals("Invalid task status supplied.",
                 ((MapRouletteHttpException) explained.get(0)).serverMessage().orElseThrow(),
                 "with MapRoulette's reason");
+    }
+
+    /**
+     * A 403 that MapRoulette will repeat drops the status; one a new login or the server's settings can lift keeps it
+     *
+     * @param body    The 403 response body
+     * @param dropped {@code true} if the status should be dropped
+     * @param handler The log handler
+     * @throws Exception if the test fails
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "{\"error\":\"choice_task_status\"}|true",
+            "{\"error\":\"challenge_draft\"}|true", "{\"status\":\"Forbidden\",\"message\":\"no\"}|true",
+            "{\"error\":\"mobile_writes_disabled\"}|false", "{\"error\":\"insufficient_scope\"}|false" })
+    @MapRouletteLogin
+    @LoggingHandler
+    void testRefusedStatus(String body, boolean dropped, LoggingHandler.TestHandler handler) throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = "/api/v2/task/" + task.id();
+        WireMocks.current().register(put(urlPathEqualTo(taskPath + "/" + TaskStatus.SKIPPED.code()))
+                .willReturn(aResponse().withStatus(403).withBody(body)));
+        final var modified = new ModifiedTask(task, TaskStatus.SKIPPED, null, null, null, null);
+        ModifiedObjects.addModifiedTask(modified);
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
+            sync();
+            assertEquals(dropped, ModifiedObjects.getModifiedTask(task.id()) == null);
+            assertEquals(1, explained.size(), "The user is told why");
+            assertEquals(dropped,
+                    handler.getRecords().stream().anyMatch(
+                            r -> r.getMessage().contains("task " + task.id()) && r.getMessage().contains("dropped")),
+                    "and which task's status was dropped");
+        } finally {
+            ModifiedObjects.removeModifiedTask(modified);
+        }
     }
 
     /**
