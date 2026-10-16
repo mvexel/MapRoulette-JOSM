@@ -56,6 +56,7 @@ import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
 import mockit.Mock;
 import mockit.MockUp;
@@ -151,6 +152,82 @@ class LockUnlockTaskActionTest {
             }
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
         }
+    }
+
+    /**
+     * MapRoulette still has a lock JOSM forgot (from an earlier session): Start offers to stop it, then starts the task
+     * (#90)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartStopsForgottenLock() throws Exception {
+        final var wireMock = startWithForgottenLock(0);
+        try {
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/125/release")));
+            wireMock.verifyThat(2, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Declining to stop the forgotten lock leaves it alone
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartKeepsForgottenLock() throws Exception {
+        final var wireMock = startWithForgottenLock(1);
+        try {
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/125/release")));
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Start a task while MapRoulette holds task 125 for the user, answering the question with {@code choice}
+     *
+     * @param choice The option picked in the question
+     * @return The WireMock client
+     */
+    private WireMock startWithForgottenLock(int choice) throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/start")).atPriority(1).inScenario("forgotten")
+                .whenScenarioStateIs(Scenario.STARTED)
+                .willReturn(aResponse().withStatus(409).withHeader("Content-Type", "application/json").withBody(
+                        "{\"status\":\"Conflict\",\"message\":\"locked\",\"lockedTaskId\":125,\"bundledTasks\":[]}")));
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/125/release")).inScenario("forgotten")
+                .whenScenarioStateIs(Scenario.STARTED).willSetStateTo("released")
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/start")).atPriority(1).inScenario("forgotten")
+                .whenScenarioStateIs("released").willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        final var asked = new AtomicInteger();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                asked.incrementAndGet();
+                return choice;
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            action.updateEnabledState();
+            action.actionPerformed(null);
+        });
+        // Start, the question (queued on the EDT), then the second start
+        sync();
+        sync();
+        sync();
+        assertEquals(1, asked.get(), "Start must ask before stopping the forgotten task");
+        return wireMock;
     }
 
     /**

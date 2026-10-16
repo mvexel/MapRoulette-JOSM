@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 import javax.swing.JOptionPane;
 import javax.swing.JTable;
+import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.JosmAction;
@@ -84,7 +85,23 @@ final class LockUnlockTaskAction extends JosmAction {
         for (int j = 0; j < selected.length; j++) {
             ids[j] = model.get(this.table.getRowSorter().convertRowIndexToModel(selected[j])).id();
         }
+        lockTasks(ids, selected, -1);
+    }
+
+    /**
+     * Start tasks
+     *
+     * @param ids          The tasks to start
+     * @param selected     The table selection to restore
+     * @param releaseFirst A task to release before starting, or -1
+     */
+    private void lockTasks(long[] ids, int[] selected, long releaseFirst) {
+        final var model = (TaskTableModel) this.table.getModel();
         final var lockedTasks = new ArrayList<Task>();
+        // A lock MapRoulette still has for the user, but this JOSM does not know (from an earlier session), and the
+        // tasks that could not be started because of it
+        final var forgotten = new long[] { -1 };
+        final var notStarted = new ArrayList<Long>();
         MainApplication.worker.execute(new PleaseWaitRunnable(tr("Starting MapRoulette tasks")) {
             @Override
             protected void cancel() {
@@ -93,12 +110,30 @@ final class LockUnlockTaskAction extends JosmAction {
 
             @Override
             protected void realRun() {
-                for (long id : ids) {
+                if (releaseFirst >= 0) {
                     try {
-                        lockedTasks.add(TaskAPI.start(id));
-                    } catch (MapRouletteLockHeldException e) {
-                        // MapRoulette allows one lock per user, so the remaining rows would fail the same way
+                        TaskAPI.release(releaseFirst);
+                    } catch (IOException e) {
                         ExceptionDialogUtil.explainException(e);
+                        return;
+                    }
+                }
+                for (var i = 0; i < ids.length; i++) {
+                    try {
+                        lockedTasks.add(TaskAPI.start(ids[i]));
+                    } catch (MapRouletteLockHeldException e) {
+                        final var held = e.heldTaskId();
+                        if (releaseFirst < 0 && held.isPresent()
+                                && ModifiedObjects.getLockedTask(held.getAsLong()) == null) {
+                            // JOSM can't stop it from the task list, so ask in finish()
+                            forgotten[0] = held.getAsLong();
+                            for (var j = i; j < ids.length; j++) {
+                                notStarted.add(ids[j]);
+                            }
+                        } else {
+                            ExceptionDialogUtil.explainException(e);
+                        }
+                        // MapRoulette allows one lock per user, so the remaining rows would fail the same way
                         break;
                     } catch (IOException e) {
                         ExceptionDialogUtil.explainException(e);
@@ -122,8 +157,35 @@ final class LockUnlockTaskAction extends JosmAction {
                     }
                     AutoScaleAction.zoomTo(primitiveList);
                 }
+                if (forgotten[0] >= 0) {
+                    // Ask after this job, so the question is not tied to its progress dialog
+                    final long held = forgotten[0];
+                    final var remaining = notStarted.stream().mapToLong(Long::longValue).toArray();
+                    SwingUtilities.invokeLater(() -> {
+                        if (confirmStopForgotten(held)) {
+                            lockTasks(remaining, selected, held);
+                        }
+                    });
+                }
             }
         });
+    }
+
+    /**
+     * Ask whether to stop a task the user started in an earlier session, which JOSM no longer knows about
+     *
+     * @param held The task the user has started
+     * @return {@code true} to stop it and start the selected tasks
+     */
+    private static boolean confirmStopForgotten(long held) {
+        final var options = new String[] { tr("Stop it and start this task"), tr("Cancel") };
+        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(),
+                tr("You still have MapRoulette task {0} started, probably from an earlier JOSM session.\n"
+                        + "MapRoulette allows one started task at a time. Stop task {0} and start this task?",
+                        Long.toString(held)),
+                tr("MapRoulette task already started"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+                options, options[0]);
+        return choice == 0;
     }
 
     /**
