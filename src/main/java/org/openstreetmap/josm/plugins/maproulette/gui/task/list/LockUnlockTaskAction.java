@@ -12,7 +12,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
+import javax.swing.JOptionPane;
 import javax.swing.JTable;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
@@ -23,6 +25,7 @@ import org.openstreetmap.josm.gui.PleaseWaitRunnable;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
@@ -155,6 +158,17 @@ final class LockUnlockTaskAction extends JosmAction {
             final var locked = ModifiedObjects.getLockedTask(id);
             stops.add(new Stop(id, locked, locked == null ? null : ModifiedObjects.getModifiedTask(locked.id())));
         }
+        // A pending FIXED is sent after the upload (LateUploadHook), never by Stop: keep those tasks, or drop the status
+        if (stops.stream().anyMatch(LockUnlockTaskAction::isFixedPending) && !confirmDropFixed()) {
+            // A bundle has one lock, on its primary task: keeping one member keeps the whole bundle
+            final var keptBundles = stops.stream().filter(LockUnlockTaskAction::isFixedPending)
+                    .map(stop -> stop.locked().bundleId()).filter(Objects::nonNull).collect(Collectors.toSet());
+            stops.removeIf(stop -> isFixedPending(stop)
+                    || stop.locked() != null && keptBundles.contains(stop.locked().bundleId()));
+            if (stops.isEmpty()) {
+                return;
+            }
+        }
         final var results = new ArrayList<Stopped>(stops.size());
         MainApplication.worker.execute(new PleaseWaitRunnable(tr("Stopping MapRoulette tasks")) {
             @Override
@@ -166,11 +180,16 @@ final class LockUnlockTaskAction extends JosmAction {
             protected void realRun() {
                 for (var stop : stops) {
                     var released = false;
+                    if (isFixedPending(stop)) {
+                        // The user dropped it. Drop it before the release, on the worker that also runs the upload,
+                        // so an upload queued earlier cannot send it after all
+                        ModifiedObjects.removeModifiedTask(stop.modified());
+                    }
                     try {
                         final var unlockedTask = TaskAPI.release(stop.id());
                         if (stop.locked() != null && stop.locked().id() == unlockedTask.id()) {
                             final var modified = stop.modified();
-                            if (modified != null) {
+                            if (modified != null && modified.status() != TaskStatus.FIXED) {
                                 TaskAPI.updateStatus(stop.locked().id(), modified.status(), modified.comment(),
                                         modified.tags(), modified.reviewRequested(), modified.completionResponses());
                             }
@@ -205,6 +224,31 @@ final class LockUnlockTaskAction extends JosmAction {
                 reselect(selected);
             }
         });
+    }
+
+    /**
+     * Check if a task to stop has a FIXED status waiting for the upload
+     *
+     * @param stop The task to stop
+     * @return {@code true} if the task has a pending FIXED
+     */
+    private static boolean isFixedPending(Stop stop) {
+        return stop.modified() != null && stop.modified().status() == TaskStatus.FIXED;
+    }
+
+    /**
+     * Ask whether to drop a pending FIXED status, since the edits are not uploaded yet
+     *
+     * @return {@code true} to drop the FIXED status and stop, {@code false} to keep the task until the upload
+     */
+    private static boolean confirmDropFixed() {
+        final var options = new String[] { tr("Keep until upload"), tr("Drop Fixed and stop") };
+        final var choice = JOptionPane.showOptionDialog(MainApplication.getMainFrame(),
+                tr("You marked this task as Fixed. Its status is sent to MapRoulette when you upload your edits.\n"
+                        + "Keep the task until you upload, or drop the Fixed status and stop the task?"),
+                tr("Stop MapRoulette task"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, options,
+                options[0]);
+        return choice == 1;
     }
 
     /**

@@ -238,7 +238,13 @@ public final class CurrentTaskPanel extends ToggleDialog {
             this.cooperativeWork.setVisible(false);
             return;
         }
-        this.idLabel.setText(tr("ID: {0}", currentTask.id()));
+        final var pending = ModifiedObjects.getModifiedTask(currentTask.id());
+        if (pending != null && pending.status() == TaskStatus.FIXED) {
+            // FIXED waits for the upload (LateUploadHook), so say what finishes the task
+            this.idLabel.setText(tr("ID: {0} (Fixed: sent to MapRoulette when you upload)", currentTask.id()));
+        } else {
+            this.idLabel.setText(tr("ID: {0}", currentTask.id()));
+        }
 
         // Checked before building the text, so a challenge arriving in between still triggers a refresh
         this.instructionPending = Utils.isStripEmpty(currentTask.instruction())
