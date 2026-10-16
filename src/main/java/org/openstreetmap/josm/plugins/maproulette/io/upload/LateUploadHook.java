@@ -33,6 +33,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsuppor
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
@@ -200,7 +201,7 @@ public class LateUploadHook implements UploadHook {
     }
 
     private static void explainHeld() {
-        ConditionalOptionPaneUtil.showMessageDialog("maproulette.status.held", MainApplication.getMainFrame(),
+        ConditionalOptionPaneUtil.showMessageDialog("maproulette.status.held", MRGuiHelper.dialogParent(),
                 tr("The upload did not complete, so the FIXED status of your MapRoulette tasks was not sent. It will be"
                         + " sent with your next upload, unless the task is resolved by someone else first."),
                 tr("MapRoulette status not sent"), JOptionPane.INFORMATION_MESSAGE);

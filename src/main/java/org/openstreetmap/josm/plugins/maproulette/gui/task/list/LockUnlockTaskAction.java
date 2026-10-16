@@ -27,6 +27,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
@@ -243,7 +244,7 @@ final class LockUnlockTaskAction extends JosmAction {
      */
     private static boolean confirmDropFixed() {
         final var options = new String[] { tr("Keep until upload"), tr("Drop Fixed and stop") };
-        final var choice = JOptionPane.showOptionDialog(MainApplication.getMainFrame(),
+        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(),
                 tr("You marked this task as Fixed. Its status is sent to MapRoulette when you upload your edits.\n"
                         + "Keep the task until you upload, or drop the Fixed status and stop the task?"),
                 tr("Stop MapRoulette task"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, options,

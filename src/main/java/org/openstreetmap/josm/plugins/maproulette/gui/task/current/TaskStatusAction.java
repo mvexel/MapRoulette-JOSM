@@ -45,6 +45,7 @@ import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
 import org.openstreetmap.josm.plugins.maproulette.data.ApplyCooperativeChange;
 import org.openstreetmap.josm.plugins.maproulette.data.ApplyOscChange;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
@@ -136,7 +137,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
      */
     private static boolean confirmMarkAll() {
         return ConditionalOptionPaneUtil.showConfirmationDialog("TaskStatusAction.bulkUpdate",
-                MainApplication.getMainFrame(),
+                MRGuiHelper.dialogParent(),
                 tr("<html>Mark all selected tasks?<br>This will apply all tag fixes and geometry fixes!</html>"),
                 tr("Mark all selected tasks?"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
                 JOptionPane.YES_OPTION);
@@ -258,7 +259,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 final var message = tr("Apply OSC directly to the edit layer?");
                 final var options = new String[] { tr("Apply"), tr("Show"), tr("Cancel") };
                 final var option = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.apply_osc",
-                        MainApplication.getMainFrame(), message, message, JOptionPane.YES_NO_CANCEL_OPTION,
+                        MRGuiHelper.dialogParent(), message, message, JOptionPane.YES_NO_CANCEL_OPTION,
                         JOptionPane.YES_OPTION, options, options[0]);
                 final var osc = Objects.requireNonNull(task.cooperativeWorkAsOsc());
                 if (option == 0) {
@@ -300,7 +301,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
 
         var selection = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.feedback",
-                MainApplication.getMainFrame(), panel, tr("Task Feedback"), JOptionPane.OK_CANCEL_OPTION,
+                MRGuiHelper.dialogParent(), panel, tr("Task Feedback"), JOptionPane.OK_CANCEL_OPTION,
                 JOptionPane.QUESTION_MESSAGE, null, null);
         if (selection == JOptionPane.OK_OPTION) {
             return new ModifiedTask(task, this.status, comment.getText().trim().isEmpty() ? null : comment.getText(),

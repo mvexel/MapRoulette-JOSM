@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.io.StringReader;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
@@ -52,5 +54,13 @@ class MRGuiHelperTest {
         final var task = (Task) TaskParser.parseTask(new StringReader(json));
         final var instructions = assertDoesNotThrow(() -> MRGuiHelper.getInstructionText(task));
         assertEquals("<html><p>Street: Costs $1 \\ Road</p>\n</html>", instructions);
+    }
+
+    /**
+     * With no focused window (as in a headless test), dialogs fall back to the main frame (#83)
+     */
+    @Test
+    void testDialogParentFallsBackToMainFrame() {
+        assertSame(MainApplication.getMainFrame(), MRGuiHelper.dialogParent());
     }
 }

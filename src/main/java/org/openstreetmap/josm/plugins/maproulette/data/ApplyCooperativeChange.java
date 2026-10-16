@@ -17,10 +17,10 @@ import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
-import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.OSMChange;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.tools.Logging;
 
 import jakarta.annotation.Nonnull;
@@ -78,7 +78,7 @@ public class ApplyCooperativeChange {
             final var primitive = ds.getPrimitiveById(update.osmId(), update.osmType());
             if (update.version() < 0 || primitive.getVersion() == update.version()
                     || ConditionalOptionPaneUtil.showConfirmationDialog(BULK_OPERATION_VERSION_MISMATCH,
-                            MainApplication.getMainFrame(),
+                            MRGuiHelper.dialogParent(),
                             tr("The {0} {1} (v{2}) has changed since the challenge was created.<br>Continue?",
                                     update.osmType().getAPIName(), update.osmId(), update.version()),
                             tr("Cooperative Challenge: Mismatched version types"), JOptionPane.YES_NO_OPTION,

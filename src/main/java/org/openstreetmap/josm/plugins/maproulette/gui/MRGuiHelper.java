@@ -3,6 +3,8 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.Component;
+import java.awt.KeyboardFocusManager;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
@@ -13,6 +15,7 @@ import java.util.stream.Stream;
 
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.markdown.SelectParser;
@@ -97,5 +100,16 @@ public final class MRGuiHelper {
      */
     public static Stream<String> filterKeys(Stream<String> keys) {
         return keys.filter(key -> !DISCARDABLE_KEYS.contains(key));
+    }
+
+    /**
+     * Get the window to parent a dialog to. The MapRoulette panels can be detached windows above the main frame, so a
+     * dialog parented to the main frame can open behind them.
+     *
+     * @return The focused window if there is one, else the main frame
+     */
+    public static Component dialogParent() {
+        final var active = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+        return active != null && active.isShowing() ? active : MainApplication.getMainFrame();
     }
 }
