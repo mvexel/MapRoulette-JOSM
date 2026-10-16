@@ -1,6 +1,9 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.api;
 
+import static org.openstreetmap.josm.tools.I18n.tr;
+
+import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -8,8 +11,11 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import jakarta.json.Json;
+import javax.swing.JOptionPane;
 import javax.swing.text.html.Option;
 
+import org.openstreetmap.josm.gui.Notification;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
@@ -191,9 +197,22 @@ public final class TaskAPI {
                 // The status is set; failing here would send it again
                 Logging.warn("Could not add the comment to MapRoulette task " + task);
                 Logging.warn(e);
+                tellCommentLost(task);
             }
         }
         return true;
+    }
+
+    private static void tellCommentLost(long task) {
+        final var message = tr(
+                "MapRoulette task {0} was updated, but your comment was not saved. You can add it on the MapRoulette website.",
+                task);
+        if (GraphicsEnvironment.isHeadless()) {
+            Logging.info(message);
+        } else {
+            GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.WARNING_MESSAGE)
+                    .setDuration(Notification.TIME_VERY_LONG).show());
+        }
     }
 
     /**
