@@ -209,6 +209,15 @@ public final class CurrentTaskPanel extends ToggleDialog {
     }
 
     /**
+     * Check if the panel shows a task the user still has locked
+     *
+     * @return {@code true} if the shown task is still locked
+     */
+    public boolean showsLockedTask() {
+        return this.task != null && ModifiedObjects.getLockedTask(this.task.id()) != null;
+    }
+
+    /**
      * Get the actions for the panel
      * @return The actions
      */

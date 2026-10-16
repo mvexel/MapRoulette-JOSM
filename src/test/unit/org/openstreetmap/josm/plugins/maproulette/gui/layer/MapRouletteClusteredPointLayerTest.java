@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui.layer;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,7 +31,10 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
@@ -136,6 +140,57 @@ class MapRouletteClusteredPointLayerTest {
             assertDoesNotThrow(() -> layer.mouseClicked(generateMouseEvent(false, 36.0778797, -119.1075725)));
             assertEquals(0, panel.getSelected().size());
         } finally {
+            MainApplication.getMap().removeToggleDialog(panel);
+        }
+    }
+
+    /**
+     * The current task window keeps the locked task when the list filter hides its row
+     */
+    @Test
+    void testFilterKeepsLockedTask() throws InterruptedException, ExecutionException, TimeoutException {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testFilterKeepsLockedTask", null));
+        final var bounds = new Bounds(36.0770518, -119.1139411, 36.0839216, -119.0992458);
+        new MockUp<MapViewState.MapViewRectangle>() {
+            @Mock
+            public Bounds getLatLonBoundsBox() {
+                return bounds;
+            }
+        };
+        final var locked = new Task(133361784L, "", null, null, 15318, null, null, new DataSet(), null, null, null,
+                null, null, null, 0, null, null, null, false, null, null);
+        final var panel = new TaskListPanel();
+        try {
+            MainApplication.getMap().addToggleDialog(panel);
+            TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
+            sync();
+            final var layer = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
+                    .get(0);
+            ModifiedObjects.addLockedTask(locked);
+            layer.mouseClicked(generateMouseEvent(false, 36.0778797, -119.1075725));
+            sync();
+            final var currentTaskPanel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
+            assertTrue(currentTaskPanel.showsLockedTask());
+            final FilterField filter = assertInstanceOf(FilterField.class,
+                    ((JComponent) ((JComponent) ((JComponent) panel.getComponent(1)).getComponent(0)).getComponent(0))
+                            .getComponent(0));
+            filter.setText("foobar12345678912345678");
+            sync();
+            assertEquals(0, panel.getSelected().size());
+            assertTrue(currentTaskPanel.showsLockedTask(), "The filter must not drop the locked task");
+            // Once released, the next selection change clears the window
+            ModifiedObjects.removeLockedTask(locked);
+            filter.setText("");
+            sync();
+            layer.mouseClicked(generateMouseEvent(false, 36.080299, -119.1074128));
+            sync();
+            assertFalse(currentTaskPanel.showsLockedTask());
+        } finally {
+            ModifiedObjects.removeLockedTask(locked);
+            final var currentTaskPanel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
+            if (currentTaskPanel != null) {
+                MainApplication.getMap().removeToggleDialog(currentTaskPanel);
+            }
             MainApplication.getMap().removeToggleDialog(panel);
         }
     }
