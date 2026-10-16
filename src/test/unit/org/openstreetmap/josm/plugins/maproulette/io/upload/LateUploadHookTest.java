@@ -15,15 +15,18 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.LogRecord;
 
 import javax.swing.SwingUtilities;
 
@@ -366,6 +369,40 @@ class LateUploadHookTest {
         } finally {
             ModifiedObjects.removeModifiedTask(modified);
         }
+    }
+
+    /**
+     * A refused changeset link does not undo or drop the status that was already sent (#80)
+     *
+     * @param handler The log handler
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    @LoggingHandler
+    void testRefusedLinkKeepsSentStatus(LoggingHandler.TestHandler handler) throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.SKIPPED);
+        WireMocks.current().register(put(urlPathEqualTo(taskPath + "/changeset"))
+                .willReturn(aResponse().withStatus(403).withBody("{\"error\":\"changeset_not_owned\"}")));
+        ModifiedObjects.addModifiedTask(new ModifiedTask(task, TaskStatus.SKIPPED, null, null, null, null));
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
+        sync();
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.SKIPPED.code())));
+        assertNull(ModifiedObjects.getModifiedTask(task.id()), "The status was sent, so it is not sent again");
+        assertTrue(explained.isEmpty(), "No error dialog for the link");
+        final var messages = handler.getRecords().stream().map(LogRecord::getMessage).filter(Objects::nonNull).toList();
+        assertTrue(messages.stream().anyMatch(m -> m.contains("was sent") && m.contains("did not link")),
+                messages::toString);
+        assertFalse(messages.stream().anyMatch(m -> m.contains("dropped")), "The status was not dropped");
     }
 
     /**
