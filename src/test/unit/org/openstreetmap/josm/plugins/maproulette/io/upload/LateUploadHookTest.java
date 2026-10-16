@@ -2,8 +2,10 @@
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
@@ -142,7 +144,9 @@ class LateUploadHookTest {
             GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
             sync();
             assertEquals(List.of(false, false, false), onEdt);
-            wireMock.verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+            // No uploaded primitives, so no changeset id: MapRoulette finds the changeset itself
+            wireMock.verifyThat(
+                    putRequestedFor(urlPathEqualTo(taskPath + "/changeset")).withQueryParam("changesetId", absent()));
             assertNull(ModifiedObjects.getModifiedTask(task.id()));
             assertFalse(ModifiedObjects.getLockedTasks().contains(task));
         } finally {
@@ -194,13 +198,18 @@ class LateUploadHookTest {
             MainApplication.worker.execute(() -> {
                 sentBeforeUpload[0] = !WireMocks.current()
                         .find(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code()))).isEmpty();
-                GuiHelper.runInEDTAndWait(() -> node.setModified(false));
+                GuiHelper.runInEDTAndWait(() -> {
+                    node.setModified(false);
+                    node.setChangesetId(701181);
+                });
             });
         });
         sync();
         assertFalse(sentBeforeUpload[0], "FIXED must wait for the upload");
         WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code())));
-        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+        // MapRoulette's own guess at the changeset can miss it (#80), so name the one JOSM uploaded to
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset"))
+                .withQueryParam("changesetId", equalTo("701181")));
         assertNull(ModifiedObjects.getModifiedTask(task.id()));
     }
 

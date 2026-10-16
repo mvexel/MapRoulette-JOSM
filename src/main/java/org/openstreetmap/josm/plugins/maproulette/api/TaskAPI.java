@@ -148,12 +148,16 @@ public final class TaskAPI {
     /**
      * Update the changeset for a task
      *
-     * @param task the task to update the changeset for
+     * @param task        the task to update the changeset for
+     * @param changesetId the closed changeset with the task's edits, or {@code 0} to let MapRoulette guess it from the
+     *                    user's recent changesets
      * @return The updated task
      * @throws IOException if there was a problem communicating with the server
      */
-    public static Task changeset(long task) throws IOException {
-        return MapRouletteClient.getInstance().put(TASK + "/" + task + "/changeset", Collections.emptyMap(), null,
+    public static Task changeset(long task, long changesetId) throws IOException {
+        final Map<String, String> query = changesetId > 0 ? Map.of("changesetId", Long.toString(changesetId))
+                : Collections.emptyMap();
+        return MapRouletteClient.getInstance().put(TASK + "/" + task + "/changeset", query, null,
                 body -> (Task) TaskParser.parseTask(body));
     }
 

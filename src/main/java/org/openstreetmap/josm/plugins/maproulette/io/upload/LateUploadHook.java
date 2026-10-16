@@ -95,7 +95,7 @@ public class LateUploadHook implements UploadHook {
         final var fixed = modifiedTasks.stream().filter(entry -> entry.status() == TaskStatus.FIXED).toList();
         final var others = modifiedTasks.stream().filter(entry -> entry.status() != TaskStatus.FIXED).toList();
         if (!others.isEmpty()) {
-            MainApplication.worker.execute(() -> sendStatuses(others, true));
+            MainApplication.worker.execute(() -> sendStatuses(others, true, 0));
         }
         if (!fixed.isEmpty()) {
             final var primitives = this.uploading;
@@ -104,7 +104,8 @@ public class LateUploadHook implements UploadHook {
             // runs after the upload
             SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
                 if (Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() -> isUploaded(primitives)))) {
-                    sendStatuses(fixed, linkChangeset);
+                    final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(() -> uploadedChangeset(primitives));
+                    sendStatuses(fixed, linkChangeset, changesetId);
                 } else {
                     GuiHelper.runInEDT(LateUploadHook::explainHeld);
                 }
@@ -149,6 +150,16 @@ public class LateUploadHook implements UploadHook {
     }
 
     /**
+     * Get the changeset the primitives were uploaded in
+     *
+     * @param primitives The uploaded primitives
+     * @return The changeset id, or {@code 0} if JOSM did not record one
+     */
+    static long uploadedChangeset(Collection<OsmPrimitive> primitives) {
+        return primitives.stream().mapToLong(OsmPrimitive::getChangesetId).max().orElse(0);
+    }
+
+    /**
      * Say which task's status was dropped. The error dialog that follows gives MapRoulette's reason.
      *
      * @param entry The dropped status
@@ -176,8 +187,9 @@ public class LateUploadHook implements UploadHook {
      *
      * @param modifiedTasks The modified tasks
      * @param linkChangeset {@code true} to ask MapRoulette to link the tasks to the changeset
+     * @param changesetId   The uploaded changeset, or {@code 0} to let MapRoulette find it
      */
-    private static void sendStatuses(List<ModifiedTask> modifiedTasks, boolean linkChangeset) {
+    private static void sendStatuses(List<ModifiedTask> modifiedTasks, boolean linkChangeset, long changesetId) {
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
         for (ModifiedTask entry : modifiedTasks) {
             // Skip a status dropped or changed since the upload started (Stop Task drops a held FIXED)
@@ -189,7 +201,7 @@ public class LateUploadHook implements UploadHook {
                     ModifiedObjects.removeLockedTask(entry.task());
                     ModifiedObjects.removeModifiedTask(entry);
                     if (linkChangeset) {
-                        TaskAPI.changeset(entry.task().id());
+                        TaskAPI.changeset(entry.task().id(), changesetId);
                     }
                 } catch (MapRouletteNotFoundException | MapRouletteHttpException | MapRouletteForbiddenException e) {
                     if (isFinal(e)) {
