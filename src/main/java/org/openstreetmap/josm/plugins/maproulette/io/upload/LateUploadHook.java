@@ -1,63 +1,40 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
-import static org.openstreetmap.josm.tools.I18n.tr;
-
-import java.awt.GraphicsEnvironment;
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.upload.UploadHook;
 import org.openstreetmap.josm.data.APIDataSet;
+import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.data.osm.ChangesetCacheEvent;
 import org.openstreetmap.josm.data.osm.ChangesetCacheListener;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
-import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
-import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
-import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
-import org.openstreetmap.josm.tools.ListenerList;
-import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.bugreport.BugReport;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 
 /**
- * Sends task statuses, and links the tasks marked Fixed to the changeset of the upload that follows (D15)
+ * Links the tasks marked Fixed to the changeset of the upload that follows (D15)
  */
 public class LateUploadHook implements UploadHook, ChangesetCacheListener {
-    /**
-     * A list of listeners for updated tasks
-     */
-    private static final ListenerList<Consumer<Map<Long, Task>>> MODIFIED_TASKS_UPLOADED = ListenerList.create();
-
-    /**
-     * Tasks marked Fixed whose changeset is still open, by changeset id. MapRoulette only links a closed changeset.
-     */
-    private static final Map<Long, List<Task>> AWAITING_CLOSE = new ConcurrentHashMap<>();
-
     /**
      * Add a listener for tasks whose status was sent
      *
      * @param consumer The consumer will receive the updated tasks by id
+     * @see TaskStatusSender#addListener(Consumer)
      */
     public static void addUploadListener(Consumer<Map<Long, Task>> consumer) {
-        MODIFIED_TASKS_UPLOADED.addListener(consumer);
+        TaskStatusSender.addListener(consumer);
     }
 
     /**
@@ -66,7 +43,7 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
      * @param consumer The listener to remove
      */
     public static void removeUploadListener(Consumer<Map<Long, Task>> consumer) {
-        MODIFIED_TASKS_UPLOADED.removeListener(consumer);
+        TaskStatusSender.removeListener(consumer);
     }
 
     /**
@@ -106,25 +83,22 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             }
             fixed.forEach(ModifiedObjects::removeUnlinkedFixed);
             if (closed || changesetId == 0) {
-                fixed.forEach(task -> link(task, changesetId));
+                ChangesetLinks.link(fixed, changesetId);
             } else {
-                AWAITING_CLOSE.merge(changesetId, fixed, (a, b) -> Stream.concat(a.stream(), b.stream()).toList());
+                ChangesetLinks.await(fixed, changesetId);
             }
         }));
     }
 
     /**
-     * Link the tasks waiting for a changeset once JOSM closes it
+     * Link the tasks waiting for a changeset once JOSM closes it. JOSM calls this on whichever thread updated the cache,
+     * often the worker; the links are sent from a job of their own.
      */
     @Override
     public void changesetCacheUpdated(ChangesetCacheEvent event) {
         Stream.concat(event.getAddedChangesets().stream(), event.getUpdatedChangesets().stream())
-                .filter(changeset -> !changeset.isOpen()).forEach(changeset -> {
-                    final var tasks = AWAITING_CLOSE.remove((long) changeset.getId());
-                    if (tasks != null) {
-                        MainApplication.worker.execute(() -> tasks.forEach(task -> link(task, changeset.getId())));
-                    }
-                });
+                .filter(changeset -> !changeset.isOpen()).mapToLong(Changeset::getId).filter(ChangesetLinks::awaits)
+                .forEach(changesetId -> MainApplication.worker.execute(() -> ChangesetLinks.retry(changesetId)));
     }
 
     /**
@@ -155,65 +129,5 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
      */
     static long uploadedChangeset(Collection<OsmPrimitive> primitives) {
         return primitives.stream().mapToLong(OsmPrimitive::getChangesetId).max().orElse(0);
-    }
-
-    /**
-     * Link a task to the changeset. The status is already sent, so a refusal here only means the task stays unlinked.
-     * Must not be called on the EDT.
-     *
-     * @param task        The task marked Fixed
-     * @param changesetId The uploaded changeset, or {@code 0} to let MapRoulette find it
-     */
-    private static void link(Task task, long changesetId) {
-        try {
-            TaskAPI.changeset(task.id(), changesetId);
-        } catch (IOException e) {
-            Logging.warn(e);
-            final var message = tr("MapRoulette task {0} is Fixed, but MapRoulette did not link it to your changeset.",
-                    Long.toString(task.id()));
-            if (GraphicsEnvironment.isHeadless()) {
-                Logging.info(message);
-            } else {
-                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.INFORMATION_MESSAGE)
-                        .setDuration(Notification.TIME_LONG).show());
-            }
-        }
-    }
-
-    /**
-     * Send the status of modified tasks and release them. A status that could not be sent is dropped: the task stays
-     * started, and the user can pick a status again. Must not be called on the EDT.
-     *
-     * @param modifiedTasks The modified tasks
-     */
-    public static void sendStatuses(List<ModifiedTask> modifiedTasks) {
-        final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
-        final var failures = new ArrayList<Exception>();
-        for (ModifiedTask entry : modifiedTasks) {
-            // Skip a status replaced by a newer one in the meantime
-            if (entry.status() == TaskStatus.CREATED || ModifiedObjects.getModifiedTask(entry.task().id()) != entry) {
-                continue;
-            }
-            var sent = false;
-            try {
-                TaskAPI.updateStatus(entry.task().id(), entry.status(), entry.comment(), entry.tags(),
-                        entry.reviewRequested(), entry.completionResponses());
-                sent = true;
-                updatedTasks.put(entry.task().id(), TaskAPI.release(entry.task().id()));
-                ModifiedObjects.removeLockedTask(entry.task());
-            } catch (IOException e) {
-                failures.add(e);
-            } catch (RuntimeException e) {
-                // One task failing must not stop the others (or reach the worker)
-                BugReport.intercept(e).put("task", entry.task().id()).warn();
-            } finally {
-                ModifiedObjects.removeModifiedTask(entry);
-                if (!sent) {
-                    ModifiedObjects.removeUnlinkedFixed(entry.task());
-                }
-            }
-        }
-        failures.forEach(ExceptionDialogUtil::explainException);
-        GuiHelper.runInEDT(() -> MODIFIED_TASKS_UPLOADED.fireEvent(l -> l.accept(updatedTasks)));
     }
 }

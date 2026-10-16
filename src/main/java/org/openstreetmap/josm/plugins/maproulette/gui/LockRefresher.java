@@ -23,6 +23,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbidde
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.io.upload.ChangesetLinks;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.Logging;
@@ -56,7 +57,11 @@ public final class LockRefresher {
     public static synchronized void start() {
         if (timer == null) {
             // The timer only queues the refresh; the requests run on the worker
-            timer = new Timer((int) INTERVAL.toMillis(), e -> Workers.execute(LockRefresher::refreshAll));
+            timer = new Timer((int) INTERVAL.toMillis(), e -> Workers.execute(() -> {
+                refreshAll();
+                // MapRoulette may have closed a changeset JOSM still thinks is open
+                ChangesetLinks.retryAll();
+            }));
             timer.setRepeats(true);
             timer.start();
         }

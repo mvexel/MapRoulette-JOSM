@@ -53,6 +53,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
@@ -173,7 +174,7 @@ public final class EarlyUploadHook implements UploadHook {
         }
         // Statuses are sent at once (D15); this upload's changeset is linked to the task afterwards
         if (!fixed.isEmpty()) {
-            LateUploadHook.sendStatuses(fixed);
+            TaskStatusSender.sendStatuses(fixed);
         }
         GuiHelper.runInEDT(() -> exceptionList.forEach(ExceptionDialogUtil::explainException));
         ConditionalOptionPaneUtil.endBulkOperation(PREF_CHECK_IF_FINISHED);

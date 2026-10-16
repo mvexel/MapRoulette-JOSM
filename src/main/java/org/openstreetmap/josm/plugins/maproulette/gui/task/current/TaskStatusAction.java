@@ -50,7 +50,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
-import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
@@ -278,7 +278,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
             if (this.status == TaskStatus.FIXED) {
                 ModifiedObjects.addUnlinkedFixed(task);
             }
-            MainApplication.worker.execute(() -> LateUploadHook.sendStatuses(List.of(modifiedTask)));
+            MainApplication.worker.execute(() -> TaskStatusSender.sendStatuses(List.of(modifiedTask)));
         }
         Optional.ofNullable(MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class))
                 .ifPresent(p -> p.refreshModel(task));

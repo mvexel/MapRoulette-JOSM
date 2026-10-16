@@ -1,0 +1,181 @@
+// License: GPL. For details, see LICENSE file.
+package org.openstreetmap.josm.plugins.maproulette.io.upload;
+
+import static org.openstreetmap.josm.tools.I18n.tr;
+
+import java.awt.GraphicsEnvironment;
+import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import javax.swing.JOptionPane;
+
+import org.openstreetmap.josm.gui.Notification;
+import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.tools.Logging;
+
+/**
+ * Links tasks marked Fixed to the changeset of their edits. MapRoulette only links a closed changeset, so a link to a
+ * changeset that is still open waits and is tried again. Everything here makes HTTP calls: call it off the EDT.
+ */
+public final class ChangesetLinks {
+    /**
+     * How long MapRoulette accepts a link after the task was marked Fixed
+     */
+    static final Duration WINDOW = Duration.ofHours(24);
+
+    /**
+     * A link that waits for its changeset to be closed
+     *
+     * @param task        The task marked Fixed
+     * @param changesetId The changeset
+     * @param since       When the link was first tried
+     */
+    private record Pending(Task task, long changesetId, Instant since) {
+    }
+
+    /**
+     * The links waiting for their changeset to be closed, by task id
+     */
+    private static final Map<Long, Pending> PENDING = new ConcurrentHashMap<>();
+
+    private ChangesetLinks() {
+        // Hide constructor
+    }
+
+    /**
+     * Link tasks to a changeset; links to a changeset that is still open wait
+     *
+     * @param tasks       The tasks marked Fixed
+     * @param changesetId The changeset, or {@code 0} to let MapRoulette find it
+     */
+    static void link(List<Task> tasks, long changesetId) {
+        final var now = Instant.now();
+        for (var task : tasks) {
+            if (!tryLink(task, changesetId) && changesetId > 0) {
+                PENDING.put(task.id(), new Pending(task, changesetId, now));
+            }
+        }
+    }
+
+    /**
+     * Wait for a changeset to be closed before linking tasks to it
+     *
+     * @param tasks       The tasks marked Fixed
+     * @param changesetId The changeset
+     */
+    static void await(List<Task> tasks, long changesetId) {
+        final var now = Instant.now();
+        tasks.forEach(task -> PENDING.put(task.id(), new Pending(task, changesetId, now)));
+    }
+
+    /**
+     * Check if a link waits for a changeset
+     *
+     * @param changesetId The changeset
+     * @return {@code true} if a task waits for it
+     */
+    static boolean awaits(long changesetId) {
+        return PENDING.values().stream().anyMatch(pending -> pending.changesetId() == changesetId);
+    }
+
+    /**
+     * Try the waiting links to one changeset again, for example once JOSM closed it
+     *
+     * @param changesetId The changeset
+     */
+    static void retry(long changesetId) {
+        retry(changesetId, Instant.now());
+    }
+
+    /**
+     * Try all waiting links again. MapRoulette can close a changeset JOSM does not know about (the idle auto-close, or
+     * another editor), so this runs from a timer.
+     */
+    public static void retryAll() {
+        retry(-1, Instant.now());
+    }
+
+    /**
+     * Try waiting links again
+     *
+     * @param changesetId The changeset, or {@code -1} for all
+     * @param now         The current time
+     */
+    static void retry(long changesetId, Instant now) {
+        if (PENDING.isEmpty() || !MapRouletteAuth.isAvailable()) {
+            return;
+        }
+        for (var pending : List.copyOf(PENDING.values())) {
+            if (changesetId >= 0 && pending.changesetId() != changesetId) {
+                continue;
+            }
+            if (pending.since().plus(WINDOW).isBefore(now)) {
+                // MapRoulette no longer links it
+                PENDING.remove(pending.task().id(), pending);
+                Logging.info("Gave up linking MapRoulette task " + pending.task().id() + " to changeset "
+                        + pending.changesetId());
+            } else if (tryLink(pending.task(), pending.changesetId())) {
+                PENDING.remove(pending.task().id(), pending);
+            }
+        }
+    }
+
+    /**
+     * Forget all waiting links
+     */
+    static void clear() {
+        PENDING.clear();
+    }
+
+    /**
+     * Link a task to a changeset. The status is already sent, so a refusal here only means the task stays unlinked.
+     *
+     * @param task        The task marked Fixed
+     * @param changesetId The changeset, or {@code 0} to let MapRoulette find it
+     * @return {@code true} if done (linked, or refused for good); {@code false} to try again later
+     */
+    private static boolean tryLink(Task task, long changesetId) {
+        try {
+            TaskAPI.changeset(task.id(), changesetId);
+            return true;
+        } catch (IOException e) {
+            if (changesetId > 0 && isTemporary(e)) {
+                Logging.debug(e);
+                return false;
+            }
+            Logging.warn(e);
+            final var message = tr("MapRoulette task {0} is Fixed, but MapRoulette did not link it to your changeset.",
+                    Long.toString(task.id()));
+            if (GraphicsEnvironment.isHeadless()) {
+                Logging.info(message);
+            } else {
+                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.INFORMATION_MESSAGE)
+                        .setDuration(Notification.TIME_LONG).show());
+            }
+            return true;
+        }
+    }
+
+    /**
+     * Check if a link may work later: the changeset is still open, the connection failed, or the login is gone for now
+     *
+     * @param e The failure
+     * @return {@code true} to try again later
+     */
+    private static boolean isTemporary(IOException e) {
+        if (e instanceof MapRouletteException mapRouletteException) {
+            return "changeset_open".equals(mapRouletteException.errorCode().orElse(null))
+                    || e instanceof MapRouletteAuthUnavailableException || e.getClass() == MapRouletteException.class;
+        }
+        return true;
+    }
+}
