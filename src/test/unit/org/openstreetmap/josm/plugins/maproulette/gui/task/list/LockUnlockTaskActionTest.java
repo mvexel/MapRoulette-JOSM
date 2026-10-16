@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.awt.Component;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -20,8 +21,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.Action;
+import javax.swing.Icon;
+import javax.swing.JOptionPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.table.TableRowSorter;
@@ -50,6 +54,11 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
+
+import com.github.tomakehurst.wiremock.client.WireMock;
+
+import mockit.Mock;
+import mockit.MockUp;
 
 /**
  * Test class for {@link LockUnlockTaskAction}
@@ -145,7 +154,8 @@ class LockUnlockTaskActionTest {
     }
 
     /**
-     * Stop, clicked on the EDT, releases the lock and sends the pending status from the worker (#32, #36)
+     * Stop, clicked on the EDT, releases the lock and sends a pending status that needs no upload from the worker (#32,
+     * #36)
      *
      * @throws Exception if the test fails
      */
@@ -173,7 +183,7 @@ class LockUnlockTaskActionTest {
         wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
                 .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
         wireMock.register(
-                put(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())).willReturn(aResponse()));
+                put(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.SKIPPED.code())).willReturn(aResponse()));
         try {
             final var action = new LockUnlockTaskAction(this.table);
             GuiHelper.runInEDTAndWaitWithException(() -> {
@@ -183,7 +193,7 @@ class LockUnlockTaskActionTest {
             sync();
             final var locked = ModifiedObjects.getLockedTask(132279499L);
             assertNotNull(locked, "Start must lock the task before Stop can be tested");
-            ModifiedObjects.addModifiedTask(new ModifiedTask(locked, TaskStatus.FIXED, null, null, null, null));
+            ModifiedObjects.addModifiedTask(new ModifiedTask(locked, TaskStatus.SKIPPED, null, null, null, null));
             onEdt.clear();
 
             GuiHelper.runInEDTAndWaitWithException(() -> {
@@ -195,7 +205,7 @@ class LockUnlockTaskActionTest {
             assertFalse(onEdt.contains(true), "MapRoulette requests made on the EDT: " + onEdt);
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
             wireMock.verifyThat(1,
-                    putRequestedFor(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())));
+                    putRequestedFor(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.SKIPPED.code())));
             assertNull(ModifiedObjects.getLockedTask(132279499L));
             assertNull(ModifiedObjects.getModifiedTask(132279499L));
         } finally {
@@ -208,6 +218,96 @@ class LockUnlockTaskActionTest {
                 ModifiedObjects.removeLockedTask(locked);
             }
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
+        }
+    }
+
+    /**
+     * Stop must not send a pending FIXED, since the edits are not uploaded yet. Keeping it leaves the task as it was.
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStopKeepsPendingFixed() throws Exception {
+        final var wireMock = stopWithPendingFixed(0);
+        try {
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
+            wireMock.verifyThat(0,
+                    putRequestedFor(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())));
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+            assertNotNull(ModifiedObjects.getModifiedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Dropping the pending FIXED releases the task without sending it
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStopDropsPendingFixed() throws Exception {
+        final var wireMock = stopWithPendingFixed(1);
+        try {
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
+            wireMock.verifyThat(0,
+                    putRequestedFor(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            assertNull(ModifiedObjects.getModifiedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Start the task, mark it FIXED, then stop it, answering the question with {@code choice}
+     *
+     * @param choice The option picked in the question
+     * @return The WireMock client
+     */
+    private WireMock stopWithPendingFixed(int choice) throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        wireMock.register(
+                put(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())).willReturn(aResponse()));
+        final var asked = new AtomicInteger();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                asked.incrementAndGet();
+                return choice;
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            action.updateEnabledState();
+            action.actionPerformed(null);
+        });
+        sync();
+        final var locked = ModifiedObjects.getLockedTask(132279499L);
+        assertNotNull(locked, "Start must lock the task before Stop can be tested");
+        ModifiedObjects.addModifiedTask(new ModifiedTask(locked, TaskStatus.FIXED, null, null, null, null));
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            action.updateEnabledState();
+            action.actionPerformed(null);
+        });
+        sync();
+        assertEquals(1, asked.get(), "Stop must ask before dropping a pending FIXED");
+        return wireMock;
+    }
+
+    private static void cleanUp() {
+        final var modified = ModifiedObjects.getModifiedTask(132279499L);
+        if (modified != null) {
+            ModifiedObjects.removeModifiedTask(modified);
+        }
+        final var locked = ModifiedObjects.getLockedTask(132279499L);
+        if (locked != null) {
+            ModifiedObjects.removeLockedTask(locked);
         }
     }
 

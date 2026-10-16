@@ -141,7 +141,8 @@ public class LateUploadHook implements UploadHook {
     private static void sendStatuses(List<ModifiedTask> modifiedTasks, boolean linkChangeset) {
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
         for (ModifiedTask entry : modifiedTasks) {
-            if (entry.status() != TaskStatus.CREATED) {
+            // Skip a status dropped or changed since the upload started (Stop Task drops a held FIXED)
+            if (entry.status() != TaskStatus.CREATED && ModifiedObjects.getModifiedTask(entry.task().id()) == entry) {
                 try {
                     TaskAPI.updateStatus(entry.task().id(), entry.status(), entry.comment(), entry.tags(),
                             entry.reviewRequested(), entry.completionResponses());

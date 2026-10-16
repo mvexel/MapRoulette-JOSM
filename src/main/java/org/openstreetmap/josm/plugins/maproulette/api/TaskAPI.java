@@ -206,7 +206,7 @@ public final class TaskAPI {
     private static void tellCommentLost(long task) {
         final var message = tr(
                 "MapRoulette task {0} was updated, but your comment was not saved. You can add it on the MapRoulette website.",
-                task);
+                Long.toString(task));
         if (GraphicsEnvironment.isHeadless()) {
             Logging.info(message);
         } else {

@@ -202,6 +202,32 @@ class LateUploadHookTest {
     }
 
     /**
+     * Stop Task's Drop runs on the worker before the FIXED job of an upload queued earlier: that FIXED is not sent (#78)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFixedDroppedWhileUploadQueued() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        final var modified = new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null);
+        ModifiedObjects.addModifiedTask(modified);
+        final var node = uploadedNode(true);
+        final var hook = hook(true);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+            // What Stop Task's Drop queues, before the FIXED job
+            MainApplication.worker.execute(() -> ModifiedObjects.removeModifiedTask(modified));
+        });
+        sync();
+        WireMocks.current().verifyThat(exactly(0),
+                putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code())));
+        assertNull(ModifiedObjects.getModifiedTask(task.id()));
+    }
+
+    /**
      * A failed or cancelled upload leaves the primitives modified: FIXED is kept for the next upload (#45)
      *
      * @throws Exception if the test fails
