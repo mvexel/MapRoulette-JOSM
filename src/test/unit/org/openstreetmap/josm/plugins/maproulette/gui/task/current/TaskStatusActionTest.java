@@ -37,7 +37,8 @@ class TaskStatusActionTest {
     }
 
     /**
-     * MapRoulette refuses a status for a multiple-choice task, so the buttons are disabled with the reason (#81)
+     * MapRoulette refuses a status for a multiple-choice task, so the buttons are disabled with the reason (#81).
+     * Skip stays open.
      */
     @Test
     @MapRouletteLogin
@@ -48,5 +49,8 @@ class TaskStatusActionTest {
         action.updateEnabledState();
         assertFalse(action.isEnabled());
         assertTrue(((String) action.getValue(Action.SHORT_DESCRIPTION)).contains("Street Tally"));
+        final var skip = new TaskStatusAction(TaskStatus.SKIPPED, () -> choiceTask, () -> null);
+        skip.updateEnabledState();
+        assertTrue(skip.isEnabled());
     }
 }

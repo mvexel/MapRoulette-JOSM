@@ -144,7 +144,7 @@ class TaskParserTest {
     @Test
     void testChoiceTask() throws Exception {
         final var json = Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start"))
-                .replaceFirst("\\{", "{\"cooperativeWork\": {\"meta\": {\"type\": 3, \"version\": 1}},");
+                .replaceFirst("\\{", "{\"cooperativeWork\": {\"meta\": {\"type\": 3, \"version\": 2}},");
         final var task = (Task) TaskParser.parseTask(new StringReader(json));
         assertTrue(task.isChoiceTask());
         assertFalse(task.isCooperativeWorkOsmChange());
