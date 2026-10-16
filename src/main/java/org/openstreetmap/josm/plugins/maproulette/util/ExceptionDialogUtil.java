@@ -61,10 +61,8 @@ public final class ExceptionDialogUtil {
                 showErrorDialog(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
                         .orElseGet(() -> tr("MapRoulette reported a conflict.")), tr("MapRoulette conflict"), null);
             }
-        } else if (exception instanceof MapRouletteUnsupportedException) {
-            showErrorDialog(tr(
-                    "This MapRoulette server or your login does not allow this from JOSM yet. Logging in again may help."),
-                    tr("Not allowed for this login"), null);
+        } else if (exception instanceof MapRouletteUnsupportedException unsupported) {
+            showErrorDialog(explainRefusal(unsupported.reason()), tr("Not allowed for this login"), null);
         } else if (exception instanceof MapRouletteForbiddenException) {
             showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
                     tr("Not allowed"), null);
@@ -89,6 +87,23 @@ public final class ExceptionDialogUtil {
         } else {
             org.openstreetmap.josm.gui.ExceptionDialogUtil.explainException(exception);
         }
+    }
+
+    /**
+     * Explain why MapRoulette refused a request from the JOSM login
+     *
+     * @param reason The reason the server gave
+     * @return The explanation
+     */
+    public static String explainRefusal(MapRouletteUnsupportedException.Reason reason) {
+        return switch (reason) {
+        case INSUFFICIENT_SCOPE -> tr(
+                "This MapRoulette server or your login does not allow this from JOSM yet. Logging in again may help.");
+        case MOBILE_WRITES_DISABLED -> tr("MapRoulette has paused changes from apps such as JOSM. Try again later.");
+        case CHALLENGE_DRAFT -> tr("This challenge is a draft. Only its managers can change its tasks.");
+        case CHOICE_TASK_STATUS -> tr(
+                "This task is answered by picking a choice. Answer it on the MapRoulette website.");
+        };
     }
 
     /**

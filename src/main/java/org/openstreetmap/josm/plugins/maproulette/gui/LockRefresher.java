@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import javax.swing.JOptionPane;
@@ -22,6 +23,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbidde
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -39,6 +41,10 @@ public final class LockRefresher {
      * The tasks the user was told they no longer hold, so they are told only once
      */
     private static final Set<Long> LOST = ConcurrentHashMap.newKeySet();
+    /**
+     * Whether the user was told that locks cannot be refreshed, so they are told once per JOSM session
+     */
+    private static final AtomicBoolean TOLD_UNSUPPORTED = new AtomicBoolean();
 
     private LockRefresher() {
         // Hide constructor
@@ -97,6 +103,10 @@ public final class LockRefresher {
                 // The login may not refresh locks on this server; the lock itself is fine
                 Logging.warn("This MapRoulette server does not allow refreshing the lock on task " + task.id());
                 Logging.debug(e);
+                if (TOLD_UNSUPPORTED.compareAndSet(false, true)) {
+                    tell(tr("JOSM cannot keep your MapRoulette task locks: {0}",
+                            ExceptionDialogUtil.explainRefusal(e.reason())));
+                }
             } catch (MapRouletteForbiddenException | MapRouletteNotFoundException e) {
                 // Someone else has the task now, or it is gone
                 Logging.warn("MapRoulette task " + task.id() + " is no longer locked by you");
