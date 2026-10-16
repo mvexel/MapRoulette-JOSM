@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette;
 import java.io.IOException;
 
 import org.openstreetmap.josm.actions.UploadAction;
+import org.openstreetmap.josm.data.osm.ChangesetCache;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.download.OSMDownloadSource;
@@ -40,7 +41,9 @@ public class MapRoulette extends Plugin {
         MapRouletteAuth.configure();
         LockRefresher.start();
         UploadAction.registerUploadHook(new EarlyUploadHook());
-        UploadAction.registerUploadHook(new LateUploadHook(), true);
+        final var lateUploadHook = new LateUploadHook();
+        UploadAction.registerUploadHook(lateUploadHook, true);
+        ChangesetCache.getInstance().addChangesetCacheListener(lateUploadHook);
         OSMDownloadSource.addDownloadType(new MapRouletteDownloadSource());
         MainApplication.getMenu().openLocation.addDownloadTaskClass(MapRouletteDownloadTask.class);
         MainApplication.getMenu().openLocation.addDownloadTaskClass(MapRouletteDownloadChallengeTask.class);

@@ -22,6 +22,10 @@ public final class ModifiedObjects {
      * The modified task list
      */
     private static final Map<Long, ModifiedTask> MODIFIED_TASK_MAP = new ConcurrentSkipListMap<>();
+    /**
+     * The tasks marked Fixed whose edits are not uploaded yet
+     */
+    private static final Map<Long, Task> UNLINKED_FIXED_MAP = new ConcurrentSkipListMap<>();
 
     /**
      * Don't allow this static class to be instantiated
@@ -112,5 +116,33 @@ public final class ModifiedObjects {
     @Nullable
     public static ModifiedTask getModifiedTask(long id) {
         return MODIFIED_TASK_MAP.get(id);
+    }
+
+    /**
+     * Remember a task marked Fixed, so that it is linked to the changeset of the next upload
+     *
+     * @param task The task
+     */
+    public static void addUnlinkedFixed(Task task) {
+        UNLINKED_FIXED_MAP.put(task.id(), task);
+    }
+
+    /**
+     * Forget a task marked Fixed, once it is linked or its status was not sent
+     *
+     * @param task The task
+     */
+    public static void removeUnlinkedFixed(Task task) {
+        UNLINKED_FIXED_MAP.remove(task.id());
+    }
+
+    /**
+     * Get the tasks marked Fixed whose edits are not uploaded yet
+     *
+     * @return The tasks
+     */
+    @Nonnull
+    public static List<Task> getUnlinkedFixed() {
+        return List.copyOf(UNLINKED_FIXED_MAP.values());
     }
 }

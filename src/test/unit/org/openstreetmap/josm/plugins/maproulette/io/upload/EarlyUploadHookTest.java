@@ -1,6 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -14,6 +19,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,9 +29,11 @@ import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
@@ -34,10 +42,10 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
-import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
+import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
@@ -58,12 +66,25 @@ class EarlyUploadHookTest {
         this.hook = new EarlyUploadHook();
     }
 
+    @AfterEach
+    void tearDown() {
+        ModifiedObjects.getUnlinkedFixed().forEach(ModifiedObjects::removeUnlinkedFixed);
+        ModifiedObjects.getModifiedTasks().forEach(ModifiedObjects::removeModifiedTask);
+    }
+
     @ParameterizedTest
     @MapRouletteLogin
     @ValueSource(strings = { "9494185766_node_4", "9494185766", "node/9494185766", "node 9494185766@4" })
     void testRegexParsing(String title) {
         final var apiDataSet = setUpUpload(title);
+        final var wireMock = WireMocks.current();
+        wireMock.register(
+                put(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())).willReturn(aResponse()));
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
         assertTrue(hook.checkUpload(apiDataSet));
+        // The answer is sent at once (D15)
+        wireMock.verifyThat(1, putRequestedFor(urlPathEqualTo("/api/v2/task/132279499/" + TaskStatus.FIXED.code())));
         final var map = new HashMap<String, String>();
         hook.modifyChangesetTags(map);
         assertEquals("132279499", map.get("maproulette:tasks"));
@@ -80,6 +101,26 @@ class EarlyUploadHookTest {
         final var map = new HashMap<String, String>();
         hook.modifyChangesetTags(map);
         assertNull(map.get("maproulette:tasks"));
+    }
+
+    /**
+     * The changeset is tagged only with the tasks marked Fixed whose OSM objects are in the upload (#97)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testTagsOnlyTasksInUpload() throws Exception {
+        final var inUpload = TaskAPI.get(147197178);
+        ModifiedObjects.addUnlinkedFixed(inUpload);
+        ModifiedObjects.addUnlinkedFixed(TaskAPI.get(132279499));
+        final var node = new Node(LatLon.ZERO);
+        node.setOsmId(6318952236L, 1);
+        node.setModified(true);
+        new DataSet().addPrimitive(node);
+        assertTrue(hook.checkUpload(new APIDataSet(node.getDataSet())));
+        final var map = new HashMap<String, String>();
+        hook.modifyChangesetTags(map);
+        assertEquals("147197178", map.get("maproulette:tasks"));
     }
 
     /**
@@ -114,9 +155,8 @@ class EarlyUploadHookTest {
     @Test
     void testManyClosedTasks() {
         for (int i = 100_000_000; i < 100_000_050; i++) {
-            ModifiedObjects.addModifiedTask(
-                    new ModifiedTask(new Task(i, "", null, null, 15318, null, null, null, null, null, null, null, null,
-                            null, 0, null, null, null, false, null, null), TaskStatus.FIXED, null, null, null, null));
+            ModifiedObjects.addUnlinkedFixed(new Task(i, "", null, null, 15318, null, null, null, null, null, null,
+                    null, null, null, 0, null, null, null, false, null, null));
         }
         // JOSM calls checkUpload first, which caches the challenges that modifyChangesetTags reads
         assertTrue(hook.checkUpload(new APIDataSet(new DataSet())));

@@ -1,62 +1,45 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
-import static org.openstreetmap.josm.tools.I18n.tr;
-
-import java.awt.GraphicsEnvironment;
-import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.upload.UploadHook;
 import org.openstreetmap.josm.data.APIDataSet;
+import org.openstreetmap.josm.data.osm.Changeset;
+import org.openstreetmap.josm.data.osm.ChangesetCacheEvent;
+import org.openstreetmap.josm.data.osm.ChangesetCacheListener;
+import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
-import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
-import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
-import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
-import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteHttpException;
-import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
-import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
-import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
-import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
-import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
-import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
-import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
-import org.openstreetmap.josm.tools.ListenerList;
-import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.bugreport.BugReport;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 
 /**
- * A late upload hook for uploading task status'
+ * Links the tasks marked Fixed to the changeset of the upload that follows (D15)
  */
-public class LateUploadHook implements UploadHook {
+public class LateUploadHook implements UploadHook, ChangesetCacheListener {
     /**
-     * A list of listeners for uploaded tasks
-     */
-    private static final ListenerList<Consumer<Map<Long, Task>>> MODIFIED_TASKS_UPLOADED = ListenerList.create();
-
-    /**
-     * Add an upload listener
+     * Add a listener for tasks whose status was sent
      *
-     * @param consumer The consumer will receive a sorted array of ids
+     * @param consumer The consumer will receive the updated tasks by id
+     * @see TaskStatusSender#addListener(Consumer)
      */
     public static void addUploadListener(Consumer<Map<Long, Task>> consumer) {
-        MODIFIED_TASKS_UPLOADED.addListener(consumer);
+        TaskStatusSender.addListener(consumer);
     }
 
     /**
@@ -65,7 +48,7 @@ public class LateUploadHook implements UploadHook {
      * @param consumer The listener to remove
      */
     public static void removeUploadListener(Consumer<Map<Long, Task>> consumer) {
-        MODIFIED_TASKS_UPLOADED.removeListener(consumer);
+        TaskStatusSender.removeListener(consumer);
     }
 
     /**
@@ -83,35 +66,69 @@ public class LateUploadHook implements UploadHook {
     }
 
     /**
-     * JOSM calls this on the EDT, then queues the upload on the worker. Statuses other than FIXED are sent from the
-     * worker before the upload, as before. FIXED depends on the OSM upload, so it is sent after the upload, and only
-     * if the upload succeeded (#45); otherwise it is kept for the next upload.
+     * JOSM calls this on the EDT, then queues the upload on the worker. The statuses were sent when the user picked
+     * them; after a successful upload, the tasks marked Fixed are linked to its changeset. After a failed or cancelled
+     * upload, they wait for the next one.
      */
     @Override
     public void modifyChangesetTags(Map<String, String> tags) {
-        if (!MapRouletteAuth.isAvailable()) {
+        final var fixed = ModifiedObjects.getUnlinkedFixed();
+        if (fixed.isEmpty() || !MapRouletteAuth.isAvailable()) {
             return;
         }
-        final var modifiedTasks = ModifiedObjects.getModifiedTasks();
-        final var fixed = modifiedTasks.stream().filter(entry -> entry.status() == TaskStatus.FIXED).toList();
-        final var others = modifiedTasks.stream().filter(entry -> entry.status() != TaskStatus.FIXED).toList();
-        if (!others.isEmpty()) {
-            MainApplication.worker.execute(() -> sendStatuses(others, true, 0));
+        final var primitives = this.uploading;
+        final var closed = isChangesetClosedAfterUpload();
+        // The upload is queued on the worker after this returns; queue the job from a later EDT event so that it runs
+        // after the upload
+        SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
+            final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
+                    () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
+            if (changesetId < 0) {
+                return;
+            }
+            // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
+            // it waits for an upload that has them
+            final var unlinked = ModifiedObjects.getUnlinkedFixed().stream().map(Task::id).collect(Collectors.toSet());
+            final var linked = fixed.stream().filter(task -> unlinked.contains(task.id()))
+                    .filter(task -> inUpload(TaskPrimitives.getPrimitiveIds(task), primitives)).toList();
+            if (linked.isEmpty()) {
+                return;
+            }
+            linked.forEach(ModifiedObjects::removeUnlinkedFixed);
+            if (closed || changesetId == 0) {
+                ChangesetLinks.link(linked, changesetId);
+            } else {
+                ChangesetLinks.await(linked, changesetId);
+            }
+        }));
+    }
+
+    /**
+     * Link the tasks waiting for a changeset once JOSM closes it. JOSM calls this on whichever thread updated the cache,
+     * often the worker; the links are sent from a job of their own.
+     */
+    @Override
+    public void changesetCacheUpdated(ChangesetCacheEvent event) {
+        Stream.concat(event.getAddedChangesets().stream(), event.getUpdatedChangesets().stream())
+                .filter(changeset -> !changeset.isOpen()).mapToLong(Changeset::getId).filter(ChangesetLinks::awaits)
+                .forEach(changesetId -> MainApplication.worker.execute(() -> ChangesetLinks.retry(changesetId)));
+    }
+
+    /**
+     * Check if an upload is for a task: it has at least one of the task's OSM objects. A task that names no OSM objects
+     * (such as a missing feature) may belong to any upload.
+     *
+     * @param taskIds  The OSM objects of the task
+     * @param uploaded The uploaded primitives
+     * @return {@code true} if the upload may be for the task
+     */
+    static boolean inUpload(Collection<PrimitiveId> taskIds, Collection<? extends IPrimitive> uploaded) {
+        if (taskIds.isEmpty()) {
+            return true;
         }
-        if (!fixed.isEmpty()) {
-            final var primitives = this.uploading;
-            final var linkChangeset = isChangesetClosedAfterUpload();
-            // The upload is queued on the worker after this returns; queue the job from a later EDT event so that it
-            // runs after the upload
-            SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
-                if (Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() -> isUploaded(primitives)))) {
-                    final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(() -> uploadedChangeset(primitives));
-                    sendStatuses(fixed, linkChangeset, changesetId);
-                } else {
-                    GuiHelper.runInEDT(LateUploadHook::explainHeld);
-                }
-            }));
-        }
+        final var ids = taskIds.stream().map(id -> new SimplePrimitiveId(id.getUniqueId(), id.getType()))
+                .collect(Collectors.toSet());
+        return uploaded.stream().anyMatch(p -> ids.contains(new SimplePrimitiveId(p.getUniqueId(), p.getType())));
     }
 
     /**
@@ -135,119 +152,12 @@ public class LateUploadHook implements UploadHook {
     }
 
     /**
-     * Check if MapRoulette will refuse the status again, so that sending it with the next upload is pointless
-     *
-     * @param e The refusal
-     * @return {@code true} for an invalid status change, a paused or unpublished challenge, a multiple-choice task, a
-     *         missing task, or a refusal for this user; {@code false} for a refusal a new login or the server's
-     *         settings can lift
-     */
-    static boolean isFinal(MapRouletteException e) {
-        if (e instanceof MapRouletteUnsupportedException unsupported) {
-            return unsupported.reason() == Reason.CHALLENGE_DRAFT || unsupported.reason() == Reason.CHOICE_TASK_STATUS;
-        }
-        return e instanceof MapRouletteNotFoundException || e instanceof MapRouletteForbiddenException
-                || e instanceof MapRouletteHttpException http && http.status() == HttpURLConnection.HTTP_BAD_REQUEST;
-    }
-
-    /**
-     * Get the changeset the primitives were uploaded in
+     * Get the changeset the primitives were uploaded to
      *
      * @param primitives The uploaded primitives
-     * @return The changeset id, or {@code 0} if JOSM did not record one
+     * @return The changeset id, or {@code 0} if there is none
      */
     static long uploadedChangeset(Collection<OsmPrimitive> primitives) {
         return primitives.stream().mapToLong(OsmPrimitive::getChangesetId).max().orElse(0);
-    }
-
-    /**
-     * Link a task to the changeset. The status is already sent, so a refusal here only means the task stays unlinked.
-     *
-     * @param entry       The sent status
-     * @param changesetId The uploaded changeset, or {@code 0} to let MapRoulette find it
-     */
-    private static void link(ModifiedTask entry, long changesetId) {
-        try {
-            TaskAPI.changeset(entry.task().id(), changesetId);
-        } catch (IOException e) {
-            Logging.warn(e);
-            final var message = tr(
-                    "The {0} status of MapRoulette task {1} was sent, but MapRoulette did not link the"
-                            + " task to your changeset.",
-                    entry.status().description(), Long.toString(entry.task().id()));
-            if (GraphicsEnvironment.isHeadless()) {
-                Logging.info(message);
-            } else {
-                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.INFORMATION_MESSAGE)
-                        .setDuration(Notification.TIME_LONG).show());
-            }
-        }
-    }
-
-    /**
-     * Say which task's status was dropped. The error dialog that follows gives MapRoulette's reason.
-     *
-     * @param entry The dropped status
-     */
-    private static void tellDropped(ModifiedTask entry) {
-        final var message = tr("MapRoulette did not accept the {0} status of task {1}. It was dropped and will not be"
-                + " sent again.", entry.status().description(), Long.toString(entry.task().id()));
-        if (GraphicsEnvironment.isHeadless()) {
-            Logging.info(message);
-        } else {
-            GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.WARNING_MESSAGE)
-                    .setDuration(Notification.TIME_LONG).show());
-        }
-    }
-
-    private static void explainHeld() {
-        ConditionalOptionPaneUtil.showMessageDialog("maproulette.status.held", MRGuiHelper.dialogParent(),
-                tr("The upload did not complete, so the FIXED status of your MapRoulette tasks was not sent. It will be"
-                        + " sent with your next upload, unless the task is resolved by someone else first."),
-                tr("MapRoulette status not sent"), JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    /**
-     * Send the status of modified tasks, release them and link them to the changeset. Must not be called on the EDT.
-     *
-     * @param modifiedTasks The modified tasks
-     * @param linkChangeset {@code true} to ask MapRoulette to link the tasks to the changeset
-     * @param changesetId   The uploaded changeset, or {@code 0} to let MapRoulette find it
-     */
-    private static void sendStatuses(List<ModifiedTask> modifiedTasks, boolean linkChangeset, long changesetId) {
-        final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
-        for (ModifiedTask entry : modifiedTasks) {
-            // Skip a status dropped or changed since the upload started (Stop Task drops a held FIXED)
-            if (entry.status() != TaskStatus.CREATED && ModifiedObjects.getModifiedTask(entry.task().id()) == entry) {
-                var sent = false;
-                try {
-                    TaskAPI.updateStatus(entry.task().id(), entry.status(), entry.comment(), entry.tags(),
-                            entry.reviewRequested(), entry.completionResponses());
-                    sent = true;
-                    updatedTasks.put(entry.task().id(), TaskAPI.release(entry.task().id()));
-                    ModifiedObjects.removeLockedTask(entry.task());
-                    ModifiedObjects.removeModifiedTask(entry);
-                    if (linkChangeset) {
-                        link(entry, changesetId);
-                    }
-                } catch (MapRouletteNotFoundException | MapRouletteHttpException | MapRouletteForbiddenException e) {
-                    // A refusal after the status was sent (the release) does not mean the status was dropped
-                    if (!sent && isFinal(e)) {
-                        // MapRoulette will not take this status (an invalid status change, a paused challenge, or the
-                        // task is gone), so sending it again with the next upload would fail again
-                        ModifiedObjects.removeLockedTask(entry.task());
-                        ModifiedObjects.removeModifiedTask(entry);
-                        tellDropped(entry);
-                    }
-                    ExceptionDialogUtil.explainException(e);
-                } catch (IOException e) {
-                    ExceptionDialogUtil.explainException(e);
-                } catch (RuntimeException e) {
-                    // One task failing must not stop the others (or reach the worker)
-                    BugReport.intercept(e).put("task", entry.task().id()).warn();
-                }
-            }
-        }
-        GuiHelper.runInEDT(() -> MODIFIED_TASKS_UPLOADED.fireEvent(l -> l.accept(updatedTasks)));
     }
 }

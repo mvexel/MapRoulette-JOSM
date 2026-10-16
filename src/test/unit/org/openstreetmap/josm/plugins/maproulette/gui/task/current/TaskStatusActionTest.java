@@ -7,10 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import javax.swing.Action;
 
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Test class for {@link TaskStatusAction}
@@ -52,5 +59,29 @@ class TaskStatusActionTest {
         final var skip = new TaskStatusAction(TaskStatus.SKIPPED, () -> choiceTask, () -> null);
         skip.updateEnabledState();
         assertTrue(skip.isEnabled());
+    }
+
+    /**
+     * A Fixed is linked to the upload that follows only if the edit layer has something to upload, so that a Fixed with
+     * no edit is never linked to an unrelated upload (#97)
+     */
+    @Test
+    @Main
+    @Projection
+    void testHasEditsToUpload() {
+        assertFalse(TaskStatusAction.hasEditsToUpload(), "No layer");
+        final var node = new Node(LatLon.ZERO);
+        node.setOsmId(1, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(node);
+        final var layer = new OsmDataLayer(dataSet, "test", null);
+        MainApplication.getLayerManager().addLayer(layer);
+        try {
+            assertFalse(TaskStatusAction.hasEditsToUpload(), "No edit");
+            node.setModified(true);
+            assertTrue(TaskStatusAction.hasEditsToUpload());
+        } finally {
+            MainApplication.getLayerManager().removeLayer(layer);
+        }
     }
 }

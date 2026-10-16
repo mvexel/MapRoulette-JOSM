@@ -117,7 +117,7 @@ public final class TaskPrimitives {
      */
     @Nonnull
     private static Map<PrimitiveId, IPrimitive> getPrimitiveIdMap(@Nullable Task task, @Nullable String property) {
-        if (task != null && property != null) {
+        if (task != null && task.geometries() != null && property != null) {
             final var map = new HashMap<PrimitiveId, IPrimitive>();
             for (var primitive : task.geometries().allPrimitives()) {
                 if (primitive.hasTag(property)) {
@@ -142,7 +142,7 @@ public final class TaskPrimitives {
     private static PrimitiveId getPrimitiveId(@Nullable IPrimitive primitive, @Nullable String id) {
         if (id != null && primitive != null) {
             if (SimplePrimitiveId.ID_PATTERN.matcher(id).matches()) {
-                SimplePrimitiveId.fromString(id);
+                return SimplePrimitiveId.fromString(id);
             } else if (INTEGER_PATTERN.matcher(id).matches()) {
                 final var type = Optional.ofNullable(primitive.get("type"))
                         .or(() -> Optional.ofNullable(primitive.get("@type")))

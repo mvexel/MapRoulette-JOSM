@@ -10,9 +10,11 @@ import java.awt.GridBagLayout;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -30,6 +32,7 @@ import javax.swing.text.html.HTMLDocument;
 import org.openstreetmap.josm.actions.upload.UploadHook;
 import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Tagged;
@@ -51,6 +54,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
@@ -65,6 +69,11 @@ public final class EarlyUploadHook implements UploadHook {
      * The base pref key for asking the user if a task is finished
      */
     static final String PREF_CHECK_IF_FINISHED = "maproulette.check_if_finished";
+    /**
+     * The statuses of tasks that are not done yet, so that the user may have just finished them
+     */
+    private static final Set<TaskStatus> UNFINISHED = EnumSet.of(TaskStatus.CREATED, TaskStatus.SKIPPED,
+            TaskStatus.TOO_HARD);
     private static final int MAX_LONG_STRING_LENGTH = Long.toString(Long.MAX_VALUE).length();
     /**
      * The base number predicate
@@ -85,10 +94,16 @@ public final class EarlyUploadHook implements UploadHook {
     private static final Pattern ID_TYPE_VERSION_PATTERN = Pattern.compile("(\\d+)_(n|node|w|way|r|rel|relation)_\\d+");
 
     /**
+     * The primitives of the upload in progress, captured in {@link #checkUpload(APIDataSet)}
+     */
+    private volatile List<OsmPrimitive> uploading = List.of();
+
+    /**
      * JOSM calls this on the worker, and {@link #modifyChangesetTags(Map)} afterwards on the EDT
      */
     @Override
     public boolean checkUpload(APIDataSet apiDataSet) {
+        this.uploading = List.copyOf(apiDataSet.getPrimitives());
         try {
             return realCheckUpload(apiDataSet);
         } catch (RuntimeException exception) {
@@ -100,11 +115,11 @@ public final class EarlyUploadHook implements UploadHook {
     }
 
     /**
-     * Cache the challenges of the modified tasks, for the changeset tags
+     * Cache the challenges of the tasks marked Fixed, for the changeset tags
      */
     private static void cacheChallenges() {
-        final var challenges = ModifiedObjects.getModifiedTasks().stream().mapToLong(entry -> entry.task().parentId())
-                .distinct().toArray();
+        final var challenges = ModifiedObjects.getUnlinkedFixed().stream().mapToLong(Task::parentId).distinct()
+                .toArray();
         for (var challenge : challenges) {
             try {
                 ChallengeCache.challenge(challenge);
@@ -137,7 +152,9 @@ public final class EarlyUploadHook implements UploadHook {
                         exceptionList.add(e);
                     }
                     return null;
-                }).filter(Objects::nonNull).collect(Collectors.toSet());
+                }).filter(Objects::nonNull).filter(task -> UNFINISHED.contains(task.status()))
+                .collect(Collectors.toSet());
+        final var fixed = new ArrayList<ModifiedTask>();
         ConditionalOptionPaneUtil.startBulkOperation(PREF_CHECK_IF_FINISHED);
         for (var task : possibleTasks) {
             if (ids.containsAll(TaskPrimitives.getPrimitiveIds(task))) {
@@ -154,10 +171,17 @@ public final class EarlyUploadHook implements UploadHook {
                                 JOptionPane.YES_OPTION));
                 if (Boolean.TRUE.equals(didFix)) {
                     final var doc = (HTMLDocument) ((JMultilineLabel) descriptivePanel.getComponent(1)).getDocument();
-                    ModifiedObjects.addModifiedTask(
-                            new ModifiedTask(task, TaskStatus.FIXED, null, null, null, getSelections(doc)));
+                    final var modifiedTask = new ModifiedTask(task, TaskStatus.FIXED, null, null, null,
+                            getSelections(doc));
+                    ModifiedObjects.addModifiedTask(modifiedTask);
+                    ModifiedObjects.addUnlinkedFixed(task);
+                    fixed.add(modifiedTask);
                 }
             }
+        }
+        // Statuses are sent at once (D15); this upload's changeset is linked to the task afterwards
+        if (!fixed.isEmpty()) {
+            TaskStatusSender.sendStatuses(fixed);
         }
         GuiHelper.runInEDT(() -> exceptionList.forEach(ExceptionDialogUtil::explainException));
         ConditionalOptionPaneUtil.endBulkOperation(PREF_CHECK_IF_FINISHED);
@@ -247,8 +271,13 @@ public final class EarlyUploadHook implements UploadHook {
         final var sourceComments = new TreeSet<String>();
         var tagBuilder = new StringBuilder();
         tagBuilders.add(tagBuilder);
-        for (ModifiedTask entry : ModifiedObjects.getModifiedTasks()) {
-            final var id = Long.toString(entry.task().id());
+        // Only the tasks this upload is for; the challenges were cached in checkUpload
+        final var uploaded = this.uploading;
+        final var forUpload = ModifiedObjects.getUnlinkedFixed().stream().filter(task -> TaskPrimitives
+                .cachedPrimitiveIds(task).map(ids -> LateUploadHook.inUpload(ids, uploaded)).orElse(Boolean.TRUE))
+                .toList();
+        for (Task task : forUpload) {
+            final var id = Long.toString(task.id());
             if (tagBuilder.length() + id.length() + 1 >= Tagged.MAX_TAG_LENGTH) {
                 tagBuilder = new StringBuilder();
                 tagBuilders.add(tagBuilder);
@@ -256,9 +285,9 @@ public final class EarlyUploadHook implements UploadHook {
             if (!tagBuilder.isEmpty()) {
                 tagBuilder.append(';');
             }
-            tagBuilder.append(entry.task().id());
+            tagBuilder.append(task.id());
             // Called on the EDT; checkUpload cached the challenges (and explained any failure)
-            ChallengeCache.cached(entry.task().parentId()).map(Challenge::general).ifPresent(challengeGeneral -> {
+            ChallengeCache.cached(task.parentId()).map(Challenge::general).ifPresent(challengeGeneral -> {
                 if (!Utils.isStripEmpty(challengeGeneral.checkinComment())) {
                     changesetComments.add(challengeGeneral.checkinComment());
                 }

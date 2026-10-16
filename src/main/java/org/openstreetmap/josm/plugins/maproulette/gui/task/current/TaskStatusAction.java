@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import javax.swing.Action;
 import javax.swing.JCheckBox;
+import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -49,6 +50,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
@@ -272,9 +274,25 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                     return;
                 }
             }
+            // Send the status now, as the web does (D15). A Fixed is linked to the changeset of the upload that follows,
+            // but only if there is something to upload: a Fixed with no edit must not be linked to an unrelated upload.
+            if (this.status == TaskStatus.FIXED && hasEditsToUpload()) {
+                ModifiedObjects.addUnlinkedFixed(task);
+            }
+            MainApplication.worker.execute(() -> TaskStatusSender.sendStatuses(List.of(modifiedTask)));
         }
         Optional.ofNullable(MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class))
                 .ifPresent(p -> p.refreshModel(task));
+    }
+
+    /**
+     * Check if the edit layer has something to upload
+     *
+     * @return {@code true} if it has
+     */
+    static boolean hasEditsToUpload() {
+        final var editLayer = MainApplication.getLayerManager().getEditLayer();
+        return editLayer != null && editLayer.requiresUploadToServer();
     }
 
     private ModifiedTask getModifiedTask(LoadedTask loaded) {
@@ -299,6 +317,11 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         panel.add(comment, GBC.eol().fill(GBC.BOTH));
         panel.add(tagBox, GBC.eol().fill(GBC.HORIZONTAL));
         panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
+        if (this.status == TaskStatus.FIXED) {
+            // The status is sent now; the edits are not, and JOSM uploads them from its own menu
+            panel.add(new JLabel(tr("If you edited OSM data for this task, upload it with File > Upload data. The "
+                    + "changeset is linked to this task afterwards.")), GBC.eol().anchor(GBC.LINE_START));
+        }
 
         var selection = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.feedback",
                 MRGuiHelper.dialogParent(), panel, tr("Task Feedback"), JOptionPane.OK_CANCEL_OPTION,

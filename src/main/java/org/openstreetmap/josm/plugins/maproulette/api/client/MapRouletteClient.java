@@ -281,7 +281,7 @@ public final class MapRouletteClient {
     static MapRouletteException error(int status, @Nullable String body, URL url) {
         final var safeBody = Objects.requireNonNullElse(body, "");
         final var message = message(safeBody);
-        return switch (status) {
+        final MapRouletteException exception = switch (status) {
         case 401, 410 -> new MapRouletteAuthUnavailableException(
                 "MapRoulette refused the login (HTTP " + status + ") for " + url + message);
         case 403 -> {
@@ -297,6 +297,7 @@ public final class MapRouletteClient {
         default -> new MapRouletteHttpException("MapRoulette answered HTTP " + status + " for " + url + message, status,
                 safeBody.substring(0, Math.min(BODY_EXCERPT_LENGTH, safeBody.length())), serverMessage(safeBody));
         };
+        return exception.withErrorCode(errorCode(safeBody));
     }
 
     /**
