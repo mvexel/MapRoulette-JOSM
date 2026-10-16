@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.util.Collection;
@@ -19,6 +20,7 @@ import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
@@ -35,6 +37,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.ListenerList;
+import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.bugreport.BugReport;
 
 /**
@@ -145,6 +148,22 @@ public class LateUploadHook implements UploadHook {
                 || e instanceof MapRouletteHttpException http && http.status() == HttpURLConnection.HTTP_BAD_REQUEST;
     }
 
+    /**
+     * Say which task's status was dropped. The error dialog that follows gives MapRoulette's reason.
+     *
+     * @param entry The dropped status
+     */
+    private static void tellDropped(ModifiedTask entry) {
+        final var message = tr("MapRoulette did not accept the {0} status of task {1}. It was dropped and will not be"
+                + " sent again.", entry.status().description(), Long.toString(entry.task().id()));
+        if (GraphicsEnvironment.isHeadless()) {
+            Logging.info(message);
+        } else {
+            GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.WARNING_MESSAGE)
+                    .setDuration(Notification.TIME_LONG).show());
+        }
+    }
+
     private static void explainHeld() {
         ConditionalOptionPaneUtil.showMessageDialog("maproulette.status.held", MainApplication.getMainFrame(),
                 tr("The upload did not complete, so the FIXED status of your MapRoulette tasks was not sent. It will be"
@@ -178,6 +197,7 @@ public class LateUploadHook implements UploadHook {
                         // task is gone), so sending it again with the next upload would fail again
                         ModifiedObjects.removeLockedTask(entry.task());
                         ModifiedObjects.removeModifiedTask(entry);
+                        tellDropped(entry);
                     }
                     ExceptionDialogUtil.explainException(e);
                 } catch (IOException e) {

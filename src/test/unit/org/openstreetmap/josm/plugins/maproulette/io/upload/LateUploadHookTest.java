@@ -47,6 +47,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
@@ -320,6 +321,7 @@ class LateUploadHookTest {
      *
      * @param body    The 403 response body
      * @param dropped {@code true} if the status should be dropped
+     * @param handler The log handler
      * @throws Exception if the test fails
      */
     @ParameterizedTest
@@ -327,7 +329,8 @@ class LateUploadHookTest {
             "{\"error\":\"challenge_draft\"}|true", "{\"status\":\"Forbidden\",\"message\":\"no\"}|true",
             "{\"error\":\"mobile_writes_disabled\"}|false", "{\"error\":\"insufficient_scope\"}|false" })
     @MapRouletteLogin
-    void testRefusedStatus(String body, boolean dropped) throws Exception {
+    @LoggingHandler
+    void testRefusedStatus(String body, boolean dropped, LoggingHandler.TestHandler handler) throws Exception {
         final var task = TaskAPI.get(147197178);
         final var taskPath = "/api/v2/task/" + task.id();
         WireMocks.current().register(put(urlPathEqualTo(taskPath + "/" + TaskStatus.SKIPPED.code()))
@@ -346,7 +349,11 @@ class LateUploadHookTest {
             GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
             sync();
             assertEquals(dropped, ModifiedObjects.getModifiedTask(task.id()) == null);
-            assertEquals(1, explained.size(), "The user is told");
+            assertEquals(1, explained.size(), "The user is told why");
+            assertEquals(dropped,
+                    handler.getRecords().stream().anyMatch(
+                            r -> r.getMessage().contains("task " + task.id()) && r.getMessage().contains("dropped")),
+                    "and which task's status was dropped");
         } finally {
             ModifiedObjects.removeModifiedTask(modified);
         }
