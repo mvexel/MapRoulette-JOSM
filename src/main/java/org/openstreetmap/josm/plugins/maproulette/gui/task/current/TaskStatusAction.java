@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import javax.swing.Action;
 import javax.swing.JCheckBox;
+import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -49,6 +50,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
+import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
@@ -272,6 +274,11 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                     return;
                 }
             }
+            // Send the status now, as the web does (D15); a Fixed is linked to the changeset after the upload
+            if (this.status == TaskStatus.FIXED) {
+                ModifiedObjects.addUnlinkedFixed(task);
+            }
+            MainApplication.worker.execute(() -> LateUploadHook.sendStatuses(List.of(modifiedTask)));
         }
         Optional.ofNullable(MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class))
                 .ifPresent(p -> p.refreshModel(task));
@@ -299,6 +306,11 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         panel.add(comment, GBC.eol().fill(GBC.BOTH));
         panel.add(tagBox, GBC.eol().fill(GBC.HORIZONTAL));
         panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
+        if (this.status == TaskStatus.FIXED) {
+            // The status is sent now; the edits are not, and JOSM uploads them from its own menu
+            panel.add(new JLabel(tr("Upload your edits with File > Upload data. The changeset is linked to this task"
+                    + " afterwards.")), GBC.eol().anchor(GBC.LINE_START));
+        }
 
         var selection = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.feedback",
                 MRGuiHelper.dialogParent(), panel, tr("Task Feedback"), JOptionPane.OK_CANCEL_OPTION,
