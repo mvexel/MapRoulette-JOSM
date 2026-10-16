@@ -103,7 +103,7 @@ public final class ExceptionDialogUtil {
         case CHALLENGE_DRAFT -> tr(
                 "This challenge is not published yet (it or its project is disabled), so its tasks can''t be changed.");
         case CHOICE_TASK_STATUS -> tr(
-                "This is a multiple-choice task. Its status is set by answering it in the MapRoulette mobile app, not from JOSM.");
+                "This is a multiple-choice task. It is completed by answering it in the Street Tally app, not from JOSM.");
         };
     }
 
