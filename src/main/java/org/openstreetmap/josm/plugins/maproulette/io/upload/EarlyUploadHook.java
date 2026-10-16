@@ -148,7 +148,7 @@ public final class EarlyUploadHook implements UploadHook {
                 Objects.requireNonNull(descriptivePanel);
                 final var didFix = GuiHelper.runInEDTAndWaitAndReturn(
                         () -> ConditionalOptionPaneUtil.showConfirmationDialog(PREF_CHECK_IF_FINISHED,
-                                MainApplication.getMainFrame(), descriptivePanel,
+                                MRGuiHelper.dialogParent(), descriptivePanel,
                                 tr("Did you finish the following MapRoulette Task: {0}?", task.id()),
                                 JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
                                 JOptionPane.YES_OPTION));

@@ -13,7 +13,6 @@ import javax.swing.JOptionPane;
 
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
-import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
@@ -24,6 +23,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeld
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 
 /**
@@ -47,9 +47,9 @@ public final class ExceptionDialogUtil {
             // A connection problem: explain the underlying exception
             explainExceptionOnEdt(cause);
         } else if (exception instanceof MapRouletteAuthUnavailableException) {
-            ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in",
-                    MainApplication.getMainFrame(), MapRouletteAuth.unavailableMessage(),
-                    tr("MapRoulette login unavailable"), JOptionPane.INFORMATION_MESSAGE);
+            ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in", MRGuiHelper.dialogParent(),
+                    MapRouletteAuth.unavailableMessage(), tr("MapRoulette login unavailable"),
+                    JOptionPane.INFORMATION_MESSAGE);
         } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
             if (lockHeld.heldTaskId().isPresent()) {
                 showErrorDialog(
@@ -115,7 +115,7 @@ public final class ExceptionDialogUtil {
      * @return See {@link HelpAwareOptionPane#showOptionDialog(Component, Object, String, int, String)}
      */
     private static int showErrorDialog(String msg, String title, String helpTopic) {
-        return HelpAwareOptionPane.showOptionDialog(MainApplication.getMainFrame(), msg, title,
-                JOptionPane.ERROR_MESSAGE, helpTopic);
+        return HelpAwareOptionPane.showOptionDialog(MRGuiHelper.dialogParent(), msg, title, JOptionPane.ERROR_MESSAGE,
+                helpTopic);
     }
 }

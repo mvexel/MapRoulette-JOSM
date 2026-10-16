@@ -3,6 +3,10 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.Component;
+import java.awt.Dialog;
+import java.awt.KeyboardFocusManager;
+import java.awt.Window;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
@@ -13,6 +17,7 @@ import java.util.stream.Stream;
 
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.markdown.SelectParser;
@@ -97,5 +102,28 @@ public final class MRGuiHelper {
      */
     public static Stream<String> filterKeys(Stream<String> keys) {
         return keys.filter(key -> !DISCARDABLE_KEYS.contains(key));
+    }
+
+    /**
+     * Get the window to parent a dialog to. The MapRoulette panels can be detached windows above the main frame, so a
+     * dialog parented to the main frame can open behind them.
+     *
+     * @return The focused window if there is one, else the main frame
+     */
+    public static Component dialogParent() {
+        return dialogParent(KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow());
+    }
+
+    /**
+     * Get the window to parent a dialog to
+     *
+     * @param active The active window, if any
+     * @return The active window if it is showing and not modal, else the main frame
+     */
+    static Component dialogParent(@Nullable Window active) {
+        // A modal window is usually about to close (such as the PleaseWaitDialog of a running job), and it would take
+        // the dialog with it
+        return active != null && active.isShowing() && !(active instanceof Dialog dialog && dialog.isModal()) ? active
+                : MainApplication.getMainFrame();
     }
 }

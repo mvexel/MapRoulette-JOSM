@@ -3,7 +3,9 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.awt.Dialog;
 import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,11 +13,17 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+
+import mockit.Invocation;
+import mockit.Mock;
+import mockit.MockUp;
+import sun.misc.Unsafe;
 
 @MapRouletteConfig
 class MRGuiHelperTest {
@@ -52,5 +60,42 @@ class MRGuiHelperTest {
         final var task = (Task) TaskParser.parseTask(new StringReader(json));
         final var instructions = assertDoesNotThrow(() -> MRGuiHelper.getInstructionText(task));
         assertEquals("<html><p>Street: Costs $1 \\ Road</p>\n</html>", instructions);
+    }
+
+    /**
+     * With no focused window (as in a headless test), dialogs fall back to the main frame (#83)
+     */
+    @Test
+    void testDialogParentFallsBackToMainFrame() {
+        assertSame(MainApplication.getMainFrame(), MRGuiHelper.dialogParent());
+    }
+
+    /**
+     * A modal window, such as the PleaseWaitDialog of a running job, is about to close and would take the dialog with
+     * it, so dialogs go to the main frame. A detached panel window is used (#83).
+     *
+     * @throws ReflectiveOperationException if the dialogs could not be made
+     */
+    @Test
+    void testDialogParentSkipsModalWindow() throws ReflectiveOperationException {
+        // Dialogs can't be constructed headless, so make them without running a constructor
+        final var unsafeField = Unsafe.class.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        final var unsafe = (Unsafe) unsafeField.get(null);
+        final var modal = (Dialog) unsafe.allocateInstance(Dialog.class);
+        final var detached = (Dialog) unsafe.allocateInstance(Dialog.class);
+        new MockUp<Dialog>() {
+            @Mock
+            boolean isModal(Invocation invocation) {
+                return invocation.getInvokedInstance() == modal;
+            }
+
+            @Mock
+            boolean isShowing() {
+                return true;
+            }
+        };
+        assertSame(MainApplication.getMainFrame(), MRGuiHelper.dialogParent(modal));
+        assertSame(detached, MRGuiHelper.dialogParent(detached));
     }
 }
