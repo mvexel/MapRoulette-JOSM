@@ -47,6 +47,10 @@ final class LockUnlockTaskAction extends JosmAction {
      * The table to update
      */
     private final JTable table;
+    /**
+     * {@code true} while a start or stop runs, so that a double-click doesn't send it twice (EDT only)
+     */
+    private boolean running;
 
     /**
      * Create a new action
@@ -65,6 +69,9 @@ final class LockUnlockTaskAction extends JosmAction {
 
     @Override
     public void actionPerformed(ActionEvent e) {
+        if (this.running) {
+            return;
+        }
         if (Boolean.TRUE.equals(getValue("lock"))) {
             lockTasks();
         } else {
@@ -100,6 +107,7 @@ final class LockUnlockTaskAction extends JosmAction {
         // tasks that could not be started because of it
         final var forgotten = new long[] { -1 };
         final var notStarted = new ArrayList<Long>();
+        setRunning(true);
         MainApplication.worker.execute(new PleaseWaitRunnable(tr("Starting MapRoulette tasks")) {
             @Override
             protected void cancel() {
@@ -121,6 +129,13 @@ final class LockUnlockTaskAction extends JosmAction {
                         lockedTasks.add(TaskAPI.start(ids[i]));
                     } catch (MapRouletteLockHeldException e) {
                         final var held = e.heldTaskId();
+                        if (held.isPresent() && held.getAsLong() == ids[i]) {
+                            // Already started by the user, for example by an earlier click
+                            if (!addStarted(lockedTasks, ids[i])) {
+                                break;
+                            }
+                            continue;
+                        }
                         if (releaseFirst < 0 && held.isPresent()
                                 && ModifiedObjects.getLockedTask(held.getAsLong()) == null) {
                             // JOSM can't stop it from the task list, so ask in finish()
@@ -166,7 +181,39 @@ final class LockUnlockTaskAction extends JosmAction {
                     });
                 }
             }
+
+            @Override
+            protected void afterFinish() {
+                setRunning(false);
+            }
         });
+    }
+
+    /**
+     * Add a task the user already started
+     *
+     * @param lockedTasks The started tasks
+     * @param id          The task id
+     * @return {@code true} if it could be read
+     */
+    private static boolean addStarted(List<Task> lockedTasks, long id) {
+        try {
+            lockedTasks.add(TaskAPI.get(id));
+            return true;
+        } catch (IOException e) {
+            ExceptionDialogUtil.explainException(e);
+            return false;
+        }
+    }
+
+    /**
+     * Mark a start or stop as running, and disable the action meanwhile
+     *
+     * @param running {@code true} while it runs
+     */
+    private void setRunning(boolean running) {
+        this.running = running;
+        updateEnabledState();
     }
 
     /**
@@ -220,6 +267,7 @@ final class LockUnlockTaskAction extends JosmAction {
             stops.add(new Stop(id, locked, locked == null ? null : ModifiedObjects.getModifiedTask(locked.id())));
         }
         final var results = new ArrayList<Stopped>(stops.size());
+        setRunning(true);
         MainApplication.worker.execute(new PleaseWaitRunnable(tr("Stopping MapRoulette tasks")) {
             @Override
             protected void cancel() {
@@ -262,6 +310,11 @@ final class LockUnlockTaskAction extends JosmAction {
                 data.fireTableDataChanged();
                 reselect(selected);
             }
+
+            @Override
+            protected void afterFinish() {
+                setRunning(false);
+            }
         });
     }
 
@@ -285,7 +338,9 @@ final class LockUnlockTaskAction extends JosmAction {
 
     @Override
     public void updateEnabledState() {
-        if (this.table != null && !this.table.getSelectionModel().isSelectionEmpty()) {
+        if (this.running) {
+            super.setEnabled(false);
+        } else if (this.table != null && !this.table.getSelectionModel().isSelectionEmpty()) {
             updateStartOrStop();
             if (MapRouletteAuth.isAvailable()) {
                 super.setEnabled(true);

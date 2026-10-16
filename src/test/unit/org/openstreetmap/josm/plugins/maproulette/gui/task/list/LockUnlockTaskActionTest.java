@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.Action;
@@ -33,6 +34,7 @@ import javax.swing.table.TableRowSorter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
@@ -47,6 +49,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
+import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
@@ -186,6 +189,71 @@ class LockUnlockTaskActionTest {
             wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/125/release")));
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
             assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * A double-click on Start sends one start: the action is disabled until the first one returns (#91)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testDoubleClickStartsOnce() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/start")).atPriority(1)
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        final var action = new LockUnlockTaskAction(this.table);
+        final var enabledWhileRunning = new AtomicBoolean(true);
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+                enabledWhileRunning.set(action.isEnabled());
+                action.actionPerformed(null);
+            });
+            sync();
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertFalse(enabledWhileRunning.get(), "Disabled while the start runs");
+            assertTrue(action.isEnabled(), "Enabled again afterwards");
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * MapRoulette answers 409 naming the task being started when the user already started it: that is a success (#91)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartOfOwnLockIsSuccess() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/start")).atPriority(1)
+                .willReturn(aResponse().withStatus(409).withHeader("Content-Type", "application/json")
+                        .withBody("{\"status\":\"Conflict\",\"message\":\"locked\",\"lockedTaskId\":132279499,"
+                                + "\"bundledTasks\":[]}")));
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+            assertTrue(explained.isEmpty(), explained::toString);
         } finally {
             cleanUp();
         }
