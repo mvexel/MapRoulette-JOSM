@@ -47,6 +47,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
@@ -219,6 +220,32 @@ class LockUnlockTaskActionTest {
             assertFalse(enabledWhileRunning.get(), "Disabled while the start runs");
             assertTrue(action.isEnabled(), "Enabled again afterwards");
             assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * After Start, the Current Task window opens with the started task, so the user finds its status buttons (#92)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartShowsCurrentTask() throws Exception {
+        WireMocks.current().register(get(urlPathEqualTo("/api/v2/task/132279499/start")).atPriority(1)
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        final var action = new LockUnlockTaskAction(this.table);
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            final var panel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
+            assertNotNull(panel);
+            assertTrue(panel.isDialogShowing());
+            assertTrue(panel.showsLockedTask());
         } finally {
             cleanUp();
         }
