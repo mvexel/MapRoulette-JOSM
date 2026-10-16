@@ -23,8 +23,12 @@ import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteHttpException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
@@ -125,6 +129,22 @@ public class LateUploadHook implements UploadHook {
         return primitives.stream().allMatch(p -> p.getDataSet() == null || !p.isNew() && !p.isModified());
     }
 
+    /**
+     * Check if MapRoulette will refuse the status again, so that sending it with the next upload is pointless
+     *
+     * @param e The refusal
+     * @return {@code true} for an invalid status change, a paused or unpublished challenge, a multiple-choice task, a
+     *         missing task, or a refusal for this user; {@code false} for a refusal a new login or the server's
+     *         settings can lift
+     */
+    static boolean isFinal(MapRouletteException e) {
+        if (e instanceof MapRouletteUnsupportedException unsupported) {
+            return unsupported.reason() == Reason.CHALLENGE_DRAFT || unsupported.reason() == Reason.CHOICE_TASK_STATUS;
+        }
+        return e instanceof MapRouletteNotFoundException || e instanceof MapRouletteForbiddenException
+                || e instanceof MapRouletteHttpException http && http.status() == HttpURLConnection.HTTP_BAD_REQUEST;
+    }
+
     private static void explainHeld() {
         ConditionalOptionPaneUtil.showMessageDialog("maproulette.status.held", MainApplication.getMainFrame(),
                 tr("The upload did not complete, so the FIXED status of your MapRoulette tasks was not sent. It will be"
@@ -152,9 +172,8 @@ public class LateUploadHook implements UploadHook {
                     if (linkChangeset) {
                         TaskAPI.changeset(entry.task().id());
                     }
-                } catch (MapRouletteNotFoundException | MapRouletteHttpException e) {
-                    if (e instanceof MapRouletteNotFoundException
-                            || ((MapRouletteHttpException) e).status() == HttpURLConnection.HTTP_BAD_REQUEST) {
+                } catch (MapRouletteNotFoundException | MapRouletteHttpException | MapRouletteForbiddenException e) {
+                    if (isFinal(e)) {
                         // MapRoulette will not take this status (an invalid status change, a paused challenge, or the
                         // task is gone), so sending it again with the next upload would fail again
                         ModifiedObjects.removeLockedTask(entry.task());
