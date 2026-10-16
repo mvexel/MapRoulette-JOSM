@@ -4,7 +4,9 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
+import java.awt.Dialog;
 import java.awt.KeyboardFocusManager;
+import java.awt.Window;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
@@ -109,7 +111,19 @@ public final class MRGuiHelper {
      * @return The focused window if there is one, else the main frame
      */
     public static Component dialogParent() {
-        final var active = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
-        return active != null && active.isShowing() ? active : MainApplication.getMainFrame();
+        return dialogParent(KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow());
+    }
+
+    /**
+     * Get the window to parent a dialog to
+     *
+     * @param active The active window, if any
+     * @return The active window if it is showing and not modal, else the main frame
+     */
+    static Component dialogParent(@Nullable Window active) {
+        // A modal window is usually about to close (such as the PleaseWaitDialog of a running job), and it would take
+        // the dialog with it
+        return active != null && active.isShowing() && !(active instanceof Dialog dialog && dialog.isModal()) ? active
+                : MainApplication.getMainFrame();
     }
 }
