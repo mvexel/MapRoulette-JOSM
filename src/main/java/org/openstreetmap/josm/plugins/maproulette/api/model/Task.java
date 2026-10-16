@@ -115,4 +115,21 @@ public record Task(long id, @Nonnull String name, @Nonnull Instant created, @Non
     public boolean isCooperativeWorkOsc() {
         return this.cooperativeWork instanceof Pair<?, ?> pair && pair.a instanceof DataSet && pair.b instanceof NoteData;
     }
-}
+
+    /**
+     * Check if this is a multiple-choice task. MapRoulette refuses a status for those from JOSM; they are answered in
+     * the Street Tally app.
+     *
+     * @return {@code true} for a multiple-choice task
+     */
+    public boolean isChoiceTask() {
+        return this.cooperativeWork == ChoiceWork.INSTANCE;
+    }
+
+    /**
+     * The cooperative work of a multiple-choice task (meta type 3, MapRoulette's mobile drafts)
+     */
+    public enum ChoiceWork {
+        /** The only instance */
+        INSTANCE
+    }}

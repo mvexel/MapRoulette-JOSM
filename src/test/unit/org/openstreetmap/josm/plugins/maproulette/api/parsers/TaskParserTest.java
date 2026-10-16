@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.api.parsers;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -133,5 +134,22 @@ class TaskParserTest {
         assertNull(task.cooperativeWork());
         assertTrue(handler.getRecords().stream()
                 .anyMatch(r -> r.getLevel().intValue() >= Level.WARNING.intValue() && r.getMessage().contains("OSC")));
+    }
+
+    /**
+     * A multiple-choice task (cooperative meta type 3) is recognised, so JOSM does not offer a status for it (#81)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testChoiceTask() throws Exception {
+        final var json = Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start"))
+                .replaceFirst("\\{", "{\"cooperativeWork\": {\"meta\": {\"type\": 3, \"version\": 2}},");
+        final var task = (Task) TaskParser.parseTask(new StringReader(json));
+        assertTrue(task.isChoiceTask());
+        assertFalse(task.isCooperativeWorkOsmChange());
+        assertFalse(((Task) TaskParser.parseTask(
+                new StringReader(Files.readString(Path.of("src/test/resources/__files/api/v2/task/147197178/start")))))
+                        .isChoiceTask());
     }
 }

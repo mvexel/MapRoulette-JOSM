@@ -37,6 +37,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -318,7 +319,14 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 // Disable buttons when the state has been modified
                 final var state = Optional.ofNullable(ModifiedObjects.getModifiedTask(task.id()))
                         .map(ModifiedTask::status).orElse(task.status());
-                if (task.cooperativeWork() == null) {
+                if (task.isChoiceTask() && this.status != TaskStatus.SKIPPED) {
+                    // MapRoulette refuses these statuses (choice_task_status); only skip stays open
+                    this.putValue(NAME, this.status.description());
+                    this.setTooltip(ExceptionDialogUtil.explainRefusal(Reason.CHOICE_TASK_STATUS));
+                    this.setEnabled(false);
+                    return;
+                }
+                if (task.cooperativeWork() == null || task.isChoiceTask()) {
                     this.putValue(NAME, this.status.description());
                     this.setTooltip(this.status.description());
                 } else if (task.isCooperativeWorkOsmChange()) {
