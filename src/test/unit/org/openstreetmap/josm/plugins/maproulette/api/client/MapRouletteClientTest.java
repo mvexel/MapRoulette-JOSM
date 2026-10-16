@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -33,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
@@ -150,15 +152,17 @@ class MapRouletteClientTest {
     }
 
     /**
-     * A login that may not use a route (such as bundles on servers that do not allow them for apps) is reported as not
-     * supported, not as another mapper's lock
+     * An app login refusal (such as bundles on servers that do not allow them for apps) is reported with its reason, not
+     * as another mapper's lock
      */
-    @Test
-    void testInsufficientScopeIsUnsupported() {
-        WireMocks.current().register(get(urlPathEqualTo(PATH))
-                .willReturn(aResponse().withStatus(403).withBody("{\"error\":\"insufficient_scope\"}")));
-        assertThrows(MapRouletteUnsupportedException.class,
+    @ParameterizedTest
+    @EnumSource(MapRouletteUnsupportedException.Reason.class)
+    void testLoginRefusalIsUnsupported(MapRouletteUnsupportedException.Reason reason) {
+        WireMocks.current().register(get(urlPathEqualTo(PATH)).willReturn(aResponse().withStatus(403)
+                .withBody("{\"error\":\"" + reason.name().toLowerCase(Locale.ROOT) + "\"}")));
+        final var exception = assertThrows(MapRouletteUnsupportedException.class,
                 () -> MapRouletteClient.getInstance().get("/project/1", Collections.emptyMap(), ProjectParser::parse));
+        assertEquals(reason, exception.reason());
     }
 
     @Test

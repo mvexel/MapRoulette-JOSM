@@ -88,6 +88,21 @@ class LockRefresherTest {
     }
 
     /**
+     * A server that does not let the login refresh locks has not taken the lock away, so it is not reported as lost
+     */
+    @Test
+    @MapRouletteLogin
+    void testUnsupportedRefreshIsNotALostLock() {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/6/refreshLock"))
+                .willReturn(aResponse().withStatus(403).withBody("{\"error\":\"insufficient_scope\"}")));
+        ModifiedObjects.addLockedTask(task(6));
+        LockRefresher.refreshAll();
+        LockRefresher.refreshAll();
+        wireMock.verifyThat(exactly(2), getRequestedFor(urlPathEqualTo("/api/v2/task/6/refreshLock")));
+    }
+
+    /**
      * Without a login that may refresh locks, nothing is sent
      */
     @Test

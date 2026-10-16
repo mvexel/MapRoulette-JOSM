@@ -61,10 +61,8 @@ public final class ExceptionDialogUtil {
                 showErrorDialog(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
                         .orElseGet(() -> tr("MapRoulette reported a conflict.")), tr("MapRoulette conflict"), null);
             }
-        } else if (exception instanceof MapRouletteUnsupportedException) {
-            showErrorDialog(tr(
-                    "This MapRoulette server or your login does not allow this from JOSM yet. Logging in again may help."),
-                    tr("Not allowed for this login"), null);
+        } else if (exception instanceof MapRouletteUnsupportedException unsupported) {
+            showErrorDialog(explainRefusal(unsupported.reason()), tr("Not allowed for this login"), null);
         } else if (exception instanceof MapRouletteForbiddenException) {
             showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
                     tr("Not allowed"), null);
@@ -89,6 +87,24 @@ public final class ExceptionDialogUtil {
         } else {
             org.openstreetmap.josm.gui.ExceptionDialogUtil.explainException(exception);
         }
+    }
+
+    /**
+     * Explain why MapRoulette refused a request from the JOSM login
+     *
+     * @param reason The reason the server gave
+     * @return The explanation
+     */
+    public static String explainRefusal(MapRouletteUnsupportedException.Reason reason) {
+        return switch (reason) {
+        case INSUFFICIENT_SCOPE -> tr(
+                "This MapRoulette server or your login does not allow this from JOSM yet. Logging in again may help.");
+        case MOBILE_WRITES_DISABLED -> tr("This MapRoulette server has switched off changes from apps such as JOSM.");
+        case CHALLENGE_DRAFT -> tr(
+                "This challenge is not published yet (it or its project is disabled), so its tasks can''t be changed.");
+        case CHOICE_TASK_STATUS -> tr(
+                "This is a multiple-choice task. It is completed by answering it in the Street Tally app, not from JOSM.");
+        };
     }
 
     /**
