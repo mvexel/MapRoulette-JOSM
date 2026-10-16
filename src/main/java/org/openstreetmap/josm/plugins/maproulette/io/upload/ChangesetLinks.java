@@ -9,6 +9,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.swing.JOptionPane;
@@ -20,6 +22,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
@@ -38,8 +41,9 @@ public final class ChangesetLinks {
      * @param task        The task marked Fixed
      * @param changesetId The changeset
      * @param since       When the link was first tried
+     * @param server      The MapRoulette server the task was marked Fixed on
      */
-    private record Pending(Task task, long changesetId, Instant since) {
+    private record Pending(Task task, long changesetId, Instant since, String server) {
     }
 
     /**
@@ -56,12 +60,13 @@ public final class ChangesetLinks {
      *
      * @param tasks       The tasks marked Fixed
      * @param changesetId The changeset, or {@code 0} to let MapRoulette find it
+     * @param server      The MapRoulette server the tasks were marked Fixed on
      */
-    static void link(List<Task> tasks, long changesetId) {
+    static void link(List<Task> tasks, long changesetId, String server) {
         final var now = Instant.now();
         for (var task : tasks) {
-            if (!tryLink(task, changesetId) && changesetId > 0) {
-                PENDING.put(task.id(), new Pending(task, changesetId, now));
+            if (!tryLink(task, changesetId, server) && changesetId > 0) {
+                PENDING.put(task.id(), new Pending(task, changesetId, now, server));
             }
         }
     }
@@ -71,10 +76,11 @@ public final class ChangesetLinks {
      *
      * @param tasks       The tasks marked Fixed
      * @param changesetId The changeset
+     * @param server      The MapRoulette server the tasks were marked Fixed on
      */
-    static void await(List<Task> tasks, long changesetId) {
+    static void await(List<Task> tasks, long changesetId, String server) {
         final var now = Instant.now();
-        tasks.forEach(task -> PENDING.put(task.id(), new Pending(task, changesetId, now)));
+        tasks.forEach(task -> PENDING.put(task.id(), new Pending(task, changesetId, now, server)));
     }
 
     /**
@@ -123,17 +129,21 @@ public final class ChangesetLinks {
                 PENDING.remove(pending.task().id(), pending);
                 Logging.info("Gave up linking MapRoulette task " + pending.task().id() + " to changeset "
                         + pending.changesetId());
-            } else if (tryLink(pending.task(), pending.changesetId())) {
+            } else if (tryLink(pending.task(), pending.changesetId(), pending.server())) {
                 PENDING.remove(pending.task().id(), pending);
             }
         }
     }
 
     /**
-     * Forget all waiting links
+     * Forget all waiting links, for example when the user switches to another MapRoulette server
+     *
+     * @return The ids of the tasks that were waiting
      */
-    static void clear() {
-        PENDING.clear();
+    public static Set<Long> forgetAll() {
+        final var ids = new TreeSet<>(PENDING.keySet());
+        ids.forEach(PENDING::remove);
+        return ids;
     }
 
     /**
@@ -141,9 +151,15 @@ public final class ChangesetLinks {
      *
      * @param task        The task marked Fixed
      * @param changesetId The changeset, or {@code 0} to let MapRoulette find it
+     * @param server      The MapRoulette server the task was marked Fixed on
      * @return {@code true} if done (linked, or refused for good); {@code false} to try again later
      */
-    private static boolean tryLink(Task task, long changesetId) {
+    private static boolean tryLink(Task task, long changesetId, String server) {
+        if (!server.equals(MapRouletteConfig.getBaseUrl())) {
+            // The task id may belong to an unrelated task on the server now configured
+            Logging.info("Not linking MapRoulette task " + task.id() + ": it is on " + server);
+            return true;
+        }
         try {
             TaskAPI.changeset(task.id(), changesetId);
             return true;

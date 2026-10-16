@@ -152,6 +152,46 @@ class TaskStatusSenderTest {
     }
 
     /**
+     * When the user switches MapRoulette servers while statuses are sent, nothing more goes to the new server, where the
+     * task ids may belong to unrelated tasks (#86)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testServerSwitchStopsSending() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var other = TaskAPI.get(132279499);
+        final var modified = new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null);
+        final var otherModified = new ModifiedTask(other, TaskStatus.FIXED, null, null, null, null);
+        ModifiedObjects.addModifiedTask(modified);
+        ModifiedObjects.addModifiedTask(otherModified);
+        final var config = org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getInstance();
+        final var sentTo = new CopyOnWriteArrayList<Long>();
+        TestUtils.assumeWorkingJMockit();
+        new MockUp<TaskAPI>() {
+            @Mock
+            boolean updateStatus(long task, TaskStatus status, String comment, String tags, Boolean requestReview,
+                    Map<String, Option> completionResponses) {
+                sentTo.add(task);
+                // The user switches servers while the request runs
+                org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig
+                        .setInstance(new org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig(
+                                config.baseUrl() + "/x"));
+                return true;
+            }
+        };
+        try {
+            MainApplication.worker.submit(() -> TaskStatusSender.sendStatuses(List.of(modified, otherModified))).get(10,
+                    TimeUnit.SECONDS);
+            sync();
+        } finally {
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(config);
+        }
+        assertEquals(List.of(task.id()), sentTo, "Only the status already in flight");
+        WireMocks.current().verifyThat(exactly(0), getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+    }
+
+    /**
      * Wait for the worker and the listeners on the EDT
      *
      * @throws Exception if the test fails

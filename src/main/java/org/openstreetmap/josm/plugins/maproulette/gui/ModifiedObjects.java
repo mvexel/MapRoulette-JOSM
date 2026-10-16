@@ -3,6 +3,8 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -144,5 +146,24 @@ public final class ModifiedObjects {
     @Nonnull
     public static List<Task> getUnlinkedFixed() {
         return List.copyOf(UNLINKED_FIXED_MAP.values());
+    }
+
+    /**
+     * Forget every task, for example when the user switches to another MapRoulette server. Nothing is sent.
+     *
+     * @return The ids of the tasks that were forgotten
+     */
+    @Nonnull
+    public static Set<Long> forgetAll() {
+        final var ids = new TreeSet<Long>();
+        ids.addAll(LOCKED_TASK_MAP.keySet());
+        ids.addAll(MODIFIED_TASK_MAP.keySet());
+        ids.addAll(UNLINKED_FIXED_MAP.keySet());
+        ids.forEach(id -> {
+            LOCKED_TASK_MAP.remove(id);
+            MODIFIED_TASK_MAP.remove(id);
+            UNLINKED_FIXED_MAP.remove(id);
+        });
+        return ids;
     }
 }

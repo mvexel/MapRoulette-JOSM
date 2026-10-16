@@ -12,6 +12,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
@@ -58,9 +59,12 @@ public final class TaskStatusSender {
     public static void sendStatuses(List<ModifiedTask> modifiedTasks) {
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
         final var failures = new ArrayList<Exception>();
+        // The statuses belong to this server: if the user switches servers meanwhile, nothing more is sent (#86)
+        final var server = MapRouletteConfig.getBaseUrl();
         for (ModifiedTask entry : modifiedTasks) {
-            // Skip a status replaced by a newer one in the meantime
-            if (entry.status() == TaskStatus.CREATED || ModifiedObjects.getModifiedTask(entry.task().id()) != entry) {
+            // Skip a status replaced by a newer one in the meantime, or forgotten after a server switch
+            if (entry.status() == TaskStatus.CREATED || ModifiedObjects.getModifiedTask(entry.task().id()) != entry
+                    || !server.equals(MapRouletteConfig.getBaseUrl())) {
                 continue;
             }
             var sent = false;
@@ -68,6 +72,9 @@ public final class TaskStatusSender {
                 TaskAPI.updateStatus(entry.task().id(), entry.status(), entry.comment(), entry.tags(),
                         entry.reviewRequested(), entry.completionResponses());
                 sent = true;
+                if (!server.equals(MapRouletteConfig.getBaseUrl())) {
+                    continue;
+                }
                 updatedTasks.put(entry.task().id(), TaskAPI.release(entry.task().id()));
                 ModifiedObjects.removeLockedTask(entry.task());
             } catch (IOException e) {

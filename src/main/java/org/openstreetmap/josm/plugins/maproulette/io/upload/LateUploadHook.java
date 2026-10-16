@@ -24,6 +24,7 @@ import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
@@ -77,13 +78,15 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             return;
         }
         final var primitives = this.uploading;
+        final var server = MapRouletteConfig.getBaseUrl();
         final var closed = isChangesetClosedAfterUpload();
         // The upload is queued on the worker after this returns; queue the job from a later EDT event so that it runs
         // after the upload
         SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
             final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
                     () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
-            if (changesetId < 0) {
+            if (changesetId < 0 || !server.equals(MapRouletteConfig.getBaseUrl())) {
+                // Not uploaded: wait for the next upload. Another server: the tasks were forgotten.
                 return;
             }
             // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
@@ -96,9 +99,9 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             }
             linked.forEach(ModifiedObjects::removeUnlinkedFixed);
             if (closed || changesetId == 0) {
-                ChangesetLinks.link(linked, changesetId);
+                ChangesetLinks.link(linked, changesetId, server);
             } else {
-                ChangesetLinks.await(linked, changesetId);
+                ChangesetLinks.await(linked, changesetId, server);
             }
         }));
     }
