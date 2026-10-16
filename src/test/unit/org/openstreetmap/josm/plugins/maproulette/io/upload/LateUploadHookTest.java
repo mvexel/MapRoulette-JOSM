@@ -71,7 +71,7 @@ class LateUploadHookTest {
         ModifiedObjects.getModifiedTasks().forEach(ModifiedObjects::removeModifiedTask);
         ModifiedObjects.getUnlinkedFixed().forEach(ModifiedObjects::removeUnlinkedFixed);
         ModifiedObjects.getLockedTasks().forEach(ModifiedObjects::removeLockedTask);
-        ChangesetLinks.clear();
+        ChangesetLinks.forgetAll();
     }
 
     /**
@@ -304,7 +304,7 @@ class LateUploadHookTest {
                         .willSetStateTo("closed"));
         wireMock.register(put(urlPathEqualTo(taskPath + "/changeset")).inScenario("open").whenScenarioStateIs("closed")
                 .willReturn(aResponse().withBodyFile("api/v2/task/147197178/start")));
-        ChangesetLinks.await(List.of(task), 701183);
+        ChangesetLinks.await(List.of(task), 701183, server());
         ChangesetLinks.retryAll();
         assertTrue(ChangesetLinks.awaits(701183), "Still open: the link waits");
         ChangesetLinks.retryAll();
@@ -327,7 +327,7 @@ class LateUploadHookTest {
         final var taskPath = "/api/v2/task/" + task.id();
         WireMocks.current().register(put(urlPathEqualTo(taskPath + "/changeset"))
                 .willReturn(aResponse().withStatus(403).withBody("{\"error\":\"changeset_not_owned\"}")));
-        ChangesetLinks.await(List.of(task), 701184);
+        ChangesetLinks.await(List.of(task), 701184, server());
         ChangesetLinks.retry(701184);
         assertFalse(ChangesetLinks.awaits(701184));
         WireMocks.current().verifyThat(1, putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
@@ -343,7 +343,7 @@ class LateUploadHookTest {
     void testExpiredPendingLinkDropped() throws Exception {
         final var task = TaskAPI.get(147197178);
         final var taskPath = stub(task.id(), TaskStatus.FIXED);
-        ChangesetLinks.await(List.of(task), 701185);
+        ChangesetLinks.await(List.of(task), 701185, server());
         ChangesetLinks.retry(-1, Instant.now().plus(ChangesetLinks.WINDOW).plusSeconds(60));
         assertFalse(ChangesetLinks.awaits(701185));
         WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
@@ -415,6 +415,76 @@ class LateUploadHookTest {
         });
         sync();
         WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+    }
+
+    /**
+     * A link waiting for a changeset is not sent after the user switched to another MapRoulette server: the task id
+     * there may belong to an unrelated task (#86)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testPendingLinkNotSentToOtherServer() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ChangesetLinks.await(List.of(task), 701186, server());
+        final var config = org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getInstance();
+        try {
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(
+                    new org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig(server() + "/other"));
+            ChangesetLinks.retryAll();
+        } finally {
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(config);
+        }
+        assertFalse(ChangesetLinks.awaits(701186));
+        ChangesetLinks.await(List.of(task), 701186, server());
+        assertEquals(Set.of(task.id()), ChangesetLinks.forgetAll(), "Forgotten when the user switches servers");
+        assertFalse(ChangesetLinks.awaits(701186));
+        WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+    }
+
+    /**
+     * After an upload, the tasks marked Fixed are not linked if the user switched servers while it ran (#86)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testNoLinkAfterServerSwitchDuringUpload() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.addUnlinkedFixed(task);
+        final var node = uploadedNode(false);
+        final var hook = hook(true);
+        final var config = org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getInstance();
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                hook.checkUpload(new APIDataSet(node.getDataSet()));
+                hook.modifyChangesetTags(new HashMap<>());
+                MainApplication.worker.execute(() -> GuiHelper.runInEDTAndWait(() -> {
+                    node.setModified(false);
+                    node.setChangesetId(701187);
+                    org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig
+                            .setInstance(new org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig(
+                                    server() + "/other"));
+                }));
+            });
+            sync();
+        } finally {
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(config);
+        }
+        WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+        assertFalse(ChangesetLinks.awaits(701187));
+    }
+
+    /**
+     * Get the MapRoulette server of the test
+     *
+     * @return The base URL
+     */
+    private static String server() {
+        return org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl();
     }
 
     /**

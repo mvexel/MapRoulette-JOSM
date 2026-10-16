@@ -3,19 +3,29 @@ package org.openstreetmap.josm.plugins.maproulette.gui.preferences;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 
 import org.openstreetmap.josm.data.preferences.StringProperty;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
 import org.openstreetmap.josm.gui.preferences.SubPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.TabPreferenceSetting;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.io.upload.ChangesetLinks;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
@@ -62,9 +72,38 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
             }
         }
 
+        final var oldServer = MapRouletteConfig.getInstance() == null ? null : MapRouletteConfig.getBaseUrl();
         MapRouletteConfig.setInstance(new MapRouletteConfig(MAPROULETTE_URL.get()));
+        if (oldServer != null && !oldServer.equals(MapRouletteConfig.getBaseUrl())) {
+            forgetTasks(oldServer);
+        }
         MapRouletteAuth.configure();
         return false;
+    }
+
+    /**
+     * Forget the tasks of the server the user switched away from. Their ids may belong to unrelated tasks on the new
+     * server, so nothing about them is sent there (#86).
+     *
+     * @param oldServer The server the user switched away from
+     * @return The ids of the forgotten tasks
+     */
+    static Set<Long> forgetTasks(String oldServer) {
+        final var ids = new TreeSet<Long>(ModifiedObjects.forgetAll());
+        ids.addAll(ChangesetLinks.forgetAll());
+        if (!ids.isEmpty()) {
+            final var message = tr(
+                    "You switched MapRoulette servers. JOSM no longer tracks tasks {0} from {1}. A task you started there "
+                            + "stays started until its lock expires, and a task you marked Fixed there is not linked to "
+                            + "your changeset.",
+                    ids.stream().map(String::valueOf).collect(Collectors.joining(", ")), oldServer);
+            Logging.info(message);
+            if (!GraphicsEnvironment.isHeadless()) {
+                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.INFORMATION_MESSAGE)
+                        .setDuration(Notification.TIME_LONG).show());
+            }
+        }
+        return ids;
     }
 
     @Override
