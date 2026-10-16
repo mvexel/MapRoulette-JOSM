@@ -32,6 +32,7 @@ import javax.swing.text.html.HTMLDocument;
 import org.openstreetmap.josm.actions.upload.UploadHook;
 import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Tagged;
@@ -93,10 +94,16 @@ public final class EarlyUploadHook implements UploadHook {
     private static final Pattern ID_TYPE_VERSION_PATTERN = Pattern.compile("(\\d+)_(n|node|w|way|r|rel|relation)_\\d+");
 
     /**
+     * The primitives of the upload in progress, captured in {@link #checkUpload(APIDataSet)}
+     */
+    private volatile List<OsmPrimitive> uploading = List.of();
+
+    /**
      * JOSM calls this on the worker, and {@link #modifyChangesetTags(Map)} afterwards on the EDT
      */
     @Override
     public boolean checkUpload(APIDataSet apiDataSet) {
+        this.uploading = List.copyOf(apiDataSet.getPrimitives());
         try {
             return realCheckUpload(apiDataSet);
         } catch (RuntimeException exception) {
@@ -264,7 +271,12 @@ public final class EarlyUploadHook implements UploadHook {
         final var sourceComments = new TreeSet<String>();
         var tagBuilder = new StringBuilder();
         tagBuilders.add(tagBuilder);
-        for (Task task : ModifiedObjects.getUnlinkedFixed()) {
+        // Only the tasks this upload is for; the challenges were cached in checkUpload
+        final var uploaded = this.uploading;
+        final var forUpload = ModifiedObjects.getUnlinkedFixed().stream().filter(task -> TaskPrimitives
+                .cachedPrimitiveIds(task).map(ids -> LateUploadHook.inUpload(ids, uploaded)).orElse(Boolean.TRUE))
+                .toList();
+        for (Task task : forUpload) {
             final var id = Long.toString(task.id());
             if (tagBuilder.length() + id.length() + 1 >= Tagged.MAX_TAG_LENGTH) {
                 tagBuilder = new StringBuilder();

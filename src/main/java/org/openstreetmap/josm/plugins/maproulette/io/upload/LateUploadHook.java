@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.swing.SwingUtilities;
@@ -14,12 +15,16 @@ import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.data.osm.ChangesetCacheEvent;
 import org.openstreetmap.josm.data.osm.ChangesetCacheListener;
+import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 
@@ -81,11 +86,19 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             if (changesetId < 0) {
                 return;
             }
-            fixed.forEach(ModifiedObjects::removeUnlinkedFixed);
+            // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
+            // it waits for an upload that has them
+            final var unlinked = ModifiedObjects.getUnlinkedFixed();
+            final var linked = fixed.stream().filter(unlinked::contains)
+                    .filter(task -> inUpload(TaskPrimitives.getPrimitiveIds(task), primitives)).toList();
+            if (linked.isEmpty()) {
+                return;
+            }
+            linked.forEach(ModifiedObjects::removeUnlinkedFixed);
             if (closed || changesetId == 0) {
-                ChangesetLinks.link(fixed, changesetId);
+                ChangesetLinks.link(linked, changesetId);
             } else {
-                ChangesetLinks.await(fixed, changesetId);
+                ChangesetLinks.await(linked, changesetId);
             }
         }));
     }
@@ -99,6 +112,23 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
         Stream.concat(event.getAddedChangesets().stream(), event.getUpdatedChangesets().stream())
                 .filter(changeset -> !changeset.isOpen()).mapToLong(Changeset::getId).filter(ChangesetLinks::awaits)
                 .forEach(changesetId -> MainApplication.worker.execute(() -> ChangesetLinks.retry(changesetId)));
+    }
+
+    /**
+     * Check if an upload is for a task: it has at least one of the task's OSM objects. A task that names no OSM objects
+     * (such as a missing feature) may belong to any upload.
+     *
+     * @param taskIds  The OSM objects of the task
+     * @param uploaded The uploaded primitives
+     * @return {@code true} if the upload may be for the task
+     */
+    static boolean inUpload(Collection<PrimitiveId> taskIds, Collection<? extends IPrimitive> uploaded) {
+        if (taskIds.isEmpty()) {
+            return true;
+        }
+        final var ids = taskIds.stream().map(id -> new SimplePrimitiveId(id.getUniqueId(), id.getType()))
+                .collect(Collectors.toSet());
+        return uploaded.stream().anyMatch(p -> ids.contains(new SimplePrimitiveId(p.getUniqueId(), p.getType())));
     }
 
     /**

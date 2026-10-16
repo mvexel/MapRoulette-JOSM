@@ -29,9 +29,11 @@ import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
@@ -99,6 +101,26 @@ class EarlyUploadHookTest {
         final var map = new HashMap<String, String>();
         hook.modifyChangesetTags(map);
         assertNull(map.get("maproulette:tasks"));
+    }
+
+    /**
+     * The changeset is tagged only with the tasks marked Fixed whose OSM objects are in the upload (#97)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testTagsOnlyTasksInUpload() throws Exception {
+        final var inUpload = TaskAPI.get(147197178);
+        ModifiedObjects.addUnlinkedFixed(inUpload);
+        ModifiedObjects.addUnlinkedFixed(TaskAPI.get(132279499));
+        final var node = new Node(LatLon.ZERO);
+        node.setOsmId(6318952236L, 1);
+        node.setModified(true);
+        new DataSet().addPrimitive(node);
+        assertTrue(hook.checkUpload(new APIDataSet(node.getDataSet())));
+        final var map = new HashMap<String, String>();
+        hook.modifyChangesetTags(map);
+        assertEquals("147197178", map.get("maproulette:tasks"));
     }
 
     /**

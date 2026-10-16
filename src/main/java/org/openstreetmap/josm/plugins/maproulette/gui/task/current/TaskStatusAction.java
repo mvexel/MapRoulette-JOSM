@@ -274,14 +274,25 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                     return;
                 }
             }
-            // Send the status now, as the web does (D15); a Fixed is linked to the changeset after the upload
-            if (this.status == TaskStatus.FIXED) {
+            // Send the status now, as the web does (D15). A Fixed is linked to the changeset of the upload that follows,
+            // but only if there is something to upload: a Fixed with no edit must not be linked to an unrelated upload.
+            if (this.status == TaskStatus.FIXED && hasEditsToUpload()) {
                 ModifiedObjects.addUnlinkedFixed(task);
             }
             MainApplication.worker.execute(() -> TaskStatusSender.sendStatuses(List.of(modifiedTask)));
         }
         Optional.ofNullable(MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class))
                 .ifPresent(p -> p.refreshModel(task));
+    }
+
+    /**
+     * Check if the edit layer has something to upload
+     *
+     * @return {@code true} if it has
+     */
+    static boolean hasEditsToUpload() {
+        final var editLayer = MainApplication.getLayerManager().getEditLayer();
+        return editLayer != null && editLayer.requiresUploadToServer();
     }
 
     private ModifiedTask getModifiedTask(LoadedTask loaded) {
@@ -308,8 +319,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
         if (this.status == TaskStatus.FIXED) {
             // The status is sent now; the edits are not, and JOSM uploads them from its own menu
-            panel.add(new JLabel(tr("Upload your edits with File > Upload data. The changeset is linked to this task"
-                    + " afterwards.")), GBC.eol().anchor(GBC.LINE_START));
+            panel.add(new JLabel(tr("If you edited OSM data for this task, upload it with File > Upload data. The "
+                    + "changeset is linked to this task afterwards.")), GBC.eol().anchor(GBC.LINE_START));
         }
 
         var selection = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.feedback",

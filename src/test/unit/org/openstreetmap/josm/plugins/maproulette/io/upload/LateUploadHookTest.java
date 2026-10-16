@@ -45,6 +45,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
@@ -117,7 +118,14 @@ class LateUploadHookTest {
             }
         });
         try {
-            GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
+            final var hook = hook(true);
+            final var node = uploadedNode(false);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                hook.checkUpload(new APIDataSet(node.getDataSet()));
+                hook.modifyChangesetTags(new HashMap<>());
+                // The upload succeeds, without a changeset id: MapRoulette finds the changeset itself
+                node.setModified(false);
+            });
             sync();
             assertEquals(List.of(false), onEdt);
             // No uploaded primitives, so no changeset id: MapRoulette finds the changeset itself
@@ -262,7 +270,14 @@ class LateUploadHookTest {
                 explained.add(exception);
             }
         };
-        GuiHelper.runInEDTAndWaitWithException(() -> hook(true).modifyChangesetTags(new HashMap<>()));
+        final var hook = hook(true);
+        final var node = uploadedNode(false);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+            // The upload succeeds, without a changeset id: MapRoulette finds the changeset itself
+            node.setModified(false);
+        });
         sync();
         WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
         assertTrue(explained.isEmpty(), "No error dialog for the link");
@@ -335,6 +350,94 @@ class LateUploadHookTest {
     }
 
     /**
+     * A task marked Fixed is linked only to an upload that has its OSM objects; the other one waits (#97)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFixedNotLinkedToUnrelatedUpload() throws Exception {
+        final var inUpload = TaskAPI.get(147197178);
+        final var notInUpload = TaskAPI.get(132279499);
+        final var inUploadPath = stub(inUpload.id(), TaskStatus.FIXED);
+        final var notInUploadPath = stub(notInUpload.id(), TaskStatus.FIXED);
+        ModifiedObjects.addUnlinkedFixed(inUpload);
+        ModifiedObjects.addUnlinkedFixed(notInUpload);
+        upload(uploadedNode(false), 701188);
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(inUploadPath + "/changeset"))
+                .withQueryParam("changesetId", equalTo("701188")));
+        WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(notInUploadPath + "/changeset")));
+        assertEquals(List.of(notInUpload), ModifiedObjects.getUnlinkedFixed(), "It waits for an upload that has it");
+    }
+
+    /**
+     * A task that names no OSM objects, such as a missing feature, is linked to the upload that follows it
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testMissingFeatureLinked() throws Exception {
+        final var task = new Task(1, "", null, null, 28410, null, null, null, null, null, null, null, null, null, 0,
+                null, null, null, false, null, null);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.addUnlinkedFixed(task);
+        final var node = uploadedNode(false);
+        node.setOsmId(1, 1);
+        upload(node, 701189);
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset"))
+                .withQueryParam("changesetId", equalTo("701189")));
+        assertTrue(ModifiedObjects.getUnlinkedFixed().isEmpty());
+    }
+
+    /**
+     * A task whose status could not be sent while the upload ran is not linked
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFailedStatusNotLinked() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.addUnlinkedFixed(task);
+        final var node = uploadedNode(false);
+        final var hook = hook(true);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+            MainApplication.worker.execute(() -> GuiHelper.runInEDTAndWait(() -> {
+                // The status was refused, and the upload succeeds
+                ModifiedObjects.removeUnlinkedFixed(task);
+                node.setModified(false);
+                node.setChangesetId(701190);
+            }));
+        });
+        sync();
+        WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+    }
+
+    /**
+     * Upload a node with a hook that closes the changeset; the upload succeeds
+     *
+     * @param node        The modified node
+     * @param changesetId The changeset the upload goes to
+     * @throws Exception if the test fails
+     */
+    private static void upload(Node node, long changesetId) throws Exception {
+        final var hook = hook(true);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+            MainApplication.worker.execute(() -> GuiHelper.runInEDTAndWait(() -> {
+                node.setModified(false);
+                node.setChangesetId((int) changesetId);
+            }));
+        });
+        sync();
+    }
+
+    /**
      * Stub the MapRoulette calls for sending a status
      *
      * @param id     The task id
@@ -360,7 +463,8 @@ class LateUploadHookTest {
      */
     private static Node uploadedNode(boolean uploaded) {
         final var node = new Node(LatLon.ZERO);
-        node.setOsmId(1, 1);
+        // The OSM object of task 147197178
+        node.setOsmId(6318952236L, 1);
         node.setModified(true);
         new DataSet().addPrimitive(node);
         if (uploaded) {
