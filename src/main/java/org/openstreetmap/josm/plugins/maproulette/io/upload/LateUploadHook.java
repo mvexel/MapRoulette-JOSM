@@ -95,7 +95,7 @@ public class LateUploadHook implements UploadHook {
         final var fixed = modifiedTasks.stream().filter(entry -> entry.status() == TaskStatus.FIXED).toList();
         final var others = modifiedTasks.stream().filter(entry -> entry.status() != TaskStatus.FIXED).toList();
         if (!others.isEmpty()) {
-            MainApplication.worker.execute(() -> sendStatuses(others, true));
+            MainApplication.worker.execute(() -> sendStatuses(others, true, 0));
         }
         if (!fixed.isEmpty()) {
             final var primitives = this.uploading;
@@ -104,7 +104,8 @@ public class LateUploadHook implements UploadHook {
             // runs after the upload
             SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
                 if (Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() -> isUploaded(primitives)))) {
-                    sendStatuses(fixed, linkChangeset);
+                    final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(() -> uploadedChangeset(primitives));
+                    sendStatuses(fixed, linkChangeset, changesetId);
                 } else {
                     GuiHelper.runInEDT(LateUploadHook::explainHeld);
                 }
@@ -149,6 +150,40 @@ public class LateUploadHook implements UploadHook {
     }
 
     /**
+     * Get the changeset the primitives were uploaded in
+     *
+     * @param primitives The uploaded primitives
+     * @return The changeset id, or {@code 0} if JOSM did not record one
+     */
+    static long uploadedChangeset(Collection<OsmPrimitive> primitives) {
+        return primitives.stream().mapToLong(OsmPrimitive::getChangesetId).max().orElse(0);
+    }
+
+    /**
+     * Link a task to the changeset. The status is already sent, so a refusal here only means the task stays unlinked.
+     *
+     * @param entry       The sent status
+     * @param changesetId The uploaded changeset, or {@code 0} to let MapRoulette find it
+     */
+    private static void link(ModifiedTask entry, long changesetId) {
+        try {
+            TaskAPI.changeset(entry.task().id(), changesetId);
+        } catch (IOException e) {
+            Logging.warn(e);
+            final var message = tr(
+                    "The {0} status of MapRoulette task {1} was sent, but MapRoulette did not link the"
+                            + " task to your changeset.",
+                    entry.status().description(), Long.toString(entry.task().id()));
+            if (GraphicsEnvironment.isHeadless()) {
+                Logging.info(message);
+            } else {
+                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.INFORMATION_MESSAGE)
+                        .setDuration(Notification.TIME_LONG).show());
+            }
+        }
+    }
+
+    /**
      * Say which task's status was dropped. The error dialog that follows gives MapRoulette's reason.
      *
      * @param entry The dropped status
@@ -176,23 +211,27 @@ public class LateUploadHook implements UploadHook {
      *
      * @param modifiedTasks The modified tasks
      * @param linkChangeset {@code true} to ask MapRoulette to link the tasks to the changeset
+     * @param changesetId   The uploaded changeset, or {@code 0} to let MapRoulette find it
      */
-    private static void sendStatuses(List<ModifiedTask> modifiedTasks, boolean linkChangeset) {
+    private static void sendStatuses(List<ModifiedTask> modifiedTasks, boolean linkChangeset, long changesetId) {
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
         for (ModifiedTask entry : modifiedTasks) {
             // Skip a status dropped or changed since the upload started (Stop Task drops a held FIXED)
             if (entry.status() != TaskStatus.CREATED && ModifiedObjects.getModifiedTask(entry.task().id()) == entry) {
+                var sent = false;
                 try {
                     TaskAPI.updateStatus(entry.task().id(), entry.status(), entry.comment(), entry.tags(),
                             entry.reviewRequested(), entry.completionResponses());
+                    sent = true;
                     updatedTasks.put(entry.task().id(), TaskAPI.release(entry.task().id()));
                     ModifiedObjects.removeLockedTask(entry.task());
                     ModifiedObjects.removeModifiedTask(entry);
                     if (linkChangeset) {
-                        TaskAPI.changeset(entry.task().id());
+                        link(entry, changesetId);
                     }
                 } catch (MapRouletteNotFoundException | MapRouletteHttpException | MapRouletteForbiddenException e) {
-                    if (isFinal(e)) {
+                    // A refusal after the status was sent (the release) does not mean the status was dropped
+                    if (!sent && isFinal(e)) {
                         // MapRoulette will not take this status (an invalid status change, a paused challenge, or the
                         // task is gone), so sending it again with the next upload would fail again
                         ModifiedObjects.removeLockedTask(entry.task());
