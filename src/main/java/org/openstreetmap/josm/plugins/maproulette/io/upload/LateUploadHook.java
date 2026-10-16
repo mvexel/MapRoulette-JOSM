@@ -88,8 +88,8 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             }
             // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
             // it waits for an upload that has them
-            final var unlinked = ModifiedObjects.getUnlinkedFixed();
-            final var linked = fixed.stream().filter(unlinked::contains)
+            final var unlinked = ModifiedObjects.getUnlinkedFixed().stream().map(Task::id).collect(Collectors.toSet());
+            final var linked = fixed.stream().filter(task -> unlinked.contains(task.id()))
                     .filter(task -> inUpload(TaskPrimitives.getPrimitiveIds(task), primitives)).toList();
             if (linked.isEmpty()) {
                 return;
