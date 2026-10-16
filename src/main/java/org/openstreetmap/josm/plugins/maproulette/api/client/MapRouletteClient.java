@@ -284,7 +284,9 @@ public final class MapRouletteClient {
         return switch (status) {
         case 401, 410 -> new MapRouletteAuthUnavailableException(
                 "MapRoulette refused the login (HTTP " + status + ") for " + url + message);
-        case 403 -> new MapRouletteForbiddenException("MapRoulette refused the request for " + url + message);
+        case 403 -> insufficientScope(safeBody)
+                ? new MapRouletteUnsupportedException("MapRoulette does not allow this for the JOSM login: " + url)
+                : new MapRouletteForbiddenException("MapRoulette refused the request for " + url + message);
         case 404 -> new MapRouletteNotFoundException("Not found in MapRoulette: " + url + message);
         case 409 -> new MapRouletteLockHeldException("MapRoulette conflict for " + url + message,
                 serverMessage(safeBody), lockedTaskId(safeBody), bundledTaskIds(safeBody));
@@ -311,6 +313,18 @@ public final class MapRouletteClient {
             }
         }
         return message.toString();
+    }
+
+    /**
+     * Check for the error of a login that may not use this request ({@code {"error": "insufficient_scope"}})
+     *
+     * @param body The body
+     * @return {@code true} if the body names that error
+     */
+    private static boolean insufficientScope(String body) {
+        final var object = jsonObject(body);
+        return object != null && object.get("error")instanceof JsonString value
+                && "insufficient_scope".equals(value.getString());
     }
 
     /**

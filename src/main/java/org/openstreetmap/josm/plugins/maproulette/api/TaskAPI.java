@@ -158,7 +158,7 @@ public final class TaskAPI {
      * @param status        The status to set
      * @param comment       The comment to use
      * @param tags          The tags to use
-     * @param requestReview Request review (or not), overrides user settings
+     * @param requestReview {@code true} to request a review; otherwise the user's settings decide
      * @param completionResponses The completion responses
      * @return {@code true}; failures throw
      * @throws IOException if there was a problem communicating with the server
@@ -169,8 +169,9 @@ public final class TaskAPI {
         if (tags != null && !tags.isBlank()) {
             query.put("tags", tags);
         }
-        if (requestReview != null) {
-            query.put("requestReview", requestReview.toString());
+        // Only a request for review is sent: MapRoulette refuses to skip a review the user's settings require
+        if (Boolean.TRUE.equals(requestReview)) {
+            query.put("requestReview", "true");
         }
         final byte[] body;
         if (completionResponses != null) {

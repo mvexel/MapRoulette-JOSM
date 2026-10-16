@@ -20,6 +20,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.Logging;
@@ -92,6 +93,10 @@ public final class LockRefresher {
             }
             try {
                 TaskAPI.refreshLock(task.id());
+            } catch (MapRouletteUnsupportedException e) {
+                // The login may not refresh locks on this server; the lock itself is fine
+                Logging.warn("This MapRoulette server does not allow refreshing the lock on task " + task.id());
+                Logging.debug(e);
             } catch (MapRouletteForbiddenException | MapRouletteNotFoundException e) {
                 // Someone else has the task now, or it is gone
                 Logging.warn("MapRoulette task " + task.id() + " is no longer locked by you");

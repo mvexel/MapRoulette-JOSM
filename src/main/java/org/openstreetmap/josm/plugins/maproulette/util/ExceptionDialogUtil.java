@@ -23,6 +23,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteHttpExce
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 
 /**
@@ -60,6 +61,10 @@ public final class ExceptionDialogUtil {
                 showErrorDialog(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
                         .orElseGet(() -> tr("MapRoulette reported a conflict.")), tr("MapRoulette conflict"), null);
             }
+        } else if (exception instanceof MapRouletteUnsupportedException) {
+            showErrorDialog(tr(
+                    "This MapRoulette server or your login does not allow this from JOSM yet. Logging in again may help."),
+                    tr("Not allowed for this login"), null);
         } else if (exception instanceof MapRouletteForbiddenException) {
             showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
                     tr("Not allowed"), null);
