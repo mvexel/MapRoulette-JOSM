@@ -103,7 +103,9 @@ public final class LockRefresher {
                 // The login may not refresh locks on this server; the lock itself is fine
                 Logging.warn("This MapRoulette server does not allow refreshing the lock on task " + task.id());
                 Logging.debug(e);
-                if (TOLD_UNSUPPORTED.compareAndSet(false, true)) {
+                // A draft challenge is about this task, not the login, so it doesn't use up the notice
+                if (e.reason() != MapRouletteUnsupportedException.Reason.CHALLENGE_DRAFT
+                        && TOLD_UNSUPPORTED.compareAndSet(false, true)) {
                     tell(tr("JOSM cannot keep your MapRoulette task locks: {0}",
                             ExceptionDialogUtil.explainRefusal(e.reason())));
                 }
