@@ -200,6 +200,8 @@ public final class TaskParser {
                 }
 
             }
+        } else if (metaType == 3) {
+            return Task.ChoiceWork.INSTANCE;
         }
         return null;
     }

@@ -37,6 +37,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -318,6 +319,13 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 // Disable buttons when the state has been modified
                 final var state = Optional.ofNullable(ModifiedObjects.getModifiedTask(task.id()))
                         .map(ModifiedTask::status).orElse(task.status());
+                if (task.isChoiceTask()) {
+                    // MapRoulette refuses a status for these (choice_task_status); say so before the user picks one
+                    this.putValue(NAME, this.status.description());
+                    this.setTooltip(ExceptionDialogUtil.explainRefusal(Reason.CHOICE_TASK_STATUS));
+                    this.setEnabled(false);
+                    return;
+                }
                 if (task.cooperativeWork() == null) {
                     this.putValue(NAME, this.status.description());
                     this.setTooltip(this.status.description());
