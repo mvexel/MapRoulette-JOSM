@@ -173,11 +173,7 @@ public final class TaskListPanel extends ToggleDialog
             }
             if (!l.getValueIsAdjusting()) {
                 if (task != null) {
-                    if (MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class) == null) {
-                        final var currentTaskPanel = new CurrentTaskPanel();
-                        MainApplication.getMap().addToggleDialog(currentTaskPanel);
-                    }
-                    MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class).refreshModel(task);
+                    CurrentTaskPanel.show(task, false);
                 } else {
                     final var currentTaskPanel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
                     // The window follows the user's locked task: filtering it out or selecting another row must not drop it

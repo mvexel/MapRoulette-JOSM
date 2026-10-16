@@ -33,6 +33,7 @@ import javax.swing.text.html.Option;
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
@@ -206,6 +207,28 @@ public final class CurrentTaskPanel extends ToggleDialog {
             this.toggleAction.actionPerformed(null);
         }
         this.refreshPanel();
+    }
+
+    /**
+     * Show a task in the Current Task window, adding the window if the map has none yet
+     *
+     * @param task  The task to show
+     * @param focus {@code true} to also open and expand the window, for example after the user started the task
+     */
+    public static void show(Task task, boolean focus) {
+        final var map = MainApplication.getMap();
+        if (map == null) {
+            return;
+        }
+        var panel = map.getToggleDialog(CurrentTaskPanel.class);
+        if (panel == null) {
+            panel = new CurrentTaskPanel();
+            map.addToggleDialog(panel);
+        }
+        panel.refreshModel(task);
+        if (focus) {
+            panel.unfurlDialog();
+        }
     }
 
     /**

@@ -17,6 +17,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.gui.LockRefresher;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
@@ -59,6 +60,8 @@ public class MapRoulette extends Plugin {
         super.mapFrameInitialized(oldFrame, newFrame);
         if (newFrame != null) {
             newFrame.addToggleDialog(new TaskListPanel());
+            // Hidden until a task is started, but listed in the Windows menu (#92)
+            newFrame.addToggleDialog(new CurrentTaskPanel());
         } else {
             final var lockedTasks = ModifiedObjects.getLockedTasks();
             // JOSM may be shutting down, so log failures instead of showing a dialog

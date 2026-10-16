@@ -28,6 +28,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeld
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
@@ -169,6 +170,8 @@ final class LockUnlockTaskAction extends JosmAction {
                         }
                     }
                     AutoScaleAction.zoomTo(primitiveList);
+                    // Show the started task, so the user finds its instructions and status buttons (#92)
+                    CurrentTaskPanel.show(lockedTasks.get(0), true);
                 }
                 if (forgotten[0] >= 0) {
                     // Ask after this job, so the question is not tied to its progress dialog
