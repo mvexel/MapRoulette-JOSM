@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
@@ -121,6 +122,43 @@ class EarlyUploadHookTest {
         final var map = new HashMap<String, String>();
         hook.modifyChangesetTags(map);
         assertEquals("147197178", map.get("maproulette:tasks"));
+    }
+
+    /**
+     * The changeset comment and source come only from the tasks in the upload. When none is in it, the mapper's comment
+     * is left alone (#95).
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testCommentOnlyFromTasksInUpload() throws Exception {
+        ModifiedObjects.addUnlinkedFixed(TaskAPI.get(147197178));
+        ModifiedObjects.addUnlinkedFixed(TaskAPI.get(132279499));
+        final var map = new HashMap<String, String>();
+        assertTrue(hook.checkUpload(new APIDataSet(modifiedNode(6318952236L).getDataSet())));
+        hook.modifyChangesetTags(map);
+        assertEquals("#AtlasChecks #LoneBuildingNodeCheck #maproulette", map.get("comment"),
+                "Only the comment of challenge 28410, not that of 27905");
+
+        final var unrelated = new HashMap<String, String>();
+        unrelated.put("comment", "Fix a typo");
+        assertTrue(hook.checkUpload(new APIDataSet(modifiedNode(1).getDataSet())));
+        hook.modifyChangesetTags(unrelated);
+        assertEquals(Map.of("comment", "Fix a typo"), unrelated);
+    }
+
+    /**
+     * Create a modified node to upload
+     *
+     * @param id The OSM id
+     * @return The node
+     */
+    private static Node modifiedNode(long id) {
+        final var node = new Node(LatLon.ZERO);
+        node.setOsmId(id, 1);
+        node.setModified(true);
+        new DataSet().addPrimitive(node);
+        return node;
     }
 
     /**
