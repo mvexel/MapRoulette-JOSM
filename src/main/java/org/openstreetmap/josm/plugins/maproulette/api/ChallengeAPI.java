@@ -51,28 +51,6 @@ public final class ChallengeAPI {
     }
 
     /**
-     * Create a challenge
-     *
-     * @param original The original challenge
-     * @return The challenge from the server
-     */
-    public static Challenge createChallenge(Challenge original) {
-        // POST /challenge
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Update the Challenge archive status
-     *
-     * @param id         The challenge to update
-     * @param isArchived The new archive status
-     */
-    public static void updateChallengeArchive(long id, boolean isArchived) {
-        // POST /challenge/id/archive with the boolean as the body
-        throw new UnsupportedOperationException();
-    }
-
-    /**
      * Get the next task (by task ordering). This does loop to the first task if this is the last task.
      *
      * @param challengeId The challenge to get tasks for
@@ -102,23 +80,6 @@ public final class ChallengeAPI {
         return MapRouletteClient.getInstance().get(PATH + "/" + challengeId + "/previousTask/" + currentTask,
                 status.length > 0 ? Map.of("statusList", String.join(",", status)) : Collections.emptyMap(),
                 body -> (Task) TaskParser.parseTask(body));
-    }
-
-    /**
-     * Get a random task (prioritized).
-     *
-     * @param challengeId  The challenge to get tasks for
-     * @param searchString The string to search for (case insensitive)
-     * @param tags         The task status to limit the response by
-     * @param limit        The number of prioritized tasks to get. If less than zero, one is used.
-     * @param proximity    The current task
-     * @return The next task
-     * @throws IOException if there was a problem communicating with the server
-     */
-    @Nonnull
-    public static Task[] prioritizedTask(long challengeId, @Nullable String searchString, @Nullable String[] tags,
-            int limit, long proximity) throws IOException {
-        return taskCollectionEndpoints("/tasks/prioritizedTasks", challengeId, searchString, tags, limit, proximity);
     }
 
     /**
