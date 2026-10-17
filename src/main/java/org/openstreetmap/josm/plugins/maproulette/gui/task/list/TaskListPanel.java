@@ -94,7 +94,7 @@ public final class TaskListPanel extends JPanel
      */
     private final LongPredicate hiddenTest = this::isHidden;
     /**
-     * Re-evaluates Start/Stop when the MapRoulette login changes
+     * Re-evaluates Start/Stop when the MapRoulette login or the started tasks change
      */
     private final Runnable authListener;
     /**
@@ -129,6 +129,8 @@ public final class TaskListPanel extends JPanel
         final var lockUnlockButton = new SideButton(lockUnlockAction);
         this.authListener = lockUnlockAction::updateEnabledState;
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
+        // A lock can also be dropped elsewhere (the current task's status, a server switch), which changes Stop
+        ModifiedObjects.addLockListener(this.authListener);
         final var browseAction = new OpenInBrowserAction(table);
         final var tableRowSorter = new TableRowSorter<>(model);
         this.challengeListener = () -> {
@@ -306,6 +308,7 @@ public final class TaskListPanel extends JPanel
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
         HiddenList.removeListUpdater(this.hiddenTest);
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
+        ModifiedObjects.removeLockListener(this.authListener);
         ChallengeCache.removeListener(this.challengeListener);
     }
 
