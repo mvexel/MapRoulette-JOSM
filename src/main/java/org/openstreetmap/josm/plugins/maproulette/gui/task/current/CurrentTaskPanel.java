@@ -343,32 +343,42 @@ public final class CurrentTaskPanel extends JPanel {
                 .orElse(List.of());
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
         this.dataPanel.setVisible(!TaskData.missing(ids, dataSet).isEmpty());
-        this.idLabel.setText(header(currentTask, showsLockedTask(), ids, dataSet));
+        final var started = showsLockedTask();
+        final var selection = started ? selection(ids, dataSet) : null;
+        // The selection goes on a line of its own, so the narrow panel doesn't cut it off
+        this.idLabel.setText(selection == null ? header(currentTask, started)
+                : "<html>" + Utils.escapeReservedCharactersHTML(header(currentTask, true)) + "<br>"
+                        + Utils.escapeReservedCharactersHTML(selection) + "</html>");
     }
 
     /**
-     * Get the header line of a task: its id, and once it is started, the selected task objects
+     * Get the header line of a task
      *
      * @param task    The task
      * @param started {@code true} if the user started the task
+     * @return "Working on task 27" once the task is started, "Task 27" otherwise
+     */
+    static String header(Task task, boolean started) {
+        return started ? tr("Working on task {0}", task.id()) : tr("Task {0}", task.id());
+    }
+
+    /**
+     * Describe the selected objects of a task
+     *
      * @param ids     The task's objects
      * @param dataSet The edit data set, or {@code null}
-     * @return The header, such as "Working on task 27 · Bench selected"
+     * @return Such as "Bench selected", or {@code null} if none of them is selected
      */
-    static String header(Task task, boolean started, List<PrimitiveId> ids, @Nullable DataSet dataSet) {
-        if (!started) {
-            return tr("Task {0}", task.id());
-        }
+    @Nullable
+    static String selection(List<PrimitiveId> ids, @Nullable DataSet dataSet) {
         final List<OsmPrimitive> selected = dataSet == null ? List.of()
                 : ids.stream().map(dataSet::getPrimitiveById).filter(p -> p != null && p.isSelected()).toList();
         if (selected.isEmpty()) {
-            return tr("Working on task {0}", task.id());
+            return null;
         } else if (selected.size() == 1) {
-            return tr("Working on task {0} · {1} selected", task.id(),
-                    DefaultNameFormatter.getInstance().format(selected.get(0)));
+            return tr("{0} selected", DefaultNameFormatter.getInstance().format(selected.get(0)));
         }
-        return trn("Working on task {1} · {0} object selected", "Working on task {1} · {0} objects selected",
-                selected.size(), selected.size(), task.id());
+        return trn("{0} object selected", "{0} objects selected", selected.size(), selected.size());
     }
 
     private void refreshActions() {

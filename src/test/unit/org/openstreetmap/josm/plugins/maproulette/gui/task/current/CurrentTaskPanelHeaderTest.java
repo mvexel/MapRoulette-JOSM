@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -23,7 +24,7 @@ class CurrentTaskPanelHeaderTest {
             null, null, null, null, 0, null, null, null, false, null, null);
 
     /**
-     * The header says which task is started and which of its objects are selected (#114)
+     * The header says which task is started, and the line below it which of its objects are selected (#114)
      */
     @Test
     void testHeader() {
@@ -37,15 +38,16 @@ class CurrentTaskPanelHeaderTest {
         dataSet.addPrimitive(other);
         final List<PrimitiveId> ids = List.of(bench.getPrimitiveId(), other.getPrimitiveId());
 
-        assertEquals("Task 27", CurrentTaskPanel.header(TASK, false, ids, dataSet));
-        assertEquals("Working on task 27", CurrentTaskPanel.header(TASK, true, ids, dataSet));
-        assertEquals("Working on task 27", CurrentTaskPanel.header(TASK, true, ids, null));
+        assertEquals("Task 27", CurrentTaskPanel.header(TASK, false));
+        assertEquals("Working on task 27", CurrentTaskPanel.header(TASK, true));
+        assertNull(CurrentTaskPanel.selection(ids, dataSet));
+        assertNull(CurrentTaskPanel.selection(ids, null));
 
         dataSet.setSelected(bench);
-        final var one = CurrentTaskPanel.header(TASK, true, ids, dataSet);
-        assertTrue(one.startsWith("Working on task 27 · ") && one.endsWith(" selected"), one);
+        final var one = CurrentTaskPanel.selection(ids, dataSet);
+        assertTrue(one != null && one.endsWith(" selected"), one);
 
         dataSet.setSelected(bench, other);
-        assertEquals("Working on task 27 · 2 objects selected", CurrentTaskPanel.header(TASK, true, ids, dataSet));
+        assertEquals("2 objects selected", CurrentTaskPanel.selection(ids, dataSet));
     }
 }
