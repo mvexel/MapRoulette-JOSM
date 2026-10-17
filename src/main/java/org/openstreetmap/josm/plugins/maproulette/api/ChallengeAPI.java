@@ -182,7 +182,8 @@ public final class ChallengeAPI {
     }
 
     /**
-     * Get the open tasks of a challenge as task list points, without a login. This searches the task box of the whole
+     * Get the open tasks of a challenge as task list points, with the properties of their features. Tasks locked by
+     * other mappers are included with {@code lockedBy} set, as in {@link TaskAPI#box}. This searches the task box of the whole
      * map, limited to the challenge. {@code /challenge/view/:id} answers with a GeoJSON export, not tasks, and
      * {@code /challenge/clustered/:id} fails with HTTP 500 on challenges with tasks (#134). Full tasks are fetched
      * later, one at a time.
@@ -194,8 +195,8 @@ public final class ChallengeAPI {
     public static ClusteredPoint[] openTasks(long challengeId) throws IOException {
         final var result = MapRouletteClient.getInstance().putRead(WORLD_BOX, Map.of("cid", Long.toString(challengeId),
                 // tStatus 0 is Created; without it, done tasks would count against the limit
-                "tStatus", "0", "excludeLocked", "true", "limit", Integer.toString(TASK_LIMIT)),
-                ClusteredPointParser::parse);
+                "tStatus", "0", "excludeLocked", "true", "includeGeometries", "true", "limit",
+                Integer.toString(TASK_LIMIT)), ClusteredPointParser::parse);
         final ClusteredPoint[] points;
         if (result instanceof ClusteredPoint[] array) {
             points = array;

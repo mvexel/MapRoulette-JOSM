@@ -29,6 +29,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.io.OsmApiException;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.ChallengeAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
@@ -120,9 +121,10 @@ public class MapRouletteDownloadChallengeTask extends AbstractDownloadTask<Colle
                     return;
                 }
                 try {
-                    // Without a login, MapRoulette lists the tasks other mappers locked too
+                    // Before merging: the user's own locks are not other mappers' locks
+                    MapRouletteAuth.lookUpUser();
                     final var downloadedTasks = MapRouletteDownloadTaskBox
-                            .withoutLockedByOthers(ChallengeAPI.openTasks(challengeId));
+                            .mergeLockRows(ChallengeAPI.openTasks(challengeId));
                     if (downloadedTasks.length == 0) {
                         GuiHelper.runInEDT(() -> new Notification(
                                 tr("MapRoulette challenge {0} has no open tasks.", Long.toString(challengeId)))
