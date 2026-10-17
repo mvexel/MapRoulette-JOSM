@@ -70,6 +70,11 @@ public class MapRoulette extends Plugin {
     }
 
     /**
+     * How long quitting JOSM waits for the started tasks to be released
+     */
+    static final long RELEASE_ON_QUIT_MILLIS = 3_000;
+
+    /**
      * Release the tasks the user started, when the map closes
      *
      * @param lockedTasks The tasks to release
@@ -85,9 +90,18 @@ public class MapRoulette extends Plugin {
                 }
             }
         };
-        // When JOSM quits, the worker is already shut down: release the locks before JOSM exits
+        // When JOSM quits, the worker is already shut down: try to release the locks before JOSM exits, but don't hold
+        // up the quit for a slow server. MapRoulette lets locks expire anyway.
         if (!lockedTasks.isEmpty() && !Workers.tryExecute(release)) {
-            release.run();
+            final var thread = new Thread(release, "MapRoulette release locks");
+            thread.setDaemon(true);
+            thread.start();
+            try {
+                thread.join(RELEASE_ON_QUIT_MILLIS);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                Logging.trace(interruptedException);
+            }
         }
     }
 }
