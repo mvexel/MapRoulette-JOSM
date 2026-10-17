@@ -44,6 +44,7 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
+import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
@@ -201,8 +202,6 @@ public final class CurrentTaskPanel extends JPanel {
                 new TaskStatusAction(TaskStatus.FIXED, supplier, docSupplier), new SelectOsmPrimitives(supplier),
                 new FinishAction(this) };
         this.actions = newActions;
-        this.finishCards.add(new SideButton(newActions[6]), FINISH_CARD);
-        this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
         this.instructionPane.enableClickableHyperlinks();
         // The header stays in place while the instructions scroll
         final var header = new JPanel(new GridBagLayout());
@@ -239,10 +238,29 @@ public final class CurrentTaskPanel extends JPanel {
         south.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         south.add(this.tagBox, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         south.add(this.reviewBox, GBC.eol().anchor(GBC.LINE_START).insets(2, 0, 4, 0));
-        south.add(MRGuiHelper.buttonRows(List.of(List.of(this.finishCards),
-                List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
-                List.of(new SideButton(newActions[2]), new SideButton(newActions[3])),
-                List.of(new SideButton(newActions[5])))), GBC.eol().fill(GBC.HORIZONTAL));
+        // Uploading is the main way to finish; the outcomes with no edit come after it
+        final var finishButton = new SideButton(newActions[6]);
+        finishButton.setFont(finishButton.getFont().deriveFont(Font.BOLD));
+        this.finishCards.add(finishButton, FINISH_CARD);
+        this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
+        south.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
+        // Wraps in a narrow panel
+        final var uploadHint = new JMultilineLabel("<html>"
+                + Utils.escapeReservedCharactersHTML(
+                        tr("Edited the map? Upload here or with File > Upload data, and the task is finished."))
+                + "</html>");
+        uploadHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
+        uploadHint.setForeground(UIManager.getColor("Label.disabledForeground"));
+        south.add(uploadHint, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 4));
+        final var noEdit = new JLabel(tr("Nothing to edit?"));
+        noEdit.setFont(font.deriveFont(Font.BOLD));
+        south.add(noEdit, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        south.add(
+                MRGuiHelper.buttonRows(List.of(
+                        List.of(new SideButton(newActions[0]), new SideButton(newActions[1]),
+                                new SideButton(newActions[2])),
+                        List.of(new SideButton(newActions[3]), new SideButton(newActions[5])))),
+                GBC.eol().fill(GBC.HORIZONTAL));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -402,7 +420,7 @@ public final class CurrentTaskPanel extends JPanel {
         final var edits = TaskEdits.count();
         this.editsLabel.setVisible(started);
         if (started) {
-            this.editsLabel.setText(edits == 0 ? tr("No edits for task {0} yet", currentTask.id())
+            this.editsLabel.setText(edits == 0 ? tr("No edits yet for task {0}", currentTask.id())
                     : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits, currentTask.id()));
         }
         final var unfinished = currentTask != null && LateUploadHook.isUnfinished(currentTask.id());
@@ -763,7 +781,7 @@ private static class SelectOsmPrimitives extends InnerAction {
     private final Supplier<Task> taskSuppler;
 
     SelectOsmPrimitives(Supplier<Task> taskSupplier) {
-        super(tr("Select Primitives"), "dialogs/select", tr("Select the OSM primitives for this task"),
+        super(tr("Select objects"), "dialogs/select", tr("Select the OSM objects for this task"),
                 Shortcut.registerShortcut("maproulette:select_task_primitives",
                         tr("MapRoulette: Select task primitives"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false);

@@ -100,7 +100,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
      */
     static String label(TaskStatus status) {
         return switch (status) {
-        case ALREADY_FIXED -> tr("Already Fixed");
+        case ALREADY_FIXED -> tr("Already fixed");
         case FALSE_POSITIVE -> tr("Not an Issue");
         case TOO_HARD -> tr("Can''t Complete");
         case SKIPPED -> tr("Skip");

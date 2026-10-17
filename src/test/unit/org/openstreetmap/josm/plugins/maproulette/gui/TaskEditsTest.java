@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
@@ -80,6 +81,29 @@ class TaskEditsTest {
         sync();
         assertEquals(0, TaskEdits.count(), "A stopped task's edits no longer count");
         assertFalse(TaskEdits.touches(List.of(bench)));
+    }
+
+    /**
+     * A command that edits many objects at once reaches the listener as one bulk event, and its edits count too
+     */
+    @Test
+    void testBulkEdit() {
+        TaskEdits.start();
+        final var dataSet = new DataSet();
+        final var nodes = new ArrayList<Node>();
+        for (var i = 1; i <= 40; i++) {
+            final var node = new Node(new LatLon(0, i / 1000d));
+            node.setOsmId(i, 1);
+            dataSet.addPrimitive(node);
+            nodes.add(node);
+        }
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testBulkEdit", null));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(nodes, "amenity", "bench"));
+        assertEquals(40, TaskEdits.count());
+        assertTrue(TaskEdits.touches(List.of(nodes.get(39))));
     }
 
     private static void sync() {

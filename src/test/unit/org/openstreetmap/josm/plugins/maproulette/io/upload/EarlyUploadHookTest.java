@@ -169,12 +169,11 @@ class EarlyUploadHookTest {
         final var task = task(27, false);
         assertEquals(
                 "<html>This upload finishes task 27.<br>No comment for MapRoulette.<br>"
-                        + "Choose Not finished yet if the task needs more edits.</html>",
+                        + "Choose Not finished yet if the task needs more edits. Your edits upload either way.</html>",
                 EarlyUploadHook
                         .finishMessage(List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null))));
-        assertEquals(
-                "<html>This upload finishes task 27.<br>Comment for MapRoulette: Bench &lt;added&gt;<br>"
-                        + "A review is requested.<br>Choose Not finished yet if the task needs more edits.</html>",
+        assertEquals("<html>This upload finishes task 27.<br>Comment for MapRoulette: Bench &lt;added&gt;<br>"
+                + "A review is requested.<br>Choose Not finished yet if the task needs more edits. Your edits upload either way.</html>",
                 EarlyUploadHook.finishMessage(List
                         .of(new ModifiedTask(task, TaskStatus.FIXED, " Bench <added> ", null, Boolean.TRUE, null))));
     }

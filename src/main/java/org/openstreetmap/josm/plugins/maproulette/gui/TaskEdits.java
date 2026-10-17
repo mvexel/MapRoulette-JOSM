@@ -33,6 +33,7 @@ import jakarta.annotation.Nonnull;
 /**
  * The OSM objects the user edits while a task is started (#115). An upload that contains one of them finishes the task.
  * Edits made before the task was started don't count, and undone edits drop out because they are not uploaded.
+ * Merging a layer into another drops the edits of the merged layer, since they are recorded by object.
  */
 public final class TaskEdits implements DataSetListener, LayerChangeListener {
     private static final TaskEdits INSTANCE = new TaskEdits();
@@ -206,7 +207,14 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
 
     @Override
     public void dataChanged(DataChangedEvent event) {
-        // A bulk change, such as a download or a merge: not an edit by itself
+        // JOSM folds the events of a command that touches many objects into one DataChangedEvent
+        final var events = event.getEvents();
+        if (events != null) {
+            events.forEach(e -> e.fire(this));
+        } else if (event.getDataset() != null) {
+            // No details: count the objects waiting for an upload
+            touch(event.getDataset().allPrimitives().stream().filter(TaskEdits::pending).toList());
+        }
         fire();
     }
 

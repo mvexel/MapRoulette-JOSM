@@ -266,7 +266,8 @@ public final class EarlyUploadHook implements UploadHook {
         if (!statuses.isEmpty() && Boolean.TRUE.equals(statuses.get(0).reviewRequested())) {
             text.append("<br>").append(tr("A review is requested."));
         }
-        text.append("<br>").append(tr("Choose Not finished yet if the task needs more edits."));
+        text.append("<br>")
+                .append(tr("Choose Not finished yet if the task needs more edits. Your edits upload either way."));
         return text.append("</html>").toString();
     }
 

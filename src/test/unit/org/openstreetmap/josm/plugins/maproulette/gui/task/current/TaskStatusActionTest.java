@@ -67,7 +67,7 @@ class TaskStatusActionTest {
                 ((String) action.getValue(Action.SHORT_DESCRIPTION)).contains("Upload your edits to finish the task"));
         assertEquals("Not an Issue", TaskStatusAction.label(TaskStatus.FALSE_POSITIVE));
         assertEquals("Can't Complete", TaskStatusAction.label(TaskStatus.TOO_HARD));
-        assertEquals("Already Fixed", TaskStatusAction.label(TaskStatus.ALREADY_FIXED));
+        assertEquals("Already fixed", TaskStatusAction.label(TaskStatus.ALREADY_FIXED));
         assertEquals("Skip", TaskStatusAction.label(TaskStatus.SKIPPED));
     }
 
