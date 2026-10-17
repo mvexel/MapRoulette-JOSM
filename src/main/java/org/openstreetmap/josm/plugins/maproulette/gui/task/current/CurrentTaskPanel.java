@@ -37,9 +37,14 @@ import javax.swing.text.html.HTML;
 import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.Option;
 
-import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
+import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.data.osm.DataSelectionListener;
+import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
@@ -61,12 +66,12 @@ import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
-import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
@@ -148,9 +153,20 @@ public final class CurrentTaskPanel extends JPanel {
     private final JPanel unfinishedPanel = new JPanel(new GridBagLayout());
     private final JLabel unfinishedLabel = new JLabel();
     /**
-     * Updates the edit count and the finish button
+     * Shown when the task's objects are not in the edit layer, with a button to download them (#114)
      */
-    private final Runnable editsListener = this::refreshFinish;
+    private final JPanel dataPanel = new JPanel(new GridBagLayout());
+    /**
+     * Updates the header and the missing data notice when the selection changes
+     */
+    private final transient DataSelectionListener selectionListener = e -> this.refreshDataState();
+    /**
+     * Updates the edit count, the finish button and the header. Edits include downloads into the edit layer.
+     */
+    private final Runnable editsListener = () -> {
+        this.refreshFinish();
+        this.refreshDataState();
+    };
     /**
      * Shows a task whose Fixed could not be sent, and updates the actions once a status is sent
      */
@@ -232,7 +248,13 @@ public final class CurrentTaskPanel extends JPanel {
         retry.addActionListener(
                 e -> Optional.ofNullable(this.task).map(Task::id).ifPresent(LateUploadHook::retryFinish));
         this.unfinishedPanel.add(retry, GBC.eol().anchor(GBC.LINE_END));
+        this.dataPanel.add(new JLabel(tr("The task''s objects are not in the data.")), GBC.std().fill(GBC.HORIZONTAL));
+        final var download = new JButton(tr("Download"));
+        download.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
+        download.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
+        this.dataPanel.add(download, GBC.eol().anchor(GBC.LINE_END));
         final var south = new JPanel(new GridBagLayout());
+        south.add(this.dataPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
@@ -267,6 +289,7 @@ public final class CurrentTaskPanel extends JPanel {
         ModifiedObjects.addLockListener(this.editsListener);
         TaskStatusSender.addListener(this.sentListener);
         ChallengeCache.addListener(this.challengeListener);
+        SelectionEventManager.getInstance().addSelectionListenerForEdt(this.selectionListener);
         this.refreshPanel();
     }
 
@@ -293,6 +316,59 @@ public final class CurrentTaskPanel extends JPanel {
         ModifiedObjects.removeLockListener(this.editsListener);
         TaskStatusSender.removeListener(this.sentListener);
         ChallengeCache.removeListener(this.challengeListener);
+        SelectionEventManager.getInstance().removeSelectionListener(this.selectionListener);
+    }
+
+    /**
+     * Update the header and the missing data notice of the panel, for example after the task's data was loaded. Call
+     * on the EDT.
+     */
+    public static void refreshData() {
+        final var panel = get();
+        if (panel != null) {
+            panel.refreshDataState();
+        }
+    }
+
+    /**
+     * Show whether the task's objects are in the edit layer, and which are selected
+     */
+    private void refreshDataState() {
+        final var currentTask = this.task;
+        if (currentTask == null) {
+            this.dataPanel.setVisible(false);
+            return;
+        }
+        final List<PrimitiveId> ids = TaskPrimitives.cachedPrimitiveIds(currentTask).map(List::copyOf)
+                .orElse(List.of());
+        final var dataSet = MainApplication.getLayerManager().getEditDataSet();
+        this.dataPanel.setVisible(!TaskData.missing(ids, dataSet).isEmpty());
+        this.idLabel.setText(header(currentTask, showsLockedTask(), ids, dataSet));
+    }
+
+    /**
+     * Get the header line of a task: its id, and once it is started, the selected task objects
+     *
+     * @param task    The task
+     * @param started {@code true} if the user started the task
+     * @param ids     The task's objects
+     * @param dataSet The edit data set, or {@code null}
+     * @return The header, such as "Working on task 27 · Bench selected"
+     */
+    static String header(Task task, boolean started, List<PrimitiveId> ids, @Nullable DataSet dataSet) {
+        if (!started) {
+            return tr("Task {0}", task.id());
+        }
+        final List<OsmPrimitive> selected = dataSet == null ? List.of()
+                : ids.stream().map(dataSet::getPrimitiveById).filter(p -> p != null && p.isSelected()).toList();
+        if (selected.isEmpty()) {
+            return tr("Working on task {0}", task.id());
+        } else if (selected.size() == 1) {
+            return tr("Working on task {0} · {1} selected", task.id(),
+                    DefaultNameFormatter.getInstance().format(selected.get(0)));
+        }
+        return trn("Working on task {1} · {0} object selected", "Working on task {1} · {0} objects selected",
+                selected.size(), selected.size(), task.id());
     }
 
     private void refreshActions() {
@@ -499,6 +575,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.tagBox.setVisible(this.tagBox.isVisible() && hasTask);
         refreshFinish();
         if (currentTask == null) {
+            this.dataPanel.setVisible(false);
             this.instructionPending = false;
             this.challengeLabel.setText(null);
             this.nameLabel.setText(tr("No current task"));
@@ -511,8 +588,8 @@ public final class CurrentTaskPanel extends JPanel {
         this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
                 .orElseGet(() -> tr("Challenge {0}", currentTask.parentId())));
         this.nameLabel.setText(currentTask.name());
-        this.idLabel.setText(tr("Task {0}", currentTask.id()));
         this.openButton.setVisible(true);
+        refreshDataState();
 
         // Checked before building the text, so a challenge arriving in between still triggers a refresh
         this.instructionPending = Utils.isStripEmpty(currentTask.instruction())
@@ -782,7 +859,7 @@ private static class SelectOsmPrimitives extends InnerAction {
     private final Supplier<Task> taskSuppler;
 
     SelectOsmPrimitives(Supplier<Task> taskSupplier) {
-        super(tr("Select objects"), "dialogs/select", tr("Select the OSM objects for this task"),
+        super(tr("Select objects"), "dialogs/select", tr("Select the OSM objects for this task, downloading them if needed"),
                 Shortcut.registerShortcut("maproulette:select_task_primitives",
                         tr("MapRoulette: Select task primitives"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false);
@@ -795,16 +872,8 @@ private static class SelectOsmPrimitives extends InnerAction {
     public void actionPerformed(ActionEvent e) {
         final var task = this.taskSuppler.get();
         if (task != null) {
-            // Finding the primitives may need the challenge from the server
-            Workers.execute(() -> {
-                final var primitives = TaskPrimitives.getPrimitiveIds(task);
-                if (!primitives.isEmpty()) {
-                    GuiHelper.runInEDT(() -> {
-                        OsmDataManager.getInstance().getEditDataSet().setSelected(primitives);
-                        AutoScaleAction.autoScale(AutoScaleAction.AutoScaleMode.SELECTION);
-                    });
-                }
-            });
+            // Downloads the objects that are not in the data yet (#114)
+            TaskData.loadAndSelect(task);
         }
     }
 
