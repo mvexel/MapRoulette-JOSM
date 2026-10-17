@@ -11,7 +11,9 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -125,6 +127,18 @@ public final class ModifiedObjects {
     @Nullable
     public static Task getLockedTask(long id) {
         return LOCKED_TASK_MAP.get(id);
+    }
+
+    /**
+     * Check if another mapper holds a lock on a task. Without a MapRoulette user id, the tasks this plugin started count
+     * as the user's.
+     *
+     * @param point The task to check
+     * @return {@code true} if MapRoulette reported a lock on the task, and this plugin did not start it
+     */
+    public static boolean isLockedByOther(@Nonnull TaskClusteredPoint point) {
+        return point instanceof ClusteredPoint clusteredPoint && clusteredPoint.lockedBy() != null
+                && getLockedTask(point.id()) == null;
     }
 
     /**

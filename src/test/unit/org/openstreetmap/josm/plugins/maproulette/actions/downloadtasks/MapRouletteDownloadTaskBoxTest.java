@@ -22,12 +22,13 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
  */
 class MapRouletteDownloadTaskBoxTest {
     /**
-     * Tasks locked by someone else, including members of a bundle someone else locked, are not shown (#46)
+     * Tasks locked by someone else, including members of a bundle someone else locked, are listed once, as locked by
+     * the other mapper (#46, #112)
      *
      * @throws IOException if the test data could not be read
      */
     @Test
-    void testWithoutLockedByOthers() throws IOException {
+    void testMergeLockRows() throws IOException {
         final var json = Files.readString(
                 Path.of("src/test/resources/__files/api/v2/tasks/box/-108.4962538/39.082404/-108.4962538/39.082404"));
         final var object = json.substring(json.indexOf('{'), json.lastIndexOf('}') + 1);
@@ -44,8 +45,13 @@ class MapRouletteDownloadTaskBoxTest {
                 null, null, null, false, null, null);
         ModifiedObjects.addLockedTask(myTask);
         try {
-            final var shown = MapRouletteDownloadTaskBox.withoutLockedByOthers(points);
-            assertArrayEquals(new long[] { 1, 4 }, Arrays.stream(shown).mapToLong(ClusteredPoint::id).toArray());
+            final var shown = MapRouletteDownloadTaskBox.mergeLockRows(points);
+            // Tasks locked by others stay listed, once, with the other mapper's lock
+            assertArrayEquals(new long[] { 1, 2, 3, 4 }, Arrays.stream(shown).mapToLong(ClusteredPoint::id).toArray());
+            assertArrayEquals(new boolean[] { false, true, true, false },
+                    new boolean[] { ModifiedObjects.isLockedByOther(shown[0]),
+                            ModifiedObjects.isLockedByOther(shown[1]), ModifiedObjects.isLockedByOther(shown[2]),
+                            ModifiedObjects.isLockedByOther(shown[3]) });
         } finally {
             ModifiedObjects.removeLockedTask(myTask);
         }

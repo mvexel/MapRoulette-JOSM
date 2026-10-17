@@ -59,7 +59,7 @@ final class LockUnlockTaskAction extends JosmAction {
      * @param table The table to update
      */
     LockUnlockTaskAction(JTable table) {
-        super(tr("Start Task"), "lock", tr("Start MapRoulette Tasks"),
+        super(tr("Start Task"), "dialogs/edit", tr("Start MapRoulette Tasks"),
                 Shortcut.registerShortcut("maproulette:start_stop_tasks", tr("MapRoulette: Start or Stop Tasks"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false);
@@ -384,7 +384,8 @@ final class LockUnlockTaskAction extends JosmAction {
             if (ModifiedObjects.getLockedTask(point.id()) == null) {
                 this.putValue(NAME, tr("Start Task"));
                 this.setTooltip(tr("Start MapRoulette Tasks"));
-                new ImageProvider("lock").getResource().attachImageIcon(this);
+                // A pencil, not a padlock: Start begins work on the task (#112)
+                new ImageProvider("dialogs/edit").getResource().attachImageIcon(this);
                 putValue("lock", true);
                 return;
             }

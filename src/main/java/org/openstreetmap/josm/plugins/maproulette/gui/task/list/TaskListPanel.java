@@ -1,38 +1,49 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
-import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongPredicate;
+import java.util.regex.Pattern;
 
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JTable;
 import javax.swing.RowFilter;
+import javax.swing.SwingUtilities;
+import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
+import javax.swing.table.TableStringConverter;
 
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
-import org.openstreetmap.josm.data.preferences.CachingProperty;
-import org.openstreetmap.josm.data.preferences.NamedColorProperty;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.NavigatableComponent;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
@@ -43,10 +54,8 @@ import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.GoToTaskLocation;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
-import org.openstreetmap.josm.plugins.maproulette.api.MRColors;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
-import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -60,7 +69,6 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
-import org.openstreetmap.josm.plugins.maproulette.gui.widgets.DefaultPanelListCellRenderer;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
@@ -121,6 +129,60 @@ public final class TaskListPanel extends JPanel
      * The buttons below the list, hidden with the empty state: it has its own buttons
      */
     private final JPanel buttons;
+    /**
+     * The text filter
+     */
+    private final FilterField filterField = new FilterField();
+    /**
+     * The challenge filter
+     */
+    private final JComboBox<ChallengeChoice> challengeFilter = new JComboBox<>();
+    /**
+     * Set while the challenge filter is rebuilt, so the rebuild does not filter
+     */
+    private boolean rebuildingChallenges;
+    /**
+     * The number of listed tasks of each challenge, for the challenge headers
+     */
+    private final Map<Long, Integer> challengeSizes = new HashMap<>();
+    /**
+     * The readable names, which can need a preset lookup, by task id. Cleared when the tasks change.
+     */
+    private final Map<Long, String> names = new HashMap<>();
+    /**
+     * Counts the tasks the filters or the ignore lists leave out
+     */
+    private final JLabel footerText = new JLabel();
+    /**
+     * The line below the list that counts the tasks left out
+     */
+    private final JPanel footer = new JPanel(new GridBagLayout());
+    /**
+     * Clears the filters
+     */
+    private final JButton showAll = new JButton(tr("Show all"));
+    /**
+     * The challenge and text filters, hidden with the empty state
+     */
+    private final JPanel filters = new JPanel(new GridBagLayout());
+    /**
+     * Repaints the distances when the map moves
+     */
+    private final NavigatableComponent.ZoomChangeListener zoomListener;
+    /**
+     * Hides tasks that are ignored or in hidden challenges
+     */
+    private final RowFilter<TaskTableModel, Integer> defaultFilter = new RowFilter<>() {
+        @Override
+        public boolean include(Entry<? extends TaskTableModel, ? extends Integer> entry) {
+            final var point = (TaskClusteredPoint) entry.getValue(0);
+            return !TaskCache.isHidden(point);
+        }
+    };
+    /**
+     * Sorts and filters the table
+     */
+    private final TableRowSorter<TaskTableModel> tableRowSorter;
 
     /**
      * Create a new task list panel
@@ -144,40 +206,39 @@ public final class TaskListPanel extends JPanel
         };
         ModifiedObjects.addLockListener(this.lockListener);
         final var browseAction = new OpenInBrowserAction(table);
-        final var tableRowSorter = new TableRowSorter<>(model);
+        this.tableRowSorter = new TableRowSorter<>(model);
+        final var tableRowSorter = this.tableRowSorter;
         this.challengeListener = () -> {
             tableRowSorter.allRowsChanged();
             table.repaint();
         };
         ChallengeCache.addListener(this.challengeListener);
         final var menu = new JPopupMenu();
-        final var filterField = new FilterField();
+        final var filters = this.filters;
+        final var challengeLabel = new JLabel(tr("Challenge"));
+        challengeLabel.setLabelFor(this.challengeFilter);
+        final var filterLabel = new JLabel(tr("Filter"));
+        filterLabel.setLabelFor(this.filterField);
+        this.filterField.setToolTipText(tr("Name, street, task id"));
+        filters.add(challengeLabel, GBC.std().insets(4, 2, 4, 2));
+        filters.add(this.challengeFilter, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
+        filters.add(filterLabel, GBC.std().insets(4, 2, 4, 2));
+        filters.add(this.filterField, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
         final var panel = new JPanel(new GridBagLayout());
-        panel.add(filterField, GBC.eol().fill(GBC.HORIZONTAL));
-        panel.add(table.getTableHeader(), GBC.eol().anchor(GBC.LINE_START).fill(GBC.HORIZONTAL));
         panel.add(table, GBC.eol().anchor(GBC.LINE_START).fill(GBC.BOTH));
-        final RowFilter<TaskTableModel, Integer> defaultFilter = new RowFilter<>() {
-            @Override
-            public boolean include(Entry<? extends TaskTableModel, ? extends Integer> entry) {
-                final var point = (TaskClusteredPoint) entry.getValue(0);
-                return !TaskCache.isHidden(point);
-            }
-        };
         HiddenList.addListUpdater(this.hiddenTest);
-        filterField.filter(expr -> {
-            expr = expr.replace("+", "\\+");
-            final ArrayList<RowFilter<? super TaskTableModel, ? super Integer>> andFilters = new ArrayList<>();
-            andFilters.add(defaultFilter);
-            // split search string on whitespace, do case-insensitive AND search
-            for (var word : expr.split("\\s+", -1)) {
-                andFilters.add(RowFilter.regexFilter("(?i)" + word));
+        this.filterField.filter(expr -> applyFilters());
+        this.challengeFilter.addActionListener(e -> {
+            if (!this.rebuildingChallenges) {
+                applyFilters();
             }
-            tableRowSorter.setRowFilter(andFilters.size() > 1 ? RowFilter.andFilter(andFilters) : defaultFilter);
-            final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
-            final var ids = layers.stream().map(MapRouletteClusteredPointLayer::getTasks).flatMap(Collection::stream)
-                    .mapToLong(Identifier::id).toArray();
-            HiddenList.update(ids);
-            layers.forEach(MapRouletteClusteredPointLayer::invalidate);
+        });
+        tableRowSorter.setStringConverter(new TableStringConverter() {
+            @Override
+            public String toString(TableModel tableModel, int row, int column) {
+                final var point = model.get(row);
+                return TaskRows.searchText(point, readableName(point));
+            }
         });
         final var goTo = new GoToTaskLocation();
         final var downloadTasks = new DownloadTasks();
@@ -190,12 +251,30 @@ public final class TaskListPanel extends JPanel
         menu.add(browseAction);
         this.actions = List.of(findAction, browseAction, goTo, downloadTasks, ignoreTask, ignoreChallenge);
         table.setComponentPopupMenu(menu);
-        tableRowSorter.setRowFilter(defaultFilter);
+        tableRowSorter.setRowFilter(this.defaultFilter);
+        // Grouped by challenge, for the challenge headers
         tableRowSorter.setComparator(0,
-                Comparator.comparing(TaskListPanel::getParentName).thenComparingInt(TaskClusteredPoint::priority)
-                        .thenComparing(TaskListPanel::getTitle).thenComparingLong(TaskClusteredPoint::id));
+                Comparator.comparing(TaskRows::challengeName).thenComparingLong(TaskClusteredPoint::parentId)
+                        .thenComparingInt(TaskClusteredPoint::priority).thenComparing(TaskRows::taskName)
+                        .thenComparingLong(TaskClusteredPoint::id));
         table.setRowSorter(tableRowSorter);
-        table.setDefaultRenderer(ClusteredPoint.class, new TaskListCellRenderer());
+        table.setTableHeader(null);
+        table.setShowGrid(false);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setDefaultRenderer(ClusteredPoint.class, new TaskRowRenderer(
+                id -> this.challengeSizes.getOrDefault(id, 0), TaskListPanel::viewCentre, this::readableName));
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // Double-clicking a task starts it; it never stops a started one
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && table.rowAtPoint(e.getPoint()) >= 0
+                        && lockUnlockAction.isEnabled() && Boolean.TRUE.equals(lockUnlockAction.getValue("lock"))) {
+                    lockUnlockAction.actionPerformed(new ActionEvent(table, ActionEvent.ACTION_PERFORMED, "start"));
+                }
+            }
+        });
+        this.zoomListener = table::repaint;
+        NavigatableComponent.addZoomChangeListener(this.zoomListener);
         table.getSelectionModel().addListSelectionListener(l -> {
             lockUnlockAction.updateEnabledState();
             browseAction.updateEnabledState();
@@ -223,14 +302,26 @@ public final class TaskListPanel extends JPanel
         tableRowSorter.toggleSortOrder(0); // Start with an initial sort
         final var titleBar = new JPanel(new GridBagLayout());
         titleBar.add(this.title, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        titleBar.add(filters, GBC.eol().fill(GBC.HORIZONTAL));
         this.add(titleBar, BorderLayout.NORTH);
-        this.cards.add(GuiHelper.embedInVerticalScrollPane(panel), TABLE_CARD);
+        this.showAll.addActionListener(e -> clearFilters());
+        this.footer.add(this.footerText, GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        this.footer.add(this.showAll, GBC.eol().insets(0, 2, 4, 2));
+        final var listAndFooter = new JPanel(new BorderLayout());
+        listAndFooter.add(GuiHelper.embedInVerticalScrollPane(panel), BorderLayout.CENTER);
+        listAndFooter.add(this.footer, BorderLayout.SOUTH);
+        this.cards.add(listAndFooter, TABLE_CARD);
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
         this.add(this.cards, BorderLayout.CENTER);
         this.buttons = MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton)));
         this.add(this.buttons, BorderLayout.SOUTH);
-        this.model.addTableModelListener(e -> updateTitle());
+        // The sorter hears of model changes after this listener; it updates the title once it has sorted
+        this.model.addTableModelListener(e -> {
+            this.names.clear();
+            rebuildChallengeFilter();
+        });
         tableRowSorter.addRowSorterListener(e -> updateTitle());
+        rebuildChallengeFilter();
         updateTitle();
         // Existing MapRoulette layers call accept() as soon as we listen to them, which needs the table
         MainApplication.getLayerManager().addAndFireLayerChangeListener(this);
@@ -248,35 +339,103 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
-     * Get the parent name
+     * Get the centre of the map view, where the rows measure distances from
      *
-     * @param point The point to get the parent name for
-     * @return The parent name
+     * @return The centre, or {@code null} without a map
      */
-    private static String getParentName(TaskClusteredPoint point) {
-        if (point instanceof ClusteredPoint clusteredPoint) {
-            return clusteredPoint.parentName();
-        } else if (point instanceof Task task) {
-            // Used by the comparator and the renderer, so never block on the network
-            return ChallengeCache.cached(task.parentId()).map(Challenge::name).orElseGet(() -> tr("Unknown"));
-        } else {
-            throw new IllegalArgumentException("Unknown class type: " + point.getClass());
+    @Nullable
+    private static ILatLon viewCentre() {
+        final var map = MainApplication.getMap();
+        if (map == null || map.mapView == null || map.mapView.getWidth() == 0) {
+            return null;
         }
+        return map.mapView.getLatLon(map.mapView.getWidth() / 2.0, map.mapView.getHeight() / 2.0);
     }
 
     /**
-     * Get the title for a task
+     * Get the readable name of a task, cached until the tasks change
      *
-     * @param point The point to get the title for
-     * @return The title
+     * @param point The task
+     * @return The name
      */
-    private static String getTitle(TaskClusteredPoint point) {
-        if (point instanceof ClusteredPoint clusteredPoint) {
-            return clusteredPoint.title();
-        } else if (point instanceof Task task) {
-            return task.name();
-        } else {
-            throw new IllegalArgumentException("Unknown class type: " + point.getClass());
+    private String readableName(TaskClusteredPoint point) {
+        return this.names.computeIfAbsent(point.id(), id -> TaskRows.readableName(point));
+    }
+
+    /**
+     * Filter the list by the challenge filter, the text filter and the ignore lists
+     */
+    private void applyFilters() {
+        final ArrayList<RowFilter<? super TaskTableModel, ? super Integer>> andFilters = new ArrayList<>();
+        andFilters.add(this.defaultFilter);
+        if (this.challengeFilter.getSelectedItem()instanceof ChallengeChoice choice && choice.id() >= 0) {
+            andFilters.add(new RowFilter<TaskTableModel, Integer>() {
+                @Override
+                public boolean include(Entry<? extends TaskTableModel, ? extends Integer> entry) {
+                    return ((TaskClusteredPoint) entry.getValue(0)).parentId() == choice.id();
+                }
+            });
+        }
+        final var expr = this.filterField.getText() == null ? "" : this.filterField.getText().trim();
+        if (!expr.isEmpty()) {
+            // split search string on whitespace, do case-insensitive AND search
+            for (var word : expr.split("\\s+", -1)) {
+                andFilters.add(RowFilter.regexFilter("(?i)" + Pattern.quote(word)));
+            }
+        }
+        this.tableRowSorter.setRowFilter(andFilters.size() > 1 ? RowFilter.andFilter(andFilters) : this.defaultFilter);
+        final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
+        final var ids = layers.stream().map(MapRouletteClusteredPointLayer::getTasks).flatMap(Collection::stream)
+                .mapToLong(Identifier::id).toArray();
+        HiddenList.update(ids);
+        layers.forEach(MapRouletteClusteredPointLayer::invalidate);
+    }
+
+    /**
+     * Clear the challenge and text filters
+     */
+    private void clearFilters() {
+        this.rebuildingChallenges = true;
+        try {
+            if (this.challengeFilter.getItemCount() > 0) {
+                this.challengeFilter.setSelectedIndex(0);
+            }
+        } finally {
+            this.rebuildingChallenges = false;
+        }
+        this.filterField.setText("");
+        applyFilters();
+    }
+
+    /**
+     * List the challenges of the loaded tasks in the challenge filter, keeping the selected one if it is still there
+     */
+    private void rebuildChallengeFilter() {
+        final var counts = new LinkedHashMap<Long, Integer>();
+        final var labels = new HashMap<Long, String>();
+        for (var i = 0; i < this.model.getRowCount(); i++) {
+            final var point = this.model.get(i);
+            if (!TaskCache.isHidden(point)) {
+                counts.merge(point.parentId(), 1, Integer::sum);
+                labels.putIfAbsent(point.parentId(), TaskRows.challengeName(point));
+            }
+        }
+        final var selected = this.challengeFilter.getSelectedItem()instanceof ChallengeChoice choice ? choice.id() : -1;
+        final var choices = new ArrayList<ChallengeChoice>();
+        choices.add(new ChallengeChoice(-1, tr("All challenges in view ({0})", counts.size())));
+        counts.entrySet().stream().sorted(Comparator.comparing(e -> labels.get(e.getKey()))).forEach(e -> choices
+                .add(new ChallengeChoice(e.getKey(), tr("{0} ({1})", labels.get(e.getKey()), e.getValue()))));
+        this.rebuildingChallenges = true;
+        try {
+            this.challengeFilter.setModel(new DefaultComboBoxModel<>(choices.toArray(ChallengeChoice[]::new)));
+            final var keep = choices.stream().filter(c -> c.id() == selected).findFirst();
+            this.challengeFilter.setSelectedItem(keep.orElse(choices.get(0)));
+        } finally {
+            this.rebuildingChallenges = false;
+        }
+        if (selected >= 0 && choices.stream().noneMatch(c -> c.id() == selected)) {
+            // The selected challenge is gone: show all again
+            applyFilters();
         }
     }
 
@@ -302,15 +461,38 @@ public final class TaskListPanel extends JPanel
     private void updateTitle() {
         final var total = this.model.getRowCount();
         final var shown = this.table.getRowSorter() == null ? total : this.table.getRowSorter().getViewRowCount();
-        final var hidden = total - shown;
-        this.title.setText(
-                hidden > 0 ? tr("Tasks · {0} in view · {1} hidden", shown, hidden) : tr("Tasks · {0} in view", shown));
+        var ignored = 0;
+        for (var i = 0; i < total; i++) {
+            if (TaskCache.isHidden(this.model.get(i))) {
+                ignored++;
+            }
+        }
+        final var filtered = total - ignored - shown;
+        this.title.setText(tr("Tasks · {0} in view", shown));
+        this.challengeSizes.clear();
+        for (var i = 0; i < shown; i++) {
+            this.challengeSizes.merge(((TaskClusteredPoint) this.table.getValueAt(i, 0)).parentId(), 1, Integer::sum);
+        }
+        final var footerLines = new ArrayList<String>(2);
+        if (filtered > 0) {
+            footerLines.add(trn("{0} more task is hidden by the filter.", "{0} more tasks are hidden by the filter.",
+                    filtered, filtered));
+        }
+        if (ignored > 0) {
+            footerLines
+                    .add(trn("{0} ignored task is not listed.", "{0} ignored tasks are not listed.", ignored, ignored));
+        }
+        this.footerText.setText(String.join(" ", footerLines));
+        this.footer.setVisible(!footerLines.isEmpty());
+        // Show all clears the filters; it can't bring back ignored tasks
+        this.showAll.setVisible(filtered > 0);
         final var hasLayer = !MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
                 .isEmpty();
         // A started task keeps the list, even without tasks, so the panel never says nothing is loaded next to it
         final var empty = total == 0 && !hasLayer && ModifiedObjects.getLockedTasks().isEmpty();
         ((CardLayout) this.cards.getLayout()).show(this.cards, empty ? EMPTY_CARD : TABLE_CARD);
         this.buttons.setVisible(!empty);
+        this.filters.setVisible(!empty);
     }
 
     /**
@@ -326,6 +508,7 @@ public final class TaskListPanel extends JPanel
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
         ModifiedObjects.removeLockListener(this.lockListener);
         ChallengeCache.removeListener(this.challengeListener);
+        NavigatableComponent.removeZoomChangeListener(this.zoomListener);
     }
 
     /**
@@ -507,83 +690,15 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
-     * A renderer for the task list
+     * An entry of the challenge filter
+     *
+     * @param id    The challenge id, or -1 for all challenges
+     * @param label The text to show
      */
-    private static class TaskListCellRenderer extends DefaultPanelListCellRenderer<TaskClusteredPoint> {
-        /**
-         * The serial UID for this component
-         */
-        @Serial
-        private static final long serialVersionUID = -4182177619455408415L;
-        private static final CachingProperty<Color> COLOR_MODIFIED = new NamedColorProperty(
-                marktr("MapRoulette: Task Modified"), Color.GREEN.brighter()).cached();
-        private static final CachingProperty<Color> COLOR_LOCKED = new NamedColorProperty(
-                marktr("MapRoulette: Task Locked"), Color.CYAN.brighter()).cached();
-
-        private final JLabel singleLine = new JLabel();
-        private final JLabel priority = new JLabel();
-        private final JLabel difficulty = new JLabel();
-        private final JLabel modified = new JLabel();
-        private final JLabel type = new JLabel();
-        private final JLabel status = new JLabel();
-
-        /**
-         * Create a new renderer
-         */
-        TaskListCellRenderer() {
-            super(TaskClusteredPoint.class);
-            this.setLayout(new GridBagLayout());
-            final var gbc = GBC.eol().anchor(GBC.LINE_START).fill(GBC.HORIZONTAL);
-            this.add(this.singleLine, gbc);
-            this.add(this.priority, gbc);
-            this.add(this.difficulty, gbc);
-            this.add(this.modified, gbc);
-            this.add(this.type, gbc);
-            this.add(this.status, gbc);
-        }
-
+    private record ChallengeChoice(long id, String label) {
         @Override
-        protected void addRenderComponents(TaskClusteredPoint value, boolean isSelected, boolean cellHasFocus) {
-            this.singleLine.setText(TaskListPanel.getParentName(value) + ": " + TaskListPanel.getTitle(value));
-            this.priority.setVisible(isSelected);
-            this.difficulty.setVisible(isSelected);
-            this.modified.setVisible(isSelected);
-            this.type.setVisible(isSelected);
-            this.status.setVisible(isSelected);
-            if (isSelected) {
-                this.priority.setText(tr("Priority: {0}", value.priority()));
-                if (value instanceof ClusteredPoint point && point.difficulty() != null) {
-                    this.difficulty.setText(tr("Difficulty: {0}", point.difficulty()));
-                    this.difficulty.setVisible(true);
-                } else {
-                    this.difficulty.setVisible(false);
-                }
-                this.modified.setText(tr("Modified: {0}", value.modified()));
-                if (value instanceof ClusteredPoint point) {
-                    this.type.setText(tr("Type: {0}", point.type()));
-                } else {
-                    this.type.setVisible(false);
-                }
-                if (value.status() != null) {
-                    this.status.setText(tr("Status: {0}", value.status()));
-                }
-                this.status.setVisible(value.status() != null);
-            }
-            if (!isSelected && !cellHasFocus) {
-                final var defaultColor = MRColors.statusColor(value.status());
-                if (defaultColor != null) {
-                    this.setBackground(defaultColor);
-                }
-                if (ModifiedObjects.getModifiedTask(value.id()) != null) {
-                    this.setBackground(COLOR_MODIFIED.get());
-                }
-                if (ModifiedObjects.getLockedTask(value.id()) != null) {
-                    this.setBackground(COLOR_LOCKED.get());
-                }
-            }
-            this.updateComponentColors();
-            final var bounds = this.getBounds();
-            this.setBounds(bounds.x, bounds.y, bounds.width, bounds.height * this.getComponentCount());
+        public String toString() {
+            return this.label;
         }
     }
 }

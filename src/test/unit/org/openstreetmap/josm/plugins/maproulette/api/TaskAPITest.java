@@ -45,8 +45,9 @@ class TaskAPITest {
     }
 
     /**
-     * The server reads the box parameters from the query string only, and the box needs no login. excludeLocked is not
-     * sent: on the server it means "ignore locks", so leaving it out keeps other mappers' locked tasks hidden.
+     * The server reads the box parameters from the query string only, and the box needs no login. excludeLocked=true
+     * means "ignore locks" on the server, so other mappers' locked tasks come back for the list to show greyed, and
+     * includeGeometries=true brings the properties the row names come from (#112).
      *
      * @throws IOException if the request fails
      */
@@ -58,8 +59,8 @@ class TaskAPITest {
         WireMocks.current()
                 .verifyThat(putRequestedFor(urlPathMatching("/api/v2/tasks/box/1\\.0/2\\.0/3\\.0/4\\.0"))
                         .withQueryParam("limit", equalTo("1000")).withQueryParam("page", equalTo("2"))
-                        .withQueryParam("excludeLocked", absent()).withQueryParam("includeGeometries", absent())
-                        .withQueryParam("includeTags", absent()));
+                        .withQueryParam("excludeLocked", equalTo("true"))
+                        .withQueryParam("includeGeometries", equalTo("true")).withQueryParam("includeTags", absent()));
     }
 
     /**
