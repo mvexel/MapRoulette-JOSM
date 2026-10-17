@@ -60,12 +60,12 @@ class ChallengeAPITest {
         assertEquals(4, tasks.length);
         wireMock.verifyThat(1,
                 putRequestedFor(urlPathEqualTo(path)).withQueryParam("cid", equalTo("15318"))
-                        .withQueryParam("excludeLocked", equalTo("true"))
+                        .withQueryParam("tStatus", equalTo("0")).withQueryParam("excludeLocked", equalTo("true"))
                         .withQueryParam("limit", equalTo(Integer.toString(ChallengeAPI.TASK_LIMIT))));
     }
 
     /**
-     * Tasks that are done are left out: the box lists every status (#134)
+     * Tasks that are done are left out, even if the server sends them (#134)
      *
      * @throws Exception if the test fails
      */

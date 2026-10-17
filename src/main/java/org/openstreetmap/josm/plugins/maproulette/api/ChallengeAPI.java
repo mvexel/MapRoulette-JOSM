@@ -193,7 +193,9 @@ public final class ChallengeAPI {
      */
     public static ClusteredPoint[] openTasks(long challengeId) throws IOException {
         final var result = MapRouletteClient.getInstance().putRead(WORLD_BOX, Map.of("cid", Long.toString(challengeId),
-                "excludeLocked", "true", "limit", Integer.toString(TASK_LIMIT)), ClusteredPointParser::parse);
+                // tStatus 0 is Created; without it, done tasks would count against the limit
+                "tStatus", "0", "excludeLocked", "true", "limit", Integer.toString(TASK_LIMIT)),
+                ClusteredPointParser::parse);
         final ClusteredPoint[] points;
         if (result instanceof ClusteredPoint[] array) {
             points = array;
@@ -203,7 +205,7 @@ public final class ChallengeAPI {
             throw new MapRouletteParseException("Unexpected MapRoulette response from " + WORLD_BOX,
                     new IllegalArgumentException(String.valueOf(result)));
         }
-        // The box also lists tasks that are done
+        // Also check the status here, should a server ignore tStatus
         return Arrays.stream(points).filter(point -> point.status() == TaskStatus.CREATED)
                 .toArray(ClusteredPoint[]::new);
     }
