@@ -2,12 +2,15 @@
 package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import javax.swing.Action;
 import javax.swing.JTable;
@@ -27,7 +30,7 @@ import mockit.Mock;
 import mockit.MockUp;
 
 /**
- * Double-clicking a row of {@link TaskListPanel} starts the task (#112)
+ * Double-clicking a row of {@link TaskListPanel} starts the task, unless another mapper has locked it (#112)
  */
 @Main
 @MapRouletteConfig
@@ -35,8 +38,32 @@ import mockit.MockUp;
 class TaskListDoubleClickTest {
     @Test
     void testDoubleClickStarts() {
+        assertEquals(1, doubleClick(null, action -> assertEquals("Start Task", action.getValue(Action.NAME))),
+                "Only the double click starts the task");
+    }
+
+    /**
+     * A task another mapper has locked can't be started, from the button or with a double-click: MapRoulette refuses
+     */
+    @Test
+    void testLockedByOtherNotStartable() {
+        assertEquals(0, doubleClick(99L, action -> {
+            assertFalse(action.isEnabled(), "Start is disabled on a task locked by another mapper");
+            assertTrue(((String) action.getValue(Action.SHORT_DESCRIPTION))
+                    .contains("Another mapper is working on this task"));
+        }));
+    }
+
+    /**
+     * Show one task in the list, select it, check the Start action, then click its row once and twice
+     *
+     * @param lockedBy    The MapRoulette user holding a lock on the task, if any
+     * @param checkAction Checks the Start action with the row selected
+     * @return How often the task was started
+     */
+    private static int doubleClick(Long lockedBy, Consumer<Action> checkAction) {
         MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
-                List.of(TaskListPanelTest.point(1, 18, "SLC benches", null))));
+                List.of(TaskListPanelTest.point(1, 15318, "SLC benches", lockedBy))));
         new MockUp<MapRouletteAuth>() {
             @Mock
             boolean isAvailable() {
@@ -57,7 +84,7 @@ class TaskListDoubleClickTest {
                     .find(panel, SideButton.class, b -> b.getAction() instanceof LockUnlockTaskAction).getAction();
             table.setSize(300, 300);
             table.getSelectionModel().setSelectionInterval(0, 0);
-            assertEquals("Start Task", action.getValue(Action.NAME));
+            checkAction.accept(action);
             final var cell = table.getCellRect(0, 0, true);
             for (var clicks = 1; clicks <= 2; clicks++) {
                 for (var listener : table.getMouseListeners()) {
@@ -65,7 +92,7 @@ class TaskListDoubleClickTest {
                             InputEvent.BUTTON1_DOWN_MASK, cell.x + 5, cell.y + 5, clicks, false, MouseEvent.BUTTON1));
                 }
             }
-            assertEquals(1, started.get(), "Only the double click starts the task");
+            return started.get();
         } finally {
             panel.destroy();
         }

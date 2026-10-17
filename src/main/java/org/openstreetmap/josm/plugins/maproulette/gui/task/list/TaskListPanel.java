@@ -315,7 +315,9 @@ public final class TaskListPanel extends JPanel
         this.add(this.cards, BorderLayout.CENTER);
         this.buttons = MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton)));
         this.add(this.buttons, BorderLayout.SOUTH);
-        // The sorter hears of model changes after this listener; it updates the title once it has sorted
+        // The sorter hears of model changes after this listener; it updates the title once it has sorted. This relies on
+        // TaskTableModel firing only fireTableDataChanged: with row-range events, applyFilters here would re-sort before
+        // the sorter has seen the change, and DefaultRowSorter could throw.
         this.model.addTableModelListener(e -> {
             this.names.clear();
             rebuildChallengeFilter();
