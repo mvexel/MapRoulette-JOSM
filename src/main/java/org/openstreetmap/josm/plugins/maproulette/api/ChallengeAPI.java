@@ -10,18 +10,23 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 import java.io.IOException;
 import java.io.Reader;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Priority;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeCreation;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeExtra;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeGeneral;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengePriority;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.parsers.ClusteredPointParser;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.PointParser;
 import org.openstreetmap.josm.plugins.maproulette.api.parsers.TaskParser;
 
@@ -42,6 +47,14 @@ public final class ChallengeAPI {
      * The base path for challenge requests
      */
     private static final String PATH = "/challenge";
+    /**
+     * The most tasks {@link #openTasks(long)} loads
+     */
+    static final int TASK_LIMIT = 2500;
+    /**
+     * The task box that {@link #openTasks(long)} searches: the whole map
+     */
+    static final String WORLD_BOX = "/tasks/box/-180/-85/180/85";
 
     /**
      * Don't allow the API object to be instantiated
@@ -169,14 +182,33 @@ public final class ChallengeAPI {
     }
 
     /**
-     * Get tasks from a MapRoulette challenge
+     * Get the open tasks of a challenge as task list points, with the properties of their features. Tasks locked by
+     * other mappers are included with {@code lockedBy} set, as in {@link TaskAPI#box}. This searches the task box of the whole
+     * map, limited to the challenge. {@code /challenge/view/:id} answers with a GeoJSON export, not tasks, and
+     * {@code /challenge/clustered/:id} fails with HTTP 500 on challenges with tasks (#134). Full tasks are fetched
+     * later, one at a time.
+     *
      * @param challengeId The id of the challenge
-     * @return The tasks from the challenge -- see {@link TaskParser#parseTask(Reader)}
-     * @throws IOException if there was a problem communicating with the server
+     * @return The tasks with status Created
+     * @throws IOException if there was a problem communicating with the server, or its response could not be read
      */
-    public static Object view(long challengeId) throws IOException {
-        return MapRouletteClient.getInstance().get(PATH + "/view/" + challengeId, Map.of("status", "0"),
-                TaskParser::parseTask);
+    public static ClusteredPoint[] openTasks(long challengeId) throws IOException {
+        final var result = MapRouletteClient.getInstance().putRead(WORLD_BOX, Map.of("cid", Long.toString(challengeId),
+                // tStatus 0 is Created; without it, done tasks would count against the limit
+                "tStatus", "0", "excludeLocked", "true", "includeGeometries", "true", "limit",
+                Integer.toString(TASK_LIMIT)), ClusteredPointParser::parse);
+        final ClusteredPoint[] points;
+        if (result instanceof ClusteredPoint[] array) {
+            points = array;
+        } else if (result instanceof ClusteredPoint point) {
+            points = new ClusteredPoint[] { point };
+        } else {
+            throw new MapRouletteParseException("Unexpected MapRoulette response from " + WORLD_BOX,
+                    new IllegalArgumentException(String.valueOf(result)));
+        }
+        // Also check the status here, should a server ignore tStatus
+        return Arrays.stream(points).filter(point -> point.status() == TaskStatus.CREATED)
+                .toArray(ClusteredPoint[]::new);
     }
 
     /**
