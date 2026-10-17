@@ -3,29 +3,32 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.BorderLayout;
-import java.awt.Component;
+import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import javax.swing.Action;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
 import javax.swing.UIManager;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
@@ -39,9 +42,13 @@ import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
+import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -53,7 +60,11 @@ import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
+import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
+import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
+import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.OpenBrowser;
@@ -71,6 +82,8 @@ public final class CurrentTaskPanel extends JPanel {
      */
     @Serial
     private static final long serialVersionUID = 6628674700523633284L;
+    private static final String FINISH_CARD = "finish";
+    private static final String COOPERATIVE_CARD = "cooperative";
     /**
      * The model for the task
      */
@@ -105,6 +118,46 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final InnerAction[] actions;
     /**
+     * Shows the finish button, or the Fixed button of a cooperative task, which applies its suggested change
+     */
+    private final JPanel finishCards = new JPanel(new CardLayout());
+    /**
+     * The number of edits for the started task
+     */
+    private final JLabel editsLabel = new JLabel();
+    /**
+     * The comment sent with the status (#115)
+     */
+    private final JosmTextField commentField = new JosmTextField();
+    /**
+     * The task tags sent with the status, shown when the challenge suggests some
+     */
+    private final AutoCompComboBox<String> tagBox = new AutoCompComboBox<>();
+    /**
+     * Asks for a review of the task
+     */
+    private final JCheckBox reviewBox = new JCheckBox(tr("Ask for a review"));
+    /**
+     * Shown when the upload succeeded but Fixed could not be sent
+     */
+    private final JPanel unfinishedPanel = new JPanel(new GridBagLayout());
+    private final JLabel unfinishedLabel = new JLabel();
+    /**
+     * Updates the edit count and the finish button
+     */
+    private final Runnable editsListener = this::refreshFinish;
+    /**
+     * Shows a task whose Fixed could not be sent, and updates the actions once a status is sent
+     */
+    private final transient Consumer<Map<Long, Task>> sentListener = tasks -> {
+        this.refreshActions();
+        this.refreshFinish();
+    };
+    /**
+     * The task the comment and the review request were filled in for
+     */
+    private long feedbackTask = -1;
+    /**
      * Re-evaluates the actions when the MapRoulette login changes
      */
     private final Runnable authListener = this::refreshActions;
@@ -135,18 +188,17 @@ public final class CurrentTaskPanel extends JPanel {
         final Supplier<Task> supplier = () -> this.task;
         final Supplier<HTMLDocument> docSupplier = () -> (HTMLDocument) this.instructionPane.getEditorPane()
                 .getDocument();
+        // The edit path has no status button: the upload finishes the task (#115). These are the outcomes with no edit.
         final var newActions = new InnerAction[] {
+                new TaskStatusAction(TaskStatus.ALREADY_FIXED, supplier, docSupplier),
                 new TaskStatusAction(TaskStatus.FALSE_POSITIVE, supplier, docSupplier),
                 new TaskStatusAction(TaskStatus.TOO_HARD, supplier, docSupplier),
-                new TaskStatusAction(TaskStatus.FIXED, supplier, docSupplier),
-                new TaskStatusAction(TaskStatus.ALREADY_FIXED, supplier, docSupplier),
-                new TaskStatusAction(TaskStatus.SKIPPED, supplier, docSupplier), new SelectOsmPrimitives(supplier) };
-
-        final var falsePositive = new SideButton(newActions[0]);
-        final var fixed = new SideButton(newActions[2]);
-        falsePositive.createArrow(l -> showPopupMenu(falsePositive, newActions[0], newActions[1]));
-        fixed.createArrow(l -> showPopupMenu(fixed, newActions[2], newActions[3]));
+                new TaskStatusAction(TaskStatus.SKIPPED, supplier, docSupplier),
+                new TaskStatusAction(TaskStatus.FIXED, supplier, docSupplier), new SelectOsmPrimitives(supplier),
+                new FinishAction(this) };
         this.actions = newActions;
+        this.finishCards.add(new SideButton(newActions[6]), FINISH_CARD);
+        this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
         this.instructionPane.enableClickableHyperlinks();
         // The header stays in place while the instructions scroll
         final var header = new JPanel(new GridBagLayout());
@@ -166,9 +218,32 @@ public final class CurrentTaskPanel extends JPanel {
         this.panel.add(this.instructionPane, gbc);
         this.panel.add(this.cooperativeWork, gbc);
         this.add(this.panel.getVerticalScrollPane(), BorderLayout.CENTER);
-        this.add(MRGuiHelper.buttonRows(List.of(List.of(fixed, falsePositive),
-                List.of(new SideButton(newActions[4]), new SideButton(newActions[5])))), BorderLayout.SOUTH);
+        this.commentField.setHint(tr("Comment for MapRoulette (optional)"));
+        this.commentField.setToolTipText(tr("Sent with the task''s status"));
+        this.tagBox.setToolTipText(tr("Task tags for MapRoulette (optional)"));
+        this.unfinishedLabel
+                .setForeground(UIManager.getColor("Component.warningForeground") == null ? Color.RED.darker()
+                        : UIManager.getColor("Component.warningForeground"));
+        this.unfinishedPanel.add(this.unfinishedLabel, GBC.std().fill(GBC.HORIZONTAL));
+        final var retry = new JButton(tr("Send again"));
+        retry.addActionListener(
+                e -> Optional.ofNullable(this.task).map(Task::id).ifPresent(LateUploadHook::retryFinish));
+        this.unfinishedPanel.add(retry, GBC.eol().anchor(GBC.LINE_END));
+        final var south = new JPanel(new GridBagLayout());
+        south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        south.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        south.add(this.tagBox, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        south.add(this.reviewBox, GBC.eol().anchor(GBC.LINE_START).insets(2, 0, 4, 0));
+        south.add(MRGuiHelper.buttonRows(List.of(List.of(this.finishCards),
+                List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
+                List.of(new SideButton(newActions[2]), new SideButton(newActions[3])),
+                List.of(new SideButton(newActions[5])))), GBC.eol().fill(GBC.HORIZONTAL));
+        this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
+        TaskEdits.addListener(this.editsListener);
+        ModifiedObjects.addLockListener(this.editsListener);
+        TaskStatusSender.addListener(this.sentListener);
         ChallengeCache.addListener(this.challengeListener);
         this.refreshPanel();
     }
@@ -188,12 +263,13 @@ public final class CurrentTaskPanel extends JPanel {
      * Remove the listeners and actions of the section. The MapRoulette panel calls this when it is destroyed.
      */
     public void destroy() {
-        // The side buttons destroy their own actions, once; Too Hard and Already Fixed are only in the menus
+        // The side buttons destroy their own actions, once
         GuiHelper.destroyComponents(this, false);
-        this.actions[1].destroy();
-        this.actions[3].destroy();
         this.openAction.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
+        TaskEdits.removeListener(this.editsListener);
+        ModifiedObjects.removeLockListener(this.editsListener);
+        TaskStatusSender.removeListener(this.sentListener);
         ChallengeCache.removeListener(this.challengeListener);
     }
 
@@ -201,19 +277,6 @@ public final class CurrentTaskPanel extends JPanel {
         for (var action : this.actions) {
             action.updateEnabledState();
         }
-    }
-
-    private static void showPopupMenu(Component parent, Object... menuItems) {
-        final var menu = new JPopupMenu();
-        final var box = parent.getBounds();
-        for (var item : menuItems) {
-            if (item instanceof Action action) {
-                menu.add(action);
-            } else {
-                throw new IllegalArgumentException("We don't currently support " + item.getClass());
-            }
-        }
-        menu.show(parent, 0, box.y + box.height);
     }
 
     /**
@@ -282,6 +345,78 @@ public final class CurrentTaskPanel extends JPanel {
     }
 
     /**
+     * Get what to send with a status: the comment, the task tags and the review request from the panel, and the
+     * answers picked in the instructions
+     *
+     * @param task   The task
+     * @param status The status to send
+     * @return The status with its feedback
+     */
+    public ModifiedTask feedback(Task task, TaskStatus status) {
+        final var comment = Utils.strip(this.commentField.getText());
+        // A skip sets no status, so there is nothing to tag or review
+        final var skip = status == TaskStatus.SKIPPED;
+        final var tags = skip || !this.tagBox.isVisible() ? "" : Utils.strip(this.tagBox.getText());
+        return new ModifiedTask(task, status, comment.isEmpty() ? null : comment, tags.isEmpty() ? null : tags,
+                !skip && this.reviewBox.isSelected() ? Boolean.TRUE : null,
+                getSelections((HTMLDocument) this.instructionPane.getEditorPane().getDocument()));
+    }
+
+    /**
+     * Show the edit count, a Fixed that could not be sent, and whether the upload can finish the task
+     */
+    private void refreshFinish() {
+        final var currentTask = this.task;
+        final var started = currentTask != null && showsLockedTask() && !currentTask.isChoiceTask();
+        final var edits = TaskEdits.count();
+        this.editsLabel.setVisible(started);
+        if (started) {
+            this.editsLabel.setText(edits == 0 ? tr("No edits for task {0} yet", currentTask.id())
+                    : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits, currentTask.id()));
+        }
+        final var unfinished = currentTask != null && LateUploadHook.isUnfinished(currentTask.id());
+        this.unfinishedPanel.setVisible(unfinished);
+        if (unfinished) {
+            this.unfinishedLabel
+                    .setText(tr("Your edits are uploaded, but Fixed was not sent for task {0}.", currentTask.id()));
+        }
+        ((CardLayout) this.finishCards.getLayout()).show(this.finishCards,
+                currentTask != null && currentTask.cooperativeWork() != null && !currentTask.isChoiceTask()
+                        ? COOPERATIVE_CARD
+                        : FINISH_CARD);
+        this.actions[6].updateEnabledState();
+    }
+
+    /**
+     * Empty the comment, the tags and the review request when another task is shown
+     *
+     * @param currentTask The task shown
+     */
+    private void resetFeedback(@Nullable Task currentTask) {
+        final var id = currentTask == null ? -1 : currentTask.id();
+        if (id == this.feedbackTask) {
+            return;
+        }
+        this.feedbackTask = id;
+        this.commentField.setText("");
+        this.reviewBox.setSelected(false);
+        this.tagBox.getModel().removeAllElements();
+        this.tagBox.setText("");
+        final var challenge = currentTask == null ? null : ChallengeCache.cached(currentTask.parentId()).orElse(null);
+        updateTags(challenge);
+    }
+
+    private void updateTags(@Nullable Challenge challenge) {
+        final var preferred = challenge == null ? null : challenge.extra().preferredTags();
+        this.tagBox.setVisible(!Utils.isStripEmpty(preferred));
+        if (this.tagBox.isVisible() && this.tagBox.getModel().getSize() == 0) {
+            this.tagBox.getModel().addAllElements(
+                    Arrays.stream(preferred.split(",")).map(String::strip).filter(tag -> !tag.isEmpty()).toList());
+            this.tagBox.setEditable(!challenge.extra().limitTags());
+        }
+    }
+
+    /**
      * Get the actions for the panel
      * @return The actions
      */
@@ -296,6 +431,15 @@ public final class CurrentTaskPanel extends JPanel {
             action.updateEnabledState();
         }
         this.openAction.updateEnabledState();
+        resetFeedback(currentTask);
+        if (currentTask != null) {
+            updateTags(ChallengeCache.cached(currentTask.parentId()).orElse(null));
+        }
+        final var hasTask = currentTask != null;
+        this.commentField.setVisible(hasTask && !currentTask.isChoiceTask());
+        this.reviewBox.setVisible(hasTask && !currentTask.isChoiceTask());
+        this.tagBox.setVisible(this.tagBox.isVisible() && hasTask);
+        refreshFinish();
         if (currentTask == null) {
             this.instructionPending = false;
             this.challengeLabel.setText(null);
@@ -514,6 +658,57 @@ abstract static class InnerAction extends JosmAction {
     @Override
     public void updateEnabledState() {
         super.updateEnabledState();
+    }
+}
+
+/**
+ * Upload the edits, which finishes the started task (#115)
+ */
+private static final class FinishAction extends InnerAction {
+    @Serial
+    private static final long serialVersionUID = 2958043920482017623L;
+    private final transient CurrentTaskPanel panel;
+
+    FinishAction(CurrentTaskPanel panel) {
+        super(tr("Upload edits and finish…"), "upload",
+                tr("Upload your edits to OpenStreetMap, which finishes the task"),
+                Shortcut.registerShortcut("maproulette:upload_and_finish", tr("MapRoulette: Upload edits and finish"),
+                        KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
+                false);
+        this.panel = panel;
+        putValue("help", ht("/Dialog/MapRouletteCurrentTask#Finish"));
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (MainApplication.getMenu() != null) {
+            // JOSM's own upload: the upload hook asks if it finishes the task
+            MainApplication.getMenu().upload.actionPerformed(e);
+        }
+    }
+
+    @Override
+    public void updateEnabledState() {
+        if (this.panel == null) { // Only during the constructor
+            return;
+        }
+        final var task = this.panel.task;
+        if (task == null || !this.panel.showsLockedTask()) {
+            this.setEnabled(false);
+            this.setTooltip(tr("Start a task to work on it"));
+        } else if (task.isChoiceTask()) {
+            this.setEnabled(false);
+            this.setTooltip(ExceptionDialogUtil.explainRefusal(Reason.CHOICE_TASK_STATUS));
+        } else if (!MapRouletteAuth.isAvailable()) {
+            this.setEnabled(false);
+            this.setTooltip(MapRouletteAuth.unavailableTooltip());
+        } else if (TaskEdits.count() == 0) {
+            this.setEnabled(false);
+            this.setTooltip(tr("Edit the map for this task first. Uploading the edits finishes the task."));
+        } else {
+            this.setEnabled(true);
+            this.setTooltip(tr("Upload your edits to OpenStreetMap, which finishes the task"));
+        }
     }
 }
 

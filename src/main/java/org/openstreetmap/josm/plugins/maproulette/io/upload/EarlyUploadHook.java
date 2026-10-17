@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.io.upload;
 import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
 import static org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel.getSelections;
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -37,6 +39,7 @@ import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
+import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
@@ -53,7 +56,9 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
@@ -118,8 +123,10 @@ public final class EarlyUploadHook implements UploadHook {
      * Cache the challenges of the tasks marked Fixed, for the changeset tags
      */
     private static void cacheChallenges() {
-        final var challenges = ModifiedObjects.getUnlinkedFixed().stream().mapToLong(Task::parentId).distinct()
-                .toArray();
+        final var challenges = Stream
+                .concat(ModifiedObjects.getUnlinkedFixed().stream(),
+                        ModifiedObjects.getFinishing().stream().map(ModifiedTask::task))
+                .mapToLong(Task::parentId).distinct().toArray();
         for (var challenge : challenges) {
             try {
                 ChallengeCache.challenge(challenge);
@@ -130,8 +137,19 @@ public final class EarlyUploadHook implements UploadHook {
     }
 
     private boolean realCheckUpload(APIDataSet apiDataSet) {
+        // A finish recorded for an upload that did not happen (the user cancelled the upload dialog) is dropped
+        ModifiedObjects.setFinishing(List.of());
         if (!MapRouletteAuth.isAvailable()) {
             // The answer could not be sent to MapRoulette
+            return UploadHook.super.checkUpload(apiDataSet);
+        }
+        final var started = finishable();
+        if (!started.isEmpty()) {
+            // A started task is finished by the upload of its edits (#115); the old question is for uploads without one
+            if (TaskEdits.touches(apiDataSet.getPrimitives())) {
+                final List<ModifiedTask> finishing = GuiHelper.runInEDTAndWaitAndReturn(() -> askFinishes(started));
+                ModifiedObjects.setFinishing(Objects.requireNonNull(finishing));
+            }
             return UploadHook.super.checkUpload(apiDataSet);
         }
         final var ids = apiDataSet.getPrimitives().stream().map(IPrimitive::getPrimitiveId).collect(Collectors.toSet());
@@ -186,6 +204,68 @@ public final class EarlyUploadHook implements UploadHook {
         GuiHelper.runInEDT(() -> exceptionList.forEach(ExceptionDialogUtil::explainException));
         ConditionalOptionPaneUtil.endBulkOperation(PREF_CHECK_IF_FINISHED);
         return UploadHook.super.checkUpload(apiDataSet);
+    }
+
+    /**
+     * Get the started tasks an upload can finish. A choice task can't be finished: MapRoulette only takes an answer for
+     * it. A task whose status is being sent is done already.
+     *
+     * @return The tasks
+     */
+    static List<Task> finishable() {
+        return ModifiedObjects.getLockedTasks().stream().filter(task -> !task.isChoiceTask())
+                .filter(task -> ModifiedObjects.getModifiedTask(task.id()) == null
+                        || ModifiedObjects.getModifiedTask(task.id()).status() == TaskStatus.CREATED)
+                .toList();
+    }
+
+    /**
+     * Ask if the upload finishes the started tasks. Call it on the EDT.
+     *
+     * @param started The started tasks
+     * @return The statuses to send after the upload, empty if the tasks are not finished yet
+     */
+    private static List<ModifiedTask> askFinishes(List<Task> started) {
+        final var panel = CurrentTaskPanel.get();
+        final var statuses = started.stream()
+                .map(task -> panel == null ? new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of())
+                        : panel.feedback(task, TaskStatus.FIXED))
+                .toList();
+        return finishDialog(statuses).showDialog().getValue() == 1 ? statuses : List.of();
+    }
+
+    /**
+     * Build the question whether the upload finishes the started tasks. Button 1 (the default) finishes them.
+     *
+     * @param statuses The statuses to send
+     * @return The dialog, not shown yet
+     */
+    static ExtendedDialog finishDialog(List<ModifiedTask> statuses) {
+        return new ExtendedDialog(MRGuiHelper.dialogParent(), tr("Finish MapRoulette task"),
+                tr("Finished: I fixed it!"), tr("Not finished yet")).setContent(finishMessage(statuses))
+                        .setButtonIcons("dialogs/validator", "cancel").setIcon(JOptionPane.QUESTION_MESSAGE)
+                        .setDefaultButton(1).setCancelButton(2);
+    }
+
+    /**
+     * Describe what finishing the tasks sends
+     *
+     * @param statuses The statuses to send
+     * @return The text, as html
+     */
+    static String finishMessage(List<ModifiedTask> statuses) {
+        final var ids = statuses.stream().map(status -> Long.toString(status.task().id()))
+                .collect(Collectors.joining(", "));
+        final var text = new StringBuilder("<html>")
+                .append(trn("This upload finishes task {0}.", "This upload finishes tasks {0}.", statuses.size(), ids));
+        final var comment = statuses.isEmpty() ? null : statuses.get(0).comment();
+        text.append("<br>").append(Utils.isStripEmpty(comment) ? tr("No comment for MapRoulette.")
+                : tr("Comment for MapRoulette: {0}", Utils.escapeReservedCharactersHTML(comment.strip())));
+        if (!statuses.isEmpty() && Boolean.TRUE.equals(statuses.get(0).reviewRequested())) {
+            text.append("<br>").append(tr("A review is requested."));
+        }
+        text.append("<br>").append(tr("Choose Not finished yet if the task needs more edits."));
+        return text.append("</html>").toString();
     }
 
     private static Long getPrimitiveId(TaskClusteredPoint point) {
@@ -273,9 +353,13 @@ public final class EarlyUploadHook implements UploadHook {
         tagBuilders.add(tagBuilder);
         // Only the tasks this upload is for; the challenges were cached in checkUpload
         final var uploaded = this.uploading;
-        final var forUpload = ModifiedObjects.getUnlinkedFixed().stream().filter(task -> TaskPrimitives
-                .cachedPrimitiveIds(task).map(ids -> LateUploadHook.inUpload(ids, uploaded)).orElse(Boolean.TRUE))
-                .toList();
+        // The tasks this upload finishes, and the tasks marked Fixed whose objects it contains
+        final var forUpload = Stream
+                .concat(ModifiedObjects.getFinishing().stream().map(ModifiedTask::task),
+                        ModifiedObjects.getUnlinkedFixed().stream()
+                                .filter(task -> TaskPrimitives.cachedPrimitiveIds(task)
+                                        .map(ids -> LateUploadHook.inUpload(ids, uploaded)).orElse(Boolean.TRUE)))
+                .collect(Collectors.toMap(Task::id, task -> task, (a, b) -> a, TreeMap::new)).values();
         for (Task task : forUpload) {
             final var id = Long.toString(task.id());
             if (tagBuilder.length() + id.length() + 1 >= Tagged.MAX_TAG_LENGTH) {

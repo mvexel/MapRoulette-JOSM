@@ -2,8 +2,8 @@
 package org.openstreetmap.josm.plugins.maproulette.io;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -57,8 +57,32 @@ public final class TaskStatusSender {
      * @param modifiedTasks The modified tasks
      */
     public static void sendStatuses(List<ModifiedTask> modifiedTasks) {
+        final var result = send(modifiedTasks);
+        result.failed().values().stream().filter(IOException.class::isInstance)
+                .forEach(ExceptionDialogUtil::explainException);
+        fireSent(result.updated());
+    }
+
+    /**
+     * The outcome of sending statuses
+     *
+     * @param updated The tasks whose status was sent, as the server returned them, by id
+     * @param failed  The statuses that were not sent, with the reason. A {@link RuntimeException} was already reported.
+     */
+    public record Result(Map<Long, Task> updated, Map<ModifiedTask, Exception> failed) {
+    }
+
+    /**
+     * Send the status of modified tasks and release them, without telling the user or the listeners. Must not be called
+     * on the EDT.
+     *
+     * @param modifiedTasks The modified tasks
+     * @return What was sent and what failed
+     * @see #fireSent(Map)
+     */
+    public static Result send(List<ModifiedTask> modifiedTasks) {
         final var updatedTasks = new HashMap<Long, Task>(modifiedTasks.size());
-        final var failures = new ArrayList<Exception>();
+        final var failures = new LinkedHashMap<ModifiedTask, Exception>();
         // The statuses belong to this server: if the user switches servers meanwhile, nothing more is sent (#86)
         final var server = MapRouletteConfig.getBaseUrl();
         for (ModifiedTask entry : modifiedTasks) {
@@ -81,10 +105,18 @@ public final class TaskStatusSender {
                                 : TaskAPI.release(entry.task().id()));
                 ModifiedObjects.removeLockedTask(entry.task());
             } catch (IOException e) {
-                failures.add(e);
+                if (!sent) {
+                    failures.put(entry, e);
+                } else {
+                    // The status is set; only the release failed, and the lock expires on its own
+                    ExceptionDialogUtil.explainException(e);
+                }
             } catch (RuntimeException e) {
                 // One task failing must not stop the others (or reach the worker)
                 BugReport.intercept(e).put("task", entry.task().id()).warn();
+                if (!sent) {
+                    failures.put(entry, e);
+                }
             } finally {
                 ModifiedObjects.removeModifiedTask(entry);
                 if (!sent) {
@@ -93,7 +125,15 @@ public final class TaskStatusSender {
                 }
             }
         }
-        failures.forEach(ExceptionDialogUtil::explainException);
+        return new Result(updatedTasks, failures);
+    }
+
+    /**
+     * Tell the listeners which tasks were sent
+     *
+     * @param updatedTasks The tasks whose status was sent, by id
+     */
+    public static void fireSent(Map<Long, Task> updatedTasks) {
         GuiHelper.runInEDT(() -> STATUS_SENT.fireEvent(l -> l.accept(updatedTasks)));
     }
 }

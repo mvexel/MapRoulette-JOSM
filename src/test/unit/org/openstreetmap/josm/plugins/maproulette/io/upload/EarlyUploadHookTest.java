@@ -2,10 +2,13 @@
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,6 +20,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -34,6 +38,7 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
@@ -43,6 +48,8 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
@@ -51,6 +58,7 @@ import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.mockers.ExtendedDialogMocker;
 
 /**
  * Test class for {@link EarlyUploadHook}
@@ -71,6 +79,9 @@ class EarlyUploadHookTest {
     void tearDown() {
         ModifiedObjects.getUnlinkedFixed().forEach(ModifiedObjects::removeUnlinkedFixed);
         ModifiedObjects.getModifiedTasks().forEach(ModifiedObjects::removeModifiedTask);
+        ModifiedObjects.getLockedTasks().forEach(ModifiedObjects::removeLockedTask);
+        ModifiedObjects.setFinishing(List.of());
+        GuiHelper.runInEDTAndWait(TaskEdits::clear);
     }
 
     @ParameterizedTest
@@ -89,6 +100,116 @@ class EarlyUploadHookTest {
         final var map = new HashMap<String, String>();
         hook.modifyChangesetTags(map);
         assertEquals("132279499", map.get("maproulette:tasks"));
+    }
+
+    /**
+     * An upload with edits made while a task is started asks once if it finishes the task. Nothing is sent before the
+     * upload; the task is recorded for the late hook, and the changeset is tagged with it (#115).
+     */
+    @Test
+    @MapRouletteLogin
+    void testUploadOfTaskEditsAsksToFinish() {
+        TestUtils.assumeWorkingJMockit();
+        final var task = startedTask(false);
+        final var node = editedNode(true);
+        final var statuses = List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of()));
+        new ExtendedDialogMocker(Map.of(EarlyUploadHook.finishMessage(statuses), "Finished: I fixed it!"));
+        assertTrue(hook.checkUpload(new APIDataSet(node.getDataSet())));
+        WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathMatching("/api/v2/task/27/.*")));
+        assertEquals(List.of(TaskStatus.FIXED),
+                ModifiedObjects.getFinishing().stream().map(ModifiedTask::status).toList());
+        final var tags = new HashMap<String, String>();
+        hook.modifyChangesetTags(tags);
+        assertEquals("27", tags.get("maproulette:tasks"));
+    }
+
+    /**
+     * "Not finished yet" keeps the task started: nothing is recorded, and the next upload asks again (#115)
+     */
+    @Test
+    @MapRouletteLogin
+    void testNotFinishedYet() {
+        TestUtils.assumeWorkingJMockit();
+        final var task = startedTask(false);
+        final var node = editedNode(true);
+        final var statuses = List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of()));
+        new ExtendedDialogMocker(Map.of(EarlyUploadHook.finishMessage(statuses), "Not finished yet"));
+        assertTrue(hook.checkUpload(new APIDataSet(node.getDataSet())));
+        assertTrue(ModifiedObjects.getFinishing().isEmpty());
+        assertEquals(List.of(task), ModifiedObjects.getLockedTasks());
+    }
+
+    /**
+     * Edits made before the task was started don't finish it, and a choice task is never finished by an upload: no
+     * question is asked (#115)
+     */
+    @Test
+    @MapRouletteLogin
+    void testNoQuestionWithoutTaskEdits() {
+        TestUtils.assumeWorkingJMockit();
+        // Any dialog fails the test
+        new ExtendedDialogMocker(Map.of());
+        final var before = editedNode(false);
+        startedTask(false);
+        assertTrue(hook.checkUpload(new APIDataSet(before.getDataSet())));
+        assertTrue(ModifiedObjects.getFinishing().isEmpty(), "Edited before the task was started");
+
+        ModifiedObjects.getLockedTasks().forEach(ModifiedObjects::removeLockedTask);
+        startedTask(true);
+        final var choice = editedNode(true);
+        assertTrue(hook.checkUpload(new APIDataSet(choice.getDataSet())));
+        assertTrue(ModifiedObjects.getFinishing().isEmpty(), "A choice task");
+    }
+
+    /**
+     * The question repeats the comment and the review request, so the user sees what is sent
+     */
+    @Test
+    void testFinishMessage() {
+        final var task = task(27, false);
+        assertEquals(
+                "<html>This upload finishes task 27.<br>No comment for MapRoulette.<br>"
+                        + "Choose Not finished yet if the task needs more edits.</html>",
+                EarlyUploadHook
+                        .finishMessage(List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, null))));
+        assertEquals(
+                "<html>This upload finishes task 27.<br>Comment for MapRoulette: Bench &lt;added&gt;<br>"
+                        + "A review is requested.<br>Choose Not finished yet if the task needs more edits.</html>",
+                EarlyUploadHook.finishMessage(List
+                        .of(new ModifiedTask(task, TaskStatus.FIXED, " Bench <added> ", null, Boolean.TRUE, null))));
+    }
+
+    private static Task task(long id, boolean choice) {
+        return new Task(id, "Bench " + id, null, null, 15318, null, null, null,
+                choice ? Task.ChoiceWork.INSTANCE : null, null, null, null, null, null, 0, null, null, null, false,
+                null, null);
+    }
+
+    private static Task startedTask(boolean choice) {
+        TaskEdits.start();
+        final var task = task(27, choice);
+        ModifiedObjects.addLockedTask(task);
+        // The edits are followed from the EDT once the task is started
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
+        return task;
+    }
+
+    /**
+     * Add a bench to a new data layer
+     *
+     * @param afterStart {@code true} to tag it after the task was started, {@code false} to tag it now
+     * @return The bench
+     */
+    private static Node editedNode(boolean afterStart) {
+        final var node = new Node(LatLon.ZERO);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(node);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "bench", null));
+        if (afterStart) {
+            node.put("amenity", "bench");
+        }
+        return node;
     }
 
     /**
