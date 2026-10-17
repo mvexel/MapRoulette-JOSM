@@ -263,9 +263,19 @@ final class LockUnlockTaskAction extends JosmAction {
     private void unlockTasks() {
         final var selected = this.table.getSelectedRows();
         final var data = (TaskTableModel) this.table.getModel();
-        final var stops = new ArrayList<Stop>(selected.length);
+        final var ids = new ArrayList<Long>(selected.length);
         for (var index : selected) {
-            final var id = data.get(this.table.getRowSorter().convertRowIndexToModel(index)).id();
+            ids.add(data.get(this.table.getRowSorter().convertRowIndexToModel(index)).id());
+        }
+        if (ids.isEmpty()) {
+            // With no selection, Stop stops the started tasks (#108)
+            ModifiedObjects.getLockedTasks().forEach(task -> ids.add(task.id()));
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        final var stops = new ArrayList<Stop>(ids.size());
+        for (var id : ids) {
             final var locked = ModifiedObjects.getLockedTask(id);
             stops.add(new Stop(id, locked, locked == null ? null : ModifiedObjects.getModifiedTask(locked.id())));
         }
@@ -343,7 +353,8 @@ final class LockUnlockTaskAction extends JosmAction {
     public void updateEnabledState() {
         if (this.running) {
             super.setEnabled(false);
-        } else if (this.table != null && !this.table.getSelectionModel().isSelectionEmpty()) {
+        } else if (this.table != null && (!this.table.getSelectionModel().isSelectionEmpty()
+                || !ModifiedObjects.getLockedTasks().isEmpty())) {
             updateStartOrStop();
             if (MapRouletteAuth.isAvailable()) {
                 super.setEnabled(true);
@@ -358,7 +369,7 @@ final class LockUnlockTaskAction extends JosmAction {
     }
 
     /**
-     * Show Start if any selected task is not locked, Stop otherwise
+     * Show Start if any selected task is not locked, Stop otherwise. With no selection, Stop stops the started tasks.
      */
     private void updateStartOrStop() {
         for (var i : this.table.getSelectedRows()) {
