@@ -32,6 +32,7 @@ import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
@@ -148,7 +149,11 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
      * @param closed      {@code true} if JOSM closed the changeset after the upload
      * @param server      The MapRoulette server of the tasks
      */
-    static void finish(List<ModifiedTask> finishing, long changesetId, boolean closed, String server) {
+    static void finish(List<ModifiedTask> allFinishing, long changesetId, boolean closed, String server) {
+        // With an asynchronous upload, the user can pick another status or stop the task while it runs; that choice wins
+        final var finishing = allFinishing.stream().filter(LateUploadHook::stillFinishing).toList();
+        allFinishing.stream().filter(status -> !finishing.contains(status))
+                .forEach(status -> UNFINISHED.remove(status.task().id()));
         if (finishing.isEmpty()) {
             return;
         }
@@ -174,6 +179,18 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             }
         }
         TaskStatusSender.fireSent(result.updated());
+    }
+
+    /**
+     * Check if a task is still to be finished: it is still started, and the user has not picked another status
+     *
+     * @param status The Fixed status to send
+     * @return {@code true} to send it
+     */
+    private static boolean stillFinishing(ModifiedTask status) {
+        final var id = status.task().id();
+        final var picked = ModifiedObjects.getModifiedTask(id);
+        return ModifiedObjects.getLockedTask(id) != null && (picked == null || picked.status() == TaskStatus.CREATED);
     }
 
     private static void explainNotFinished(Task task, Exception exception) {

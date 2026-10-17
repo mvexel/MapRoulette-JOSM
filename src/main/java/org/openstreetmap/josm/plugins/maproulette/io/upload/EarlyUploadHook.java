@@ -143,10 +143,11 @@ public final class EarlyUploadHook implements UploadHook {
             // The answer could not be sent to MapRoulette
             return UploadHook.super.checkUpload(apiDataSet);
         }
-        final var started = finishable();
-        if (!started.isEmpty()) {
-            // A started task is finished by the upload of its edits (#115); the old question is for uploads without one
-            if (TaskEdits.touches(apiDataSet.getPrimitives())) {
+        if (!ModifiedObjects.getLockedTasks().isEmpty()) {
+            // A started task is finished by the upload of its edits (#115); the old question is for uploads without one.
+            // A started choice task, or one with a status picked already, is not finished by an upload either.
+            final var started = finishable();
+            if (!started.isEmpty() && TaskEdits.touches(apiDataSet.getPrimitives())) {
                 final List<ModifiedTask> finishing = GuiHelper.runInEDTAndWaitAndReturn(() -> askFinishes(started));
                 ModifiedObjects.setFinishing(Objects.requireNonNull(finishing));
             }
