@@ -29,6 +29,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.ChangesetLinks;
+import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
@@ -138,6 +139,7 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
     static Set<Long> forgetTasks(String oldServer) {
         final var ids = new TreeSet<Long>(ModifiedObjects.forgetAll());
         ids.addAll(ChangesetLinks.forgetAll());
+        ids.addAll(LateUploadHook.forgetUnfinished());
         if (!ids.isEmpty()) {
             final var message = tr(
                     "You switched MapRoulette servers. JOSM no longer tracks tasks {0} from {1}. A task you started there "

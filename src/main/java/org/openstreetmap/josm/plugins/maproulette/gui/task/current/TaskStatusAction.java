@@ -3,13 +3,11 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.io.Serial;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -20,11 +18,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.swing.Action;
-import javax.swing.JCheckBox;
-import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
 import javax.swing.text.html.HTMLDocument;
@@ -37,9 +32,7 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException.Reason;
@@ -57,7 +50,6 @@ import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
-import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Shortcut;
 
 import jakarta.annotation.Nullable;
@@ -90,7 +82,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
      */
     TaskStatusAction(TaskStatus status, Supplier<Task> currentTaskProvider,
             Supplier<HTMLDocument> currentDocumentProvider) {
-        super(status.description(), getIconName(status), status.description(),
+        super(label(status), getIconName(status), label(status),
                 Shortcut.registerShortcut(/* NO-SHORTCUT */ "maproulette:" + status.name().toLowerCase(Locale.ENGLISH),
                         tr("MapRoulette: Mark Task as {0}", status.description()), KeyEvent.CHAR_UNDEFINED,
                         Shortcut.NONE),
@@ -98,6 +90,22 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         this.status = status;
         this.currentTaskProvider = currentTaskProvider;
         this.currentDocumentProvider = currentDocumentProvider;
+    }
+
+    /**
+     * Get the button label for a status, as the MapRoulette website names it
+     *
+     * @param status The status
+     * @return The label
+     */
+    static String label(TaskStatus status) {
+        return switch (status) {
+        case ALREADY_FIXED -> tr("Already fixed");
+        case FALSE_POSITIVE -> tr("Not an Issue");
+        case TOO_HARD -> tr("Can''t Complete");
+        case SKIPPED -> tr("Skip");
+        default -> status.description();
+        };
     }
 
     /**
@@ -121,7 +129,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         final var taskList = TaskListPanel.get();
         final var selected = othersToMark(taskList == null ? List.of() : taskList.getSelected(), task);
         final var source = e.getSource();
-        // Load the challenge for the feedback dialog on the worker, then show the dialogs on the EDT
+        // Load the challenge on the worker (a cooperative fix needs it), then mark the task on the EDT
         Workers.execute(() -> {
             final var loaded = task == null ? null : load(task);
             GuiHelper.runInEDT(() -> {
@@ -175,7 +183,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         .setContent(tr(
                                 "<html>Also mark the other selected tasks ({0}) as {1}?<br>"
                                         + "This applies their tag fixes and geometry fixes.</html>",
-                                ids, this.status.description()))
+                                ids, label(this.status)))
                         .setIcon(JOptionPane.WARNING_MESSAGE).setDefaultButton(2).setCancelButton(2);
     }
 
@@ -197,21 +205,16 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         }
         final var error = failure;
         GuiHelper.runInEDT(() -> {
-            ConditionalOptionPaneUtil.startBulkOperation("maproulette.task.feedback");
-            try {
-                loaded.forEach(this::handleTask);
-                if (error != null) {
-                    ExceptionDialogUtil.explainException(error);
-                }
-            } finally {
-                ConditionalOptionPaneUtil.endBulkOperation("maproulette.task.feedback");
+            loaded.forEach(this::handleTask);
+            if (error != null) {
+                ExceptionDialogUtil.explainException(error);
             }
             updateButtons(source);
         });
     }
 
     /**
-     * A task with the challenge its feedback dialog needs
+     * A task with its challenge
      *
      * @param task           The task
      * @param challenge      The task's challenge, or {@code null} if it could not be loaded
@@ -330,62 +333,14 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
 
     private ModifiedTask getModifiedTask(LoadedTask loaded) {
         final var task = loaded.task();
-        final var comment = new JosmTextArea();
-        final var tagBox = new AutoCompComboBox<String>();
-        // MapRoulette can be asked for a review, but not to skip one the user's settings require
-        final var reviewRequested = new JCheckBox(tr("Request Review"));
-        final var challenge = loaded.challenge();
-        if (challenge == null) {
+        if (loaded.challenge() == null) {
             ExceptionDialogUtil.explainException(loaded.challengeError());
         }
-        final var panel = feedbackPanel(challenge, comment, tagBox, reviewRequested);
-
-        var selection = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.feedback",
-                MRGuiHelper.dialogParent(), panel, tr("Task Feedback"), JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.QUESTION_MESSAGE, null, null);
-        if (selection == JOptionPane.OK_OPTION) {
-            return new ModifiedTask(task, this.status, comment.getText().trim().isEmpty() ? null : comment.getText(),
-                    tagBox.getText().trim().isEmpty() ? null : tagBox.getText(),
-                    reviewRequested.isSelected() ? Boolean.TRUE : null,
-                    CurrentTaskPanel.getSelections(this.currentDocumentProvider.get()));
-        }
-        return null;
-    }
-
-    /**
-     * Lay out the task feedback dialog
-     *
-     * @param challenge       The challenge of the task, if it could be loaded
-     * @param comment         The comment field
-     * @param tagBox          The task tag field
-     * @param reviewRequested The review request checkbox
-     * @return The dialog content
-     */
-    JPanel feedbackPanel(@Nullable Challenge challenge, JosmTextArea comment, AutoCompComboBox<String> tagBox,
-            JCheckBox reviewRequested) {
-        final var panel = new JPanel(new GridBagLayout());
-        comment.setRows(4);
-        comment.setColumns(25);
-        panel.add(comment, GBC.eol().fill(GBC.BOTH));
-        // A skip only sends the comment: it sets no status, so there is nothing to tag or review
-        if (this.status != TaskStatus.SKIPPED) {
-            if (challenge != null) {
-                if (challenge.extra().preferredTags() != null) {
-                    tagBox.getModel().addAllElements(Arrays.asList(challenge.extra().preferredTags().split(",")));
-                }
-                tagBox.setEditable(!challenge.extra().limitTags());
-            } else {
-                tagBox.setEditable(true);
-            }
-            panel.add(tagBox, GBC.eol().fill(GBC.HORIZONTAL));
-            panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
-        }
-        if (this.status == TaskStatus.FIXED) {
-            // The status is sent now; the edits are not, and JOSM uploads them from its own menu
-            panel.add(new JLabel(tr("If you edited OSM data for this task, upload it with File > Upload data. The "
-                    + "changeset is linked to this task afterwards.")), GBC.eol().anchor(GBC.LINE_START));
-        }
-        return panel;
+        // The comment and the review request are in the panel, filled in before picking the status (#115)
+        final var panel = CurrentTaskPanel.get();
+        return panel != null ? panel.feedback(task, this.status)
+                : new ModifiedTask(task, this.status, null, null, null,
+                        CurrentTaskPanel.getSelections(this.currentDocumentProvider.get()));
     }
 
     @Override
@@ -398,14 +353,21 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         .map(ModifiedTask::status).orElse(task.status());
                 if (task.isChoiceTask() && this.status != TaskStatus.SKIPPED) {
                     // MapRoulette refuses these statuses (choice_task_status); only skip stays open
-                    this.putValue(NAME, this.status.description());
+                    this.putValue(NAME, label(this.status));
                     this.setTooltip(ExceptionDialogUtil.explainRefusal(Reason.CHOICE_TASK_STATUS));
                     this.setEnabled(false);
                     return;
                 }
+                if (this.status == TaskStatus.FIXED && task.cooperativeWork() == null) {
+                    // An edited task is finished by uploading its edits (#115)
+                    this.putValue(NAME, label(this.status));
+                    this.setTooltip(tr("Upload your edits to finish the task"));
+                    this.setEnabled(false);
+                    return;
+                }
                 if (task.cooperativeWork() == null || task.isChoiceTask()) {
-                    this.putValue(NAME, this.status.description());
-                    this.setTooltip(this.status.description());
+                    this.putValue(NAME, label(this.status));
+                    this.setTooltip(label(this.status));
                 } else if (task.isCooperativeWorkOsmChange()) {
                     switch (this.status) {
                     case FALSE_POSITIVE -> {
@@ -417,8 +379,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         this.setTooltip(tr("Yes: the suggested tags are correct"));
                     }
                     default -> {
-                        this.putValue(NAME, this.status.description());
-                        this.setTooltip(this.status.description());
+                        this.putValue(NAME, label(this.status));
+                        this.setTooltip(label(this.status));
                     }
                     }
                 } else if (task.isCooperativeWorkOsc()) {
@@ -426,8 +388,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         this.putValue(NAME, tr("Apply OSC"));
                         this.setTooltip(tr("Apply the suggested change from the task"));
                     } else {
-                        this.putValue(NAME, this.status.description());
-                        this.setTooltip(this.status.description());
+                        this.putValue(NAME, label(this.status));
+                        this.setTooltip(label(this.status));
                     }
                 }
                 if (MapRouletteAuth.isAvailable()) {

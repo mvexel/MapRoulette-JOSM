@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,6 +31,10 @@ public final class ModifiedObjects {
      * The tasks marked Fixed whose edits are not uploaded yet
      */
     private static final Map<Long, Task> UNLINKED_FIXED_MAP = new ConcurrentSkipListMap<>();
+    /**
+     * The tasks the upload in progress finishes, with what to send once it succeeds (#115)
+     */
+    private static final Map<Long, ModifiedTask> FINISHING_MAP = new ConcurrentSkipListMap<>();
     /**
      * Called on the EDT when the started tasks change
      */
@@ -187,6 +192,38 @@ public final class ModifiedObjects {
     }
 
     /**
+     * Record the tasks the upload in progress finishes. Their status is sent once the upload succeeds.
+     *
+     * @param tasks The statuses to send, replacing those of an earlier upload that did not happen
+     */
+    public static void setFinishing(Collection<ModifiedTask> tasks) {
+        FINISHING_MAP.clear();
+        tasks.forEach(task -> FINISHING_MAP.put(task.task().id(), task));
+    }
+
+    /**
+     * Get the tasks the upload in progress finishes
+     *
+     * @return The statuses to send once the upload succeeds
+     */
+    @Nonnull
+    public static List<ModifiedTask> getFinishing() {
+        return List.copyOf(FINISHING_MAP.values());
+    }
+
+    /**
+     * Get and forget the tasks the upload in progress finishes
+     *
+     * @return The statuses to send once the upload succeeds
+     */
+    @Nonnull
+    public static synchronized List<ModifiedTask> takeFinishing() {
+        final var finishing = getFinishing();
+        finishing.forEach(task -> FINISHING_MAP.remove(task.task().id(), task));
+        return finishing;
+    }
+
+    /**
      * Forget every task, for example when the user switches to another MapRoulette server. Nothing is sent.
      *
      * @return The ids of the tasks that were forgotten
@@ -198,7 +235,9 @@ public final class ModifiedObjects {
         ids.addAll(LOCKED_TASK_MAP.keySet());
         ids.addAll(MODIFIED_TASK_MAP.keySet());
         ids.addAll(UNLINKED_FIXED_MAP.keySet());
+        ids.addAll(FINISHING_MAP.keySet());
         ids.forEach(id -> {
+            FINISHING_MAP.remove(id);
             LOCKED_TASK_MAP.remove(id);
             MODIFIED_TASK_MAP.remove(id);
             UNLINKED_FIXED_MAP.remove(id);

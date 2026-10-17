@@ -17,12 +17,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.markdown.SelectParser;
@@ -136,10 +136,10 @@ public final class MRGuiHelper {
      * Lay out buttons in rows of equal width buttons, like the buttons of a {@link
      * org.openstreetmap.josm.gui.dialogs.ToggleDialog}
      *
-     * @param rows The buttons of each row
+     * @param rows The buttons of each row, usually {@link org.openstreetmap.josm.gui.SideButton}s
      * @return The panel with the rows
      */
-    public static JPanel buttonRows(List<List<SideButton>> rows) {
+    public static JPanel buttonRows(List<? extends List<? extends JComponent>> rows) {
         final var panel = new JPanel(new GridLayout(rows.size(), 1));
         for (var row : rows) {
             final var rowPanel = new JPanel(new GridLayout(1, row.size()));

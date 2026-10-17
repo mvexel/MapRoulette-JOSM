@@ -11,6 +11,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,6 +22,7 @@ import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -47,6 +49,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -72,6 +75,8 @@ class LateUploadHookTest {
         ModifiedObjects.getUnlinkedFixed().forEach(ModifiedObjects::removeUnlinkedFixed);
         ModifiedObjects.getLockedTasks().forEach(ModifiedObjects::removeLockedTask);
         ChangesetLinks.forgetAll();
+        ModifiedObjects.takeFinishing();
+        LateUploadHook.forgetUnfinished();
     }
 
     /**
@@ -476,6 +481,99 @@ class LateUploadHookTest {
         }
         WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
         assertFalse(ChangesetLinks.awaits(701187));
+    }
+
+    /**
+     * The upload that finishes a started task sends Fixed after it succeeds, then links its changeset: MapRoulette only
+     * links a task that is Fixed (#115)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testUploadFinishesTask() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.setFinishing(List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of())));
+        final var hook = hook(true);
+        final var node = uploadedNode(false);
+        final var sentBeforeUpload = new boolean[1];
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+            MainApplication.worker.execute(() -> {
+                sentBeforeUpload[0] = !WireMocks.current()
+                        .find(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code()))).isEmpty();
+                GuiHelper.runInEDTAndWait(() -> {
+                    node.setModified(false);
+                    node.setChangesetId(701200);
+                });
+            });
+        });
+        sync();
+        assertFalse(sentBeforeUpload[0], "Fixed waits for the upload");
+        final var requests = WireMocks.current().find(anyRequestedFor(urlPathMatching(taskPath + "/.*"))).stream()
+                .map(r -> r.getMethod() + " " + r.getUrl().replaceAll("\\?.*", "")).toList();
+        assertEquals(List.of("PUT " + taskPath + "/" + TaskStatus.FIXED.code(), "GET " + taskPath + "/release",
+                "PUT " + taskPath + "/changeset"), requests, "Fixed first, then the link");
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset"))
+                .withQueryParam("changesetId", equalTo("701200")));
+        assertTrue(ModifiedObjects.getFinishing().isEmpty());
+        assertTrue(ModifiedObjects.getUnlinkedFixed().isEmpty());
+    }
+
+    /**
+     * A failed or cancelled upload finishes nothing: no status is sent, and the task stays started (#115)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFailedUploadFinishesNothing() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.setFinishing(List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of())));
+        final var hook = hook(true);
+        final var node = uploadedNode(false);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+        });
+        sync();
+        WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathMatching(taskPath + "/.*")));
+        assertTrue(ModifiedObjects.getFinishing().isEmpty(), "The next upload asks again");
+    }
+
+    /**
+     * If Fixed can't be sent after the upload, for example because another mapper started the task after the lock
+     * expired, the panel can send it again; the link follows once it is sent (#115)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testUnfinishedTaskCanBeSentAgain() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        final var statusPath = taskPath + "/" + TaskStatus.FIXED.code();
+        final var wireMock = WireMocks.current();
+        wireMock.register(put(urlPathEqualTo(statusPath)).inScenario("lock").whenScenarioStateIs(Scenario.STARTED)
+                .willReturn(aResponse().withStatus(409).withBody("{\"status\":\"KO\",\"message\":\"locked_by_other\"}"))
+                .willSetStateTo("free"));
+        wireMock.register(put(urlPathEqualTo(statusPath)).inScenario("lock").whenScenarioStateIs("free")
+                .willReturn(aResponse().withStatus(200)));
+        final var status = new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of());
+        MainApplication.worker.submit(() -> LateUploadHook.finish(List.of(status), 701201, true, server())).get(10,
+                TimeUnit.SECONDS);
+        assertTrue(LateUploadHook.isUnfinished(task.id()));
+        wireMock.verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+        assertTrue(ModifiedObjects.getUnlinkedFixed().isEmpty(), "Nothing to link while the status is not sent");
+
+        LateUploadHook.retryFinish(task.id());
+        sync();
+        assertFalse(LateUploadHook.isUnfinished(task.id()));
+        wireMock.verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")).withQueryParam("changesetId",
+                equalTo("701201")));
     }
 
     /**

@@ -20,6 +20,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.tools.Logging;
@@ -40,6 +41,7 @@ public class MapRoulette extends Plugin {
         // The preferences already did this; spelled out because the stored login depends on it
         MapRouletteAuth.configure();
         LockRefresher.start();
+        TaskEdits.start();
         UploadAction.registerUploadHook(new EarlyUploadHook());
         final var lateUploadHook = new LateUploadHook();
         UploadAction.registerUploadHook(lateUploadHook, true);

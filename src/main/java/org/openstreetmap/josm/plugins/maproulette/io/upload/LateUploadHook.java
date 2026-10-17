@@ -1,13 +1,20 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
+import static org.openstreetmap.josm.tools.I18n.tr;
+
+import java.awt.GraphicsEnvironment;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.upload.UploadHook;
@@ -20,19 +27,41 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.io.UploadDialog;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
+import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.tools.Logging;
 
 /**
- * Links the tasks marked Fixed to the changeset of the upload that follows (D15)
+ * After a successful upload, finishes the tasks the upload is for (#115), and links the tasks marked Fixed to its
+ * changeset (D15)
  */
 public class LateUploadHook implements UploadHook, ChangesetCacheListener {
+    /**
+     * A task whose upload succeeded but whose Fixed could not be sent, so the panel can offer to send it again
+     *
+     * @param status      The status to send
+     * @param changesetId The changeset of the upload
+     * @param closed      {@code true} if JOSM closed the changeset after the upload
+     * @param server      The MapRoulette server of the task
+     */
+    private record Unfinished(ModifiedTask status, long changesetId, boolean closed, String server) {
+    }
+
+    /**
+     * The tasks whose Fixed could not be sent after their upload, by id
+     */
+    private static final Map<Long, Unfinished> UNFINISHED = new ConcurrentHashMap<>();
+
     /**
      * Add a listener for tasks whose status was sent
      *
@@ -73,8 +102,10 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
      */
     @Override
     public void modifyChangesetTags(Map<String, String> tags) {
+        // Recorded by the early hook for this upload only: a cancelled or failed upload finishes nothing
+        final var finishing = ModifiedObjects.takeFinishing();
         final var fixed = ModifiedObjects.getUnlinkedFixed();
-        if (fixed.isEmpty() || !MapRouletteAuth.isAvailable()) {
+        if (fixed.isEmpty() && finishing.isEmpty() || !MapRouletteAuth.isAvailable()) {
             return;
         }
         final var primitives = this.uploading;
@@ -86,9 +117,11 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
                     () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
             if (changesetId < 0 || !server.equals(MapRouletteConfig.getBaseUrl())) {
-                // Not uploaded: wait for the next upload. Another server: the tasks were forgotten.
+                // Not uploaded: wait for the next upload, and the started task stays started. Another server: the tasks
+                // were forgotten.
                 return;
             }
+            finish(finishing, changesetId, closed, server);
             // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
             // it waits for an upload that has them
             final var unlinked = ModifiedObjects.getUnlinkedFixed().stream().map(Task::id).collect(Collectors.toSet());
@@ -104,6 +137,93 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
                 ChangesetLinks.await(linked, changesetId, server);
             }
         }));
+    }
+
+    /**
+     * Send Fixed for the tasks an upload finished, then link them to its changeset: MapRoulette only links a task that
+     * is Fixed. Must not be called on the EDT.
+     *
+     * @param finishing   The statuses to send
+     * @param changesetId The changeset of the upload
+     * @param closed      {@code true} if JOSM closed the changeset after the upload
+     * @param server      The MapRoulette server of the tasks
+     */
+    static void finish(List<ModifiedTask> finishing, long changesetId, boolean closed, String server) {
+        if (finishing.isEmpty()) {
+            return;
+        }
+        finishing.forEach(status -> {
+            UNFINISHED.remove(status.task().id());
+            ModifiedObjects.addModifiedTask(status);
+            ModifiedObjects.addUnlinkedFixed(status.task());
+        });
+        final var result = TaskStatusSender.send(finishing);
+        result.failed().forEach((status, exception) -> {
+            UNFINISHED.put(status.task().id(), new Unfinished(status, changesetId, closed, server));
+            explainNotFinished(status.task(), exception);
+        });
+        final var unlinked = ModifiedObjects.getUnlinkedFixed().stream().map(Task::id).collect(Collectors.toSet());
+        final var finished = finishing.stream().filter(status -> !result.failed().containsKey(status))
+                .map(ModifiedTask::task).filter(task -> unlinked.contains(task.id())).toList();
+        finished.forEach(ModifiedObjects::removeUnlinkedFixed);
+        if (!finished.isEmpty()) {
+            if (closed || changesetId == 0) {
+                ChangesetLinks.link(finished, changesetId, server);
+            } else {
+                ChangesetLinks.await(finished, changesetId, server);
+            }
+        }
+        TaskStatusSender.fireSent(result.updated());
+    }
+
+    private static void explainNotFinished(Task task, Exception exception) {
+        if (exception instanceof MapRouletteLockHeldException lockHeld && lockHeld.heldTaskId().isEmpty()) {
+            // locked_by_other: the lock expired and another mapper started the task
+            final var message = tr("Your edits are uploaded, but MapRoulette did not mark task {0} as fixed: another "
+                    + "mapper has started it. {1}", task.id(), lockHeld.serverMessage().orElse(""));
+            Logging.warn(message);
+            if (!GraphicsEnvironment.isHeadless()) {
+                GuiHelper.runInEDT(() -> new Notification(message.strip()).setIcon(JOptionPane.WARNING_MESSAGE)
+                        .setDuration(Notification.TIME_LONG).show());
+            }
+        } else if (exception instanceof IOException ioException) {
+            ExceptionDialogUtil.explainException(ioException);
+        }
+    }
+
+    /**
+     * Check if a task's upload succeeded but its Fixed could not be sent
+     *
+     * @param taskId The task
+     * @return {@code true} if Fixed can be sent again with {@link #retryFinish(long)}
+     */
+    public static boolean isUnfinished(long taskId) {
+        final var unfinished = UNFINISHED.get(taskId);
+        return unfinished != null && unfinished.server().equals(MapRouletteConfig.getBaseUrl());
+    }
+
+    /**
+     * Send Fixed again for a task whose upload succeeded, then link the changeset
+     *
+     * @param taskId The task
+     */
+    public static void retryFinish(long taskId) {
+        final var unfinished = UNFINISHED.get(taskId);
+        if (unfinished != null) {
+            MainApplication.worker.execute(() -> finish(List.of(unfinished.status()), unfinished.changesetId(),
+                    unfinished.closed(), unfinished.server()));
+        }
+    }
+
+    /**
+     * Forget the tasks whose Fixed could not be sent, for example when the user switches servers
+     *
+     * @return The ids of the forgotten tasks
+     */
+    public static Set<Long> forgetUnfinished() {
+        final var ids = Set.copyOf(UNFINISHED.keySet());
+        ids.forEach(UNFINISHED::remove);
+        return ids;
     }
 
     /**

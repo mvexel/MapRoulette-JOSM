@@ -1,0 +1,113 @@
+// License: GPL. For details, see LICENSE file.
+package org.openstreetmap.josm.plugins.maproulette.gui;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.command.AddCommand;
+import org.openstreetmap.josm.command.ChangePropertyCommand;
+import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+
+/**
+ * Test class for {@link TaskEdits}
+ */
+@BasicPreferences
+@Main
+@Projection
+class TaskEditsTest {
+    private static final Task TASK = new Task(27, "Bench 27", null, null, 15318, null, null, null, null, null, null,
+            null, null, null, 0, null, null, null, false, null, null);
+
+    @AfterEach
+    void tearDown() {
+        ModifiedObjects.forgetAll();
+        sync();
+        UndoRedoHandler.getInstance().clean();
+    }
+
+    /**
+     * Only edits made while a task is started count: downloaded objects don't, undone edits drop out, and new objects
+     * count (#115)
+     */
+    @Test
+    void testEditsWhileStarted() {
+        TaskEdits.start();
+        final var downloaded = new Node(LatLon.ZERO);
+        downloaded.setOsmId(1, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(downloaded);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testEditsWhileStarted", null));
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(downloaded, "amenity", "bench"));
+        sync();
+        assertEquals(0, TaskEdits.count(), "Edited before the task was started");
+
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        final var other = new Node(LatLon.NORTH_POLE);
+        other.setOsmId(2, 1);
+        dataSet.addPrimitive(other);
+        assertEquals(0, TaskEdits.count(), "A downloaded object is not an edit");
+
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(other, "backrest", "yes"));
+        assertEquals(1, TaskEdits.count());
+        assertTrue(TaskEdits.touches(List.of(other)));
+        assertFalse(TaskEdits.touches(List.of(downloaded)), "The edit before Start is not the task's");
+
+        UndoRedoHandler.getInstance().undo();
+        assertEquals(0, TaskEdits.count(), "An undone edit is not uploaded");
+
+        final var bench = new Node(LatLon.ZERO);
+        UndoRedoHandler.getInstance().add(new AddCommand(dataSet, bench));
+        assertEquals(1, TaskEdits.count(), "A new object is an edit");
+        assertTrue(TaskEdits.touches(List.of(bench)));
+
+        ModifiedObjects.removeLockedTask(TASK);
+        sync();
+        assertEquals(0, TaskEdits.count(), "A stopped task's edits no longer count");
+        assertFalse(TaskEdits.touches(List.of(bench)));
+    }
+
+    /**
+     * A command that edits many objects at once reaches the listener as one bulk event, and its edits count too
+     */
+    @Test
+    void testBulkEdit() {
+        TaskEdits.start();
+        final var dataSet = new DataSet();
+        final var nodes = new ArrayList<Node>();
+        for (var i = 1; i <= 40; i++) {
+            final var node = new Node(new LatLon(0, i / 1000d));
+            node.setOsmId(i, 1);
+            dataSet.addPrimitive(node);
+            nodes.add(node);
+        }
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testBulkEdit", null));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(nodes, "amenity", "bench"));
+        assertEquals(40, TaskEdits.count());
+        assertTrue(TaskEdits.touches(List.of(nodes.get(39))));
+    }
+
+    private static void sync() {
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
+    }
+}
