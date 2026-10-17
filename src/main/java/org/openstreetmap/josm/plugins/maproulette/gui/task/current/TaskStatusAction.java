@@ -330,31 +330,15 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
 
     private ModifiedTask getModifiedTask(LoadedTask loaded) {
         final var task = loaded.task();
-        final var panel = new JPanel(new GridBagLayout());
         final var comment = new JosmTextArea();
         final var tagBox = new AutoCompComboBox<String>();
         // MapRoulette can be asked for a review, but not to skip one the user's settings require
         final var reviewRequested = new JCheckBox(tr("Request Review"));
-        comment.setRows(4);
-        comment.setColumns(25);
         final var challenge = loaded.challenge();
-        if (challenge != null) {
-            if (challenge.extra().preferredTags() != null) {
-                tagBox.getModel().addAllElements(Arrays.asList(challenge.extra().preferredTags().split(",")));
-            }
-            tagBox.setEditable(!challenge.extra().limitTags());
-        } else {
-            tagBox.setEditable(true);
+        if (challenge == null) {
             ExceptionDialogUtil.explainException(loaded.challengeError());
         }
-        panel.add(comment, GBC.eol().fill(GBC.BOTH));
-        panel.add(tagBox, GBC.eol().fill(GBC.HORIZONTAL));
-        panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
-        if (this.status == TaskStatus.FIXED) {
-            // The status is sent now; the edits are not, and JOSM uploads them from its own menu
-            panel.add(new JLabel(tr("If you edited OSM data for this task, upload it with File > Upload data. The "
-                    + "changeset is linked to this task afterwards.")), GBC.eol().anchor(GBC.LINE_START));
-        }
+        final var panel = feedbackPanel(challenge, comment, tagBox, reviewRequested);
 
         var selection = ConditionalOptionPaneUtil.showOptionDialog("maproulette.task.feedback",
                 MRGuiHelper.dialogParent(), panel, tr("Task Feedback"), JOptionPane.OK_CANCEL_OPTION,
@@ -366,6 +350,42 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                     CurrentTaskPanel.getSelections(this.currentDocumentProvider.get()));
         }
         return null;
+    }
+
+    /**
+     * Lay out the task feedback dialog
+     *
+     * @param challenge       The challenge of the task, if it could be loaded
+     * @param comment         The comment field
+     * @param tagBox          The task tag field
+     * @param reviewRequested The review request checkbox
+     * @return The dialog content
+     */
+    JPanel feedbackPanel(@Nullable Challenge challenge, JosmTextArea comment, AutoCompComboBox<String> tagBox,
+            JCheckBox reviewRequested) {
+        final var panel = new JPanel(new GridBagLayout());
+        comment.setRows(4);
+        comment.setColumns(25);
+        panel.add(comment, GBC.eol().fill(GBC.BOTH));
+        // A skip only sends the comment: it sets no status, so there is nothing to tag or review
+        if (this.status != TaskStatus.SKIPPED) {
+            if (challenge != null) {
+                if (challenge.extra().preferredTags() != null) {
+                    tagBox.getModel().addAllElements(Arrays.asList(challenge.extra().preferredTags().split(",")));
+                }
+                tagBox.setEditable(!challenge.extra().limitTags());
+            } else {
+                tagBox.setEditable(true);
+            }
+            panel.add(tagBox, GBC.eol().fill(GBC.HORIZONTAL));
+            panel.add(reviewRequested, GBC.eol().anchor(GBC.LINE_START));
+        }
+        if (this.status == TaskStatus.FIXED) {
+            // The status is sent now; the edits are not, and JOSM uploads them from its own menu
+            panel.add(new JLabel(tr("If you edited OSM data for this task, upload it with File > Upload data. The "
+                    + "changeset is linked to this task afterwards.")), GBC.eol().anchor(GBC.LINE_START));
+        }
+        return panel;
     }
 
     @Override

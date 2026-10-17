@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.swing.Action;
+import javax.swing.JCheckBox;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
@@ -18,6 +19,8 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
+import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -132,6 +135,24 @@ class TaskStatusActionTest {
         assertFalse(action.confirmMarkAll(others), "No marks only the current task");
         answers.put(content, "Mark them too");
         assertTrue(action.confirmMarkAll(others), "Yes marks the others too");
+    }
+
+    /**
+     * Skip only sends the comment, so its feedback dialog has no tag box and no review request (#106)
+     */
+    @Test
+    void testSkipFeedbackOnlyAsksForComment() {
+        final var comment = new JosmTextArea();
+        final var tagBox = new AutoCompComboBox<String>();
+        final var review = new JCheckBox();
+        final var skip = new TaskStatusAction(TaskStatus.SKIPPED, () -> TASK, () -> null);
+        final var skipPanel = List.of(skip.feedbackPanel(null, comment, tagBox, review).getComponents());
+        assertTrue(skipPanel.contains(comment));
+        assertFalse(skipPanel.contains(tagBox));
+        assertFalse(skipPanel.contains(review));
+        final var fixed = new TaskStatusAction(TaskStatus.FIXED, () -> TASK, () -> null);
+        final var fixedPanel = List.of(fixed.feedbackPanel(null, comment, tagBox, review).getComponents());
+        assertTrue(fixedPanel.containsAll(List.of(comment, tagBox, review)));
     }
 
     private static Task task(long id) {
