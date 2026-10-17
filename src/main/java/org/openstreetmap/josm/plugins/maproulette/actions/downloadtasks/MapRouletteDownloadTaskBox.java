@@ -23,6 +23,7 @@ import org.openstreetmap.josm.gui.progress.ProgressTaskId;
 import org.openstreetmap.josm.io.OsmApiException;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -105,6 +106,8 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
         @Override
         protected void realRun() throws IOException, OsmTransferException {
             try {
+                // Before merging: the user's own locks are not other mappers' locks
+                MapRouletteAuth.lookUpUser();
                 tasks = mergeLockRows(TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(),
                         bounds.getMaxLat(), 1_000, 0, null, null, false));
                 final var challenges = Arrays.stream(tasks).mapToLong(TaskClusteredPoint::parentId).distinct()

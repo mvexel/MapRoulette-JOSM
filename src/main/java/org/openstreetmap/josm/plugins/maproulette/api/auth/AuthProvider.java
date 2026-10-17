@@ -2,9 +2,11 @@
 package org.openstreetmap.josm.plugins.maproulette.api.auth;
 
 import java.util.Collections;
+import java.util.OptionalLong;
 import java.util.Set;
 
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.tools.HttpClient;
 
 /**
@@ -80,5 +82,25 @@ public interface AuthProvider {
      */
     default boolean onUnauthorized(HttpClient failed) {
         return false;
+    }
+
+    /**
+     * Get the MapRoulette id of the logged-in user. The first call after a login asks MapRoulette, so call it off the
+     * EDT.
+     *
+     * @return The id, or empty if nobody is logged in
+     * @throws MapRouletteException if MapRoulette could not be asked
+     */
+    default OptionalLong userId() throws MapRouletteException {
+        return OptionalLong.empty();
+    }
+
+    /**
+     * Get the MapRoulette id of the logged-in user if {@link #userId()} has looked it up already. This does no IO.
+     *
+     * @return The id, or empty if it is not known
+     */
+    default OptionalLong knownUserId() {
+        return OptionalLong.empty();
     }
 }

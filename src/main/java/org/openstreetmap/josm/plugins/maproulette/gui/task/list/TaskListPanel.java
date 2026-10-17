@@ -197,7 +197,11 @@ public final class TaskListPanel extends JPanel
         final var downloadButton = new SideButton(downloadAction);
         final var lockUnlockAction = new LockUnlockTaskAction(table);
         final var lockUnlockButton = new SideButton(lockUnlockAction);
-        this.authListener = lockUnlockAction::updateEnabledState;
+        this.authListener = () -> {
+            lockUnlockAction.updateEnabledState();
+            // Whose locks are the user's own depends on the login
+            table.repaint();
+        };
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         // A lock can also be dropped elsewhere (the current task's status, a server switch), which changes Stop
         this.lockListener = () -> {
