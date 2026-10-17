@@ -38,6 +38,7 @@ import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
@@ -190,6 +191,36 @@ class LockUnlockTaskActionTest {
             wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/125/release")));
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
             assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Stop works on the started task when no row is selected, so it can be stopped from anywhere (#108)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStopWithoutSelectionStopsStartedTask() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        final var task = TaskAPI.get(132279499L);
+        ModifiedObjects.addLockedTask(task);
+        try {
+            this.table.clearSelection();
+            final var action = new LockUnlockTaskAction(this.table);
+            action.updateEnabledState();
+            assertTrue(action.isEnabled(), "Stop is enabled with no selection");
+            assertEquals("Stop Task", action.getValue(Action.NAME));
+            GuiHelper.runInEDTAndWait(() -> action.actionPerformed(null));
+            sync();
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            action.updateEnabledState();
+            assertFalse(action.isEnabled(), "Nothing left to stop");
         } finally {
             cleanUp();
         }
