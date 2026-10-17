@@ -43,6 +43,7 @@ import org.openstreetmap.josm.io.auth.CredentialsManager;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
@@ -174,6 +175,37 @@ class OAuthAuthProviderTest {
                         AuthProvider.Capability.COMMENT, AuthProvider.Capability.REFRESH_LOCK),
                 provider.capabilities());
         assertTrue(provider().isAvailable(), "The login is kept for the next JOSM session");
+    }
+
+    /**
+     * Every login control shows a login waiting for the browser, and a second one does not start (#111)
+     */
+    @Test
+    void testOneLogInAtATime() throws Exception {
+        stubToken("authorization_code", ACCESS_1, REFRESH_1);
+        final var self = new AtomicReference<OAuthAuthProvider>();
+        final var during = new AtomicReference<Boolean>();
+        final var second = new AtomicReference<Exception>();
+        final var provider = new OAuthAuthProvider(this.root, new OAuthAuthProvider.Authorizer() {
+            @Override
+            public String authorize(URI authorizeUri, String state) {
+                during.set(self.get().isLoggingIn());
+                second.set(assertThrows(MapRouletteException.class, self.get()::logIn));
+                return FakeBrowser.CODE;
+            }
+
+            @Override
+            public void cancel() {
+                // Nothing waits
+            }
+        }, this.clock);
+        self.set(provider);
+        assertFalse(provider.isLoggingIn());
+        provider.logIn();
+        assertAll(() -> assertTrue(during.get(), "The login is in progress while the browser is open"),
+                () -> assertNotNull(second.get(), "A second login does not start"),
+                () -> assertFalse(provider.isLoggingIn(), "The login is over"),
+                () -> assertTrue(provider.isAvailable()));
     }
 
     @Test

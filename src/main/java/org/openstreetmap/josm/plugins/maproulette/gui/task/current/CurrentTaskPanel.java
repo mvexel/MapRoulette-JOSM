@@ -91,6 +91,7 @@ public final class CurrentTaskPanel extends JPanel {
      * Opens the task on the MapRoulette website
      */
     private final OpenOnMapRouletteAction openAction = new OpenOnMapRouletteAction(() -> this.task);
+    private final JButton openButton = new JButton(this.openAction);
     /**
      * The panel for instructions
      */
@@ -149,11 +150,15 @@ public final class CurrentTaskPanel extends JPanel {
         this.instructionPane.enableClickableHyperlinks();
         // The header stays in place while the instructions scroll
         final var header = new JPanel(new GridBagLayout());
-        this.challengeLabel.setFont(this.challengeLabel.getFont().deriveFont(Font.BOLD));
+        // The task name is what people look for; the challenge above it is context
+        final var font = this.nameLabel.getFont();
+        this.challengeLabel.setFont(font.deriveFont(font.getSize2D() * 0.9f));
+        this.challengeLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
+        this.nameLabel.setFont(font.deriveFont(Font.BOLD, font.getSize2D() * 1.2f));
         header.add(this.challengeLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 0));
         header.add(this.nameLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
-        header.add(new JButton(this.openAction), GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
+        header.add(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
         this.add(header, BorderLayout.NORTH);
         final var gbc = GBC.eol();
         this.panel.add(new JLabel(tr("Instructions: ")), gbc);
@@ -293,9 +298,10 @@ public final class CurrentTaskPanel extends JPanel {
         this.openAction.updateEnabledState();
         if (currentTask == null) {
             this.instructionPending = false;
-            this.challengeLabel.setText(tr("No current task"));
-            this.nameLabel.setText(null);
+            this.challengeLabel.setText(null);
+            this.nameLabel.setText(tr("No current task"));
             this.idLabel.setText(null);
+            this.openButton.setVisible(false);
             this.instructionPane.setText(tr("Start a task from the list to work on it here."));
             this.cooperativeWork.setVisible(false);
             return;
@@ -304,6 +310,7 @@ public final class CurrentTaskPanel extends JPanel {
                 .orElseGet(() -> tr("Challenge {0}", currentTask.parentId())));
         this.nameLabel.setText(currentTask.name());
         this.idLabel.setText(tr("Task {0}", currentTask.id()));
+        this.openButton.setVisible(true);
 
         // Checked before building the text, so a challenge arriving in between still triggers a refresh
         this.instructionPending = Utils.isStripEmpty(currentTask.instruction())

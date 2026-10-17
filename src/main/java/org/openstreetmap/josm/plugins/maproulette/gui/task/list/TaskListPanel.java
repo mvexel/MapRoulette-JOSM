@@ -98,6 +98,10 @@ public final class TaskListPanel extends JPanel
      */
     private final Runnable authListener;
     /**
+     * Re-evaluates Start/Stop and the empty state when the started tasks change
+     */
+    private final Runnable lockListener;
+    /**
      * Re-sorts, re-filters and repaints the list when a challenge arrives in the background
      */
     private final Runnable challengeListener;
@@ -113,6 +117,10 @@ public final class TaskListPanel extends JPanel
      * Shows the table, or the empty state while no tasks are loaded
      */
     private final JPanel cards = new JPanel(new CardLayout());
+    /**
+     * The buttons below the list, hidden with the empty state: it has its own buttons
+     */
+    private final JPanel buttons;
 
     /**
      * Create a new task list panel
@@ -130,7 +138,11 @@ public final class TaskListPanel extends JPanel
         this.authListener = lockUnlockAction::updateEnabledState;
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         // A lock can also be dropped elsewhere (the current task's status, a server switch), which changes Stop
-        ModifiedObjects.addLockListener(this.authListener);
+        this.lockListener = () -> {
+            lockUnlockAction.updateEnabledState();
+            updateTitle();
+        };
+        ModifiedObjects.addLockListener(this.lockListener);
         final var browseAction = new OpenInBrowserAction(table);
         final var tableRowSorter = new TableRowSorter<>(model);
         this.challengeListener = () -> {
@@ -215,7 +227,8 @@ public final class TaskListPanel extends JPanel
         this.cards.add(GuiHelper.embedInVerticalScrollPane(panel), TABLE_CARD);
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
         this.add(this.cards, BorderLayout.CENTER);
-        this.add(MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton))), BorderLayout.SOUTH);
+        this.buttons = MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton)));
+        this.add(this.buttons, BorderLayout.SOUTH);
         this.model.addTableModelListener(e -> updateTitle());
         tableRowSorter.addRowSorterListener(e -> updateTitle());
         updateTitle();
@@ -294,7 +307,10 @@ public final class TaskListPanel extends JPanel
                 hidden > 0 ? tr("Tasks · {0} in view · {1} hidden", shown, hidden) : tr("Tasks · {0} in view", shown));
         final var hasLayer = !MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
                 .isEmpty();
-        ((CardLayout) this.cards.getLayout()).show(this.cards, total == 0 && !hasLayer ? EMPTY_CARD : TABLE_CARD);
+        // A started task keeps the list, even without tasks, so the panel never says nothing is loaded next to it
+        final var empty = total == 0 && !hasLayer && ModifiedObjects.getLockedTasks().isEmpty();
+        ((CardLayout) this.cards.getLayout()).show(this.cards, empty ? EMPTY_CARD : TABLE_CARD);
+        this.buttons.setVisible(!empty);
     }
 
     /**
@@ -308,7 +324,7 @@ public final class TaskListPanel extends JPanel
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
         HiddenList.removeListUpdater(this.hiddenTest);
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
-        ModifiedObjects.removeLockListener(this.authListener);
+        ModifiedObjects.removeLockListener(this.lockListener);
         ChallengeCache.removeListener(this.challengeListener);
     }
 

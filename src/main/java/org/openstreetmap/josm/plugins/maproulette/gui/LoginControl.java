@@ -22,10 +22,6 @@ public final class LoginControl {
     private final JButton button = new JButton();
     private final Runnable authListener = this::update;
     private final boolean compact;
-    /**
-     * The login started from this control, if it is still waiting for the browser
-     */
-    private volatile OAuthAuthProvider loggingIn;
     private volatile String error;
     private boolean listening;
 
@@ -87,12 +83,11 @@ public final class LoginControl {
         if (provider == null) {
             return;
         }
-        if (this.loggingIn != null) {
-            this.loggingIn.cancelLogIn();
+        if (provider.isLoggingIn()) {
+            provider.cancelLogIn();
         } else if (provider.isAvailable()) {
             MainApplication.worker.execute(provider::logOut);
         } else {
-            this.loggingIn = provider;
             this.error = null;
             // The login waits for the browser, so it gets its own thread instead of blocking JOSM's worker
             final var thread = new Thread(() -> logIn(provider), "MapRoulette login");
@@ -111,7 +106,6 @@ public final class LoginControl {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
-            this.loggingIn = null;
             GuiHelper.runInEDT(this::update);
         }
     }
@@ -122,15 +116,16 @@ public final class LoginControl {
     void update() {
         final var provider = provider();
         if (provider == null) {
-            this.status.setText(this.compact ? tr("No login from JOSM")
-                    : tr("The MapRoulette server {0} does not accept logins from JOSM.",
-                            MapRouletteConfig.getBaseUrl()));
+            final var noLogin = tr("The MapRoulette server {0} does not accept logins from JOSM.",
+                    MapRouletteConfig.getBaseUrl());
+            this.status.setText(this.compact ? tr("Login not available") : noLogin);
+            this.status.setToolTipText(this.compact ? noLogin : null);
             this.button.setVisible(false);
             return;
         }
         this.button.setVisible(true);
         final String text;
-        if (this.loggingIn != null) {
+        if (provider.isLoggingIn()) {
             text = this.compact ? tr("Waiting for the browser…")
                     : tr("Log in to MapRoulette in your browser, then come back here.");
             this.button.setText(tr("Cancel login"));
@@ -139,7 +134,7 @@ public final class LoginControl {
             this.button.setText(tr("Log out"));
         } else {
             text = this.compact ? tr("Not logged in") : tr("Not logged in to {0}.", provider.server());
-            this.button.setText(tr("Log in"));
+            this.button.setText(tr("Log in…"));
         }
         final var lastError = this.error;
         this.status.setText(lastError == null || this.compact ? text : text + ' ' + lastError);

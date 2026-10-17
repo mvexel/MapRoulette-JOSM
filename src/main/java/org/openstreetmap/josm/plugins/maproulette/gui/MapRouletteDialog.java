@@ -14,6 +14,7 @@ import java.util.Collections;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
+import javax.swing.Timer;
 
 import org.openstreetmap.josm.data.preferences.IntegerProperty;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -51,6 +52,10 @@ public final class MapRouletteDialog extends ToggleDialog {
      * The lower part of the panel. The current task is its only card for now; a review mode can get its own.
      */
     private final JPanel lower = new JPanel(new CardLayout());
+    /**
+     * Saves the divider position once it stops moving: each preference change writes the preferences file
+     */
+    private final Timer saveDivider;
 
     /**
      * Create a new MapRoulette panel
@@ -75,8 +80,9 @@ public final class MapRouletteDialog extends ToggleDialog {
         if (DIVIDER_LOCATION.get() >= 0) {
             split.setDividerLocation(DIVIDER_LOCATION.get());
         }
-        split.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY,
-                e -> DIVIDER_LOCATION.put(split.getDividerLocation()));
+        this.saveDivider = new Timer(1000, e -> DIVIDER_LOCATION.put(split.getDividerLocation()));
+        this.saveDivider.setRepeats(false);
+        split.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> this.saveDivider.restart());
 
         final var content = new JPanel(new BorderLayout());
         content.add(header, BorderLayout.NORTH);
@@ -117,13 +123,10 @@ public final class MapRouletteDialog extends ToggleDialog {
     }
 
     /**
-     * Show the current task, opening the panel if it is closed
+     * Show the current task in the lower part of the panel. This does not open a closed panel.
      */
     public void showTask() {
         ((CardLayout) this.lower.getLayout()).show(this.lower, TASK_CARD);
-        if (!this.isShowing) {
-            this.toggleAction.actionPerformed(null);
-        }
     }
 
     private void updateServer() {
@@ -138,6 +141,10 @@ public final class MapRouletteDialog extends ToggleDialog {
 
     @Override
     public void destroy() {
+        if (this.saveDivider.isRunning()) {
+            this.saveDivider.stop();
+            this.saveDivider.getActionListeners()[0].actionPerformed(null);
+        }
         this.taskList.destroy();
         this.currentTask.destroy();
         this.login.detach();

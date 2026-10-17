@@ -16,7 +16,9 @@ import javax.swing.JLabel;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
@@ -67,6 +69,9 @@ class MapRouletteDialogTest {
             assertTrue(empty.getParent().isVisible(), "The empty state should show while no tasks are loaded");
             assertFalse(TaskListPanelTest.getFilterField(panel).getParent().getParent().getParent().isVisible(),
                     "The table should be hidden while no tasks are loaded");
+            assertFalse(TaskListPanelTest
+                    .find(panel, SideButton.class, b -> b.getAction() == TaskListPanelTest.getDownloadAction(panel))
+                    .getParent().getParent().isVisible(), "The empty state has its own buttons");
         } finally {
             panel.destroy();
         }
@@ -89,6 +94,53 @@ class MapRouletteDialogTest {
             assertNotNull(TaskListPanelTest.find(panel, JLabel.class, l -> "Bench 27".equals(l.getText())));
             assertEquals("Challenge 1", ((JLabel) ((Container) panel.getComponent(0)).getComponent(0)).getText(),
                     "The challenge is not cached, so its id is shown");
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * A started task keeps the list, so the panel never says nothing is loaded next to the current task (#111)
+     */
+    @Test
+    void testNoEmptyStateWithStartedTask() {
+        final var panel = new TaskListPanel();
+        final var task = new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            ModifiedObjects.addLockedTask(task);
+            GuiHelper.runInEDTAndWait(() -> {
+                /* The lock listener runs on the EDT */ });
+            assertFalse(TaskListPanelTest.find(panel, JLabel.class, l -> "No tasks loaded yet".equals(l.getText()))
+                    .getParent().isVisible());
+            ModifiedObjects.removeLockedTask(task);
+            GuiHelper.runInEDTAndWait(() -> {
+                /* The lock listener runs on the EDT */ });
+            assertTrue(TaskListPanelTest.find(panel, JLabel.class, l -> "No tasks loaded yet".equals(l.getText()))
+                    .getParent().isVisible());
+        } finally {
+            ModifiedObjects.forgetAll();
+            panel.destroy();
+        }
+    }
+
+    /**
+     * Showing a task without focus, for example after a status change, does not reopen a closed panel
+     */
+    @Test
+    void testRefreshKeepsPanelClosed() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testRefresh", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            if (dialog.isDialogShowing()) {
+                dialog.hideDialog();
+            }
+            final var task = new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                    new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null,
+                    "");
+            CurrentTaskPanel.show(task, false);
+            assertFalse(dialog.isDialogShowing());
         } finally {
             MainApplication.getMap().removeToggleDialog(dialog);
         }
