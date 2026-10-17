@@ -266,22 +266,20 @@ public final class CurrentTaskPanel extends JPanel {
         this.finishCards.add(finishButton, FINISH_CARD);
         this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
         south.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
-        // Wraps in a narrow panel
-        final var uploadHint = new JMultilineLabel("<html>"
-                + Utils.escapeReservedCharactersHTML(
-                        tr("Edited the map? Upload here or with File > Upload data, and the task is finished."))
-                + "</html>");
+        // Wraps in a narrow panel. It renders HTML, which ignores setForeground, so the grey goes into the text.
+        final var hintColor = Optional.ofNullable(UIManager.getColor("Label.disabledForeground")).orElse(Color.GRAY);
+        final var uploadHint = new JMultilineLabel(String.format("<html><span style=\"color:#%06x\">%s</span></html>",
+                hintColor.getRGB() & 0xFFFFFF, Utils.escapeReservedCharactersHTML(
+                        tr("Edited the map? Upload here or with File > Upload data, and the task is finished."))));
         uploadHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
-        uploadHint.setForeground(UIManager.getColor("Label.disabledForeground"));
         south.add(uploadHint, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 4));
         final var noEdit = new JLabel(tr("Nothing to edit?"));
         noEdit.setFont(font.deriveFont(Font.BOLD));
         south.add(noEdit, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(
-                MRGuiHelper.buttonRows(List.of(
-                        List.of(new SideButton(newActions[0]), new SideButton(newActions[1]),
-                                new SideButton(newActions[2])),
-                        List.of(new SideButton(newActions[3]), new SideButton(newActions[5])))),
+        south.add(MRGuiHelper.buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
+                // An empty cell keeps Can't Complete as wide as the others
+                List.of(new SideButton(newActions[2]), new JPanel()),
+                List.of(new SideButton(newActions[3]), new SideButton(newActions[5])))),
                 GBC.eol().fill(GBC.HORIZONTAL));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
