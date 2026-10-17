@@ -67,6 +67,10 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
         this.challengeSize = challengeSize;
         this.from = from;
         this.names = names;
+        // Task and challenge names come from challenge authors: show them as text, never as HTML
+        for (var label : new JLabel[] { this.header, this.name, this.chip, this.details }) {
+            label.putClientProperty("html.disable", Boolean.TRUE);
+        }
         this.header.setOpaque(true);
         this.header.setBackground(HEADER_BACKGROUND);
         this.header.setForeground(HEADER_FOREGROUND);

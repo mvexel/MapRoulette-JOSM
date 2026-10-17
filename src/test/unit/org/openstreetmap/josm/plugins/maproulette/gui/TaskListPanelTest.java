@@ -179,6 +179,11 @@ public class TaskListPanelTest {
             final var tooltip = ((JComponent) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0))
                     .getToolTipText();
             assertTrue(tooltip.contains("Missing sidewalks"), "The row tooltip names the challenge: " + tooltip);
+            final var labels = new ArrayList<JLabel>();
+            collectLabels((Container) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0), labels);
+            assertFalse(labels.isEmpty());
+            assertTrue(labels.stream().allMatch(l -> Boolean.TRUE.equals(l.getClientProperty("html.disable"))),
+                    "Names from MapRoulette are never rendered as HTML");
             final var showAll = find(panel, JButton.class, b -> "Show all".equals(b.getText()));
             final var footer = (JLabel) showAll.getParent().getComponent(0);
             assertFalse(footer.getParent().isVisible());
@@ -197,6 +202,16 @@ public class TaskListPanelTest {
             assertEquals(1, table.getRowCount(), "The text filter searches the challenge name");
         } finally {
             panel.destroy();
+        }
+    }
+
+    private static void collectLabels(Container container, List<JLabel> labels) {
+        for (var component : container.getComponents()) {
+            if (component instanceof JLabel label) {
+                labels.add(label);
+            } else if (component instanceof Container child) {
+                collectLabels(child, labels);
+            }
         }
     }
 
