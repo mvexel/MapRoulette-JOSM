@@ -27,6 +27,7 @@ import java.util.function.LongPredicate;
 import java.util.regex.Pattern;
 
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
@@ -225,6 +226,7 @@ public final class TaskListPanel extends JPanel
         filterLabel.setLabelFor(this.filterField);
         this.filterField.setToolTipText(tr("Name, street, task id"));
         filters.add(challengeLabel, GBC.std().insets(4, 2, 4, 2));
+        this.challengeFilter.setRenderer(new PlainTextRenderer());
         filters.add(this.challengeFilter, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
         filters.add(filterLabel, GBC.std().insets(4, 2, 4, 2));
         filters.add(this.filterField, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
@@ -701,6 +703,18 @@ public final class TaskListPanel extends JPanel
      * @param id    The challenge id, or -1 for all challenges
      * @param label The text to show
      */
+    /**
+     * Shows the challenge names, which come from challenge authors, as text, never as HTML
+     */
+    private static final class PlainTextRenderer extends DefaultListCellRenderer {
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        PlainTextRenderer() {
+            putClientProperty("html.disable", Boolean.TRUE);
+        }
+    }
+
     private record ChallengeChoice(long id, String label) {
         @Override
         public String toString() {

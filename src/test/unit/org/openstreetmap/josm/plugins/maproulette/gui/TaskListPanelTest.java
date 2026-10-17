@@ -184,6 +184,8 @@ public class TaskListPanelTest {
             assertFalse(labels.isEmpty());
             assertTrue(labels.stream().allMatch(l -> Boolean.TRUE.equals(l.getClientProperty("html.disable"))),
                     "Names from MapRoulette are never rendered as HTML");
+            assertEquals(Boolean.TRUE, ((JComponent) challenges.getRenderer()).getClientProperty("html.disable"),
+                    "Challenge names in the filter are never rendered as HTML");
             final var showAll = find(panel, JButton.class, b -> "Show all".equals(b.getText()));
             final var footer = (JLabel) showAll.getParent().getComponent(0);
             assertFalse(footer.getParent().isVisible());
