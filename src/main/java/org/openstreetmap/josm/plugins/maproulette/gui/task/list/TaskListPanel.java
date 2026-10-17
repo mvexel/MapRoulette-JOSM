@@ -1,7 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
-import static org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getBaseUrl;
 import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
@@ -55,6 +54,7 @@ import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
+import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.widgets.DefaultPanelListCellRenderer;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
@@ -334,17 +334,19 @@ public final class TaskListPanel extends ToggleDialog
                 for (int index : this.table.getSelectedRows()) {
                     final var i = this.table.getRowSorter().convertRowIndexToModel(index);
                     final var task = model.get(i);
-                    final var url = getBaseUrl().replace("api/v2", "") + "challenge/" + task.parentId() + "/task/"
-                            + task.id();
-                    OpenBrowser.displayUrl(url);
+                    MapRouletteServerPreference.getTaskUrl(task.parentId(), task.id())
+                            .ifPresent(OpenBrowser::displayUrl);
                 }
             }
         }
 
         @Override
         protected void updateEnabledState() {
-            this.setEnabled(this.table != null && this.table.getSelectedRowCount() < 10
+            final var hasWebsite = MapRouletteServerPreference.getWebsiteUrl().isPresent();
+            this.setEnabled(hasWebsite && this.table != null && this.table.getSelectedRowCount() < 10
                     && this.table.getSelectedRowCount() > 0);
+            this.putValue(SHORT_DESCRIPTION, hasWebsite ? tr("Open MapRoulette Tasks on the MapRoulette website")
+                    : tr("Set the MapRoulette website URL in the MapRoulette server preferences to open tasks there"));
         }
     }
 
