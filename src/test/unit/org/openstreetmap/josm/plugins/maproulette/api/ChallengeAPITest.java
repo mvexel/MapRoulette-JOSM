@@ -7,10 +7,14 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -38,5 +42,36 @@ class ChallengeAPITest {
         ChallengeAPI.tasksNearby(28467, 134808786, excludeSelfLocked, 5, 0);
         wireMock.verifyThat(getRequestedFor(urlPathEqualTo(path)).withQueryParam("excludeSelfLocked",
                 excludeSelfLocked ? equalTo("true") : absent()));
+    }
+
+    /**
+     * The open tasks come from /challenge/clustered/:id, which answers with the same points as the task box. The body is
+     * a recorded response of the box route (#134).
+     */
+    @Test
+    void testOpenTasks() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var path = "/api/v2/challenge/clustered/15318";
+        wireMock.register(get(urlPathEqualTo(path)).willReturn(aResponse().withStatus(200).withBody(Files.readString(
+                Path.of("src/test/resources/__files/api/v2/tasks/box/-119.1139411/36.0770518/-119.0992458/36.0839216")))));
+        final var tasks = ChallengeAPI.openTasks(15318);
+        assertEquals(4, tasks.length);
+        wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo(path)).withQueryParam("filter", equalTo("0"))
+                .withQueryParam("limit", equalTo(Integer.toString(ChallengeAPI.TASK_LIMIT))));
+    }
+
+    /**
+     * A response in another shape, like the GeoJSON export of /challenge/view, is an IOException the download task
+     * reports, never a runtime exception that opens the bug report dialog (#134)
+     */
+    @Test
+    void testOpenTasksRejectsGeoJson() {
+        WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/clustered/15318"))
+                .willReturn(aResponse().withStatus(200).withBody("""
+                        {"type": "FeatureCollection", "features": [{"type": "Feature",
+                          "geometry": {"type": "Point", "coordinates": [1, 2]},
+                          "properties": {"mr_taskId": 1, "mr_taskStatus": "Created"}}]}
+                        """)));
+        assertThrows(IOException.class, () -> ChallengeAPI.openTasks(15318));
     }
 }
