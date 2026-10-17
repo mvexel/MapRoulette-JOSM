@@ -11,10 +11,10 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.jcs3.access.CacheAccess;
 import org.openstreetmap.josm.data.cache.JCSCacheManager;
-import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.ChallengeAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
@@ -93,7 +93,7 @@ public final class ChallengeCache {
         if (!start[0]) {
             return;
         }
-        MainApplication.worker.execute(() -> {
+        final boolean queued = Workers.tryExecute(() -> {
             try {
                 challenge(id);
                 PENDING.remove(id);
@@ -108,6 +108,10 @@ public final class ChallengeCache {
                 }
             }
         });
+        if (!queued) {
+            // JOSM is quitting
+            PENDING.remove(id);
+        }
     }
 
     /**

@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.util;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.CountDownLatch;
@@ -34,5 +36,23 @@ class WorkersTest {
             throw new IllegalStateException(message);
         });
         assertTrue(reported.await(10, TimeUnit.SECONDS));
+    }
+
+    /**
+     * While JOSM quits, the worker refuses jobs: they are dropped instead of failing the caller (B2)
+     */
+    @Test
+    void testRefusedJobIsDropped() {
+        try (var quitting = new QuittingWorker()) {
+            assertFalse(Workers.tryExecute(() -> {
+                // Never runs
+            }));
+            assertDoesNotThrow(() -> Workers.execute(() -> {
+                // Never runs
+            }));
+        }
+        assertTrue(Workers.tryExecute(() -> {
+            // Runs on the worker again
+        }));
     }
 }

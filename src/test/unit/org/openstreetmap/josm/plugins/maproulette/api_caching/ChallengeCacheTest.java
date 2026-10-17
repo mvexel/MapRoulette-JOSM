@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.api_caching;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.QuittingWorker;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.HttpClient;
@@ -84,5 +86,33 @@ class ChallengeCacheTest {
             ChallengeCache.removeListener(listener);
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
         }
+    }
+
+    /**
+     * Quitting JOSM shuts the worker down before it removes the layers, whose listeners and repaints ask for challenges.
+     * That must not throw, or JOSM can't quit (B2). Once the worker takes jobs again, the challenge is fetched.
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testIsHiddenWhileQuitting() throws Exception {
+        final long id = 990_134L;
+        try (var quitting = new QuittingWorker()) {
+            assertFalse(ChallengeCache.isHidden(id));
+            assertFalse(ChallengeCache.cached(id).isPresent());
+        }
+        WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/" + id))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody(Files.readString(
+                        Paths.get("src/test/resources/__files/api/v2/challenge/15318"), StandardCharsets.UTF_8))));
+        // Not left pending: the refused fetch is tried again
+        ChallengeCache.cached(id);
+        final var fetched = new CountDownLatch(1);
+        org.openstreetmap.josm.gui.MainApplication.worker.execute(fetched::countDown);
+        assertTrue(fetched.await(10, TimeUnit.SECONDS));
+        // The listeners run on the EDT and may queue fetches of their own: let them finish within this test
+        GuiHelper.runInEDTAndWait(() -> {
+            // Sync
+        });
+        WireMocks.current().verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/challenge/" + id)));
     }
 }
