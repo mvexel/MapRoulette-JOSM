@@ -386,6 +386,6 @@ final class LockUnlockTaskAction extends JosmAction {
         putValue("lock", false);
         this.putValue(NAME, tr("Stop Task"));
         this.setTooltip(tr("Stop MapRoulette Tasks"));
-        new ImageProvider("save").getResource().attachImageIcon(this);
+        new ImageProvider("presets/vehicle/restriction/stop").getResource().attachImageIcon(this);
     }
 }

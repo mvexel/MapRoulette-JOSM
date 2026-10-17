@@ -5,9 +5,11 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
 import java.awt.Dialog;
+import java.awt.GridLayout;
 import java.awt.KeyboardFocusManager;
 import java.awt.Window;
 import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -15,9 +17,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import javax.swing.JPanel;
+
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.markdown.SelectParser;
@@ -125,5 +130,22 @@ public final class MRGuiHelper {
         // the dialog with it
         return active != null && active.isShowing() && !(active instanceof Dialog dialog && dialog.isModal()) ? active
                 : MainApplication.getMainFrame();
+    }
+
+    /**
+     * Lay out buttons in rows of equal width buttons, like the buttons of a {@link
+     * org.openstreetmap.josm.gui.dialogs.ToggleDialog}
+     *
+     * @param rows The buttons of each row
+     * @return The panel with the rows
+     */
+    public static JPanel buttonRows(List<List<SideButton>> rows) {
+        final var panel = new JPanel(new GridLayout(rows.size(), 1));
+        for (var row : rows) {
+            final var rowPanel = new JPanel(new GridLayout(1, row.size()));
+            row.forEach(rowPanel::add);
+            panel.add(rowPanel);
+        }
+        return panel;
     }
 }

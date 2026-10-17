@@ -5,6 +5,8 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -164,6 +166,28 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
         final var server = MapRouletteConfig.getInstance() == null ? MAPROULETTE_URL.get()
                 : MapRouletteConfig.getBaseUrl();
         return MAPROULETTE_URL.getDefaultValue().equals(server) ? Optional.of(DEFAULT_WEBSITE_URL) : Optional.empty();
+    }
+
+    /**
+     * Get a short name for the current server, for the panel header
+     *
+     * @return Production, Dev or Staging for the known servers, otherwise the host
+     */
+    public static String getServerName() {
+        final var server = MapRouletteConfig.getInstance() == null ? MAPROULETTE_URL.get()
+                : MapRouletteConfig.getBaseUrl();
+        final String host;
+        try {
+            host = Objects.requireNonNullElse(new URI(server).getHost(), server);
+        } catch (URISyntaxException e) {
+            return server;
+        }
+        return switch (host) {
+        case "maproulette.org" -> tr("Production");
+        case "mr-api.osm.lol" -> tr("Dev");
+        case "mr-stage.osm.lol" -> tr("Staging");
+        default -> host;
+        };
     }
 
     /**
