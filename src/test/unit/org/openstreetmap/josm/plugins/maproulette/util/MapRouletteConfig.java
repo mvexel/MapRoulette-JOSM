@@ -15,6 +15,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.common.FileSource;
@@ -26,16 +28,21 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.github.tomakehurst.wiremock.verification.LoggedRequest;
+import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.platform.commons.util.ReflectionUtils;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.testutils.annotations.HTTP;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
+import org.openstreetmap.josm.tools.Logging;
 
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@ExtendWith(MapRouletteConfig.Extension.class)
+// Extensions run their afterEach in reverse order, so the worker drains before WireMock stops
+@ExtendWith({ MapRouletteConfig.Extension.class, MapRouletteConfig.WorkerDrain.class })
 @HTTP
 @OsmUser
 public @interface MapRouletteConfig {
@@ -78,6 +85,22 @@ public @interface MapRouletteConfig {
                 instance.set(null, null);
             } catch (ReflectiveOperationException exception) {
                 throw new JosmRuntimeException(exception);
+            }
+        }
+    }
+
+    /**
+     * Let background requests (such as a challenge prefetch) finish against this test's server. A request still open
+     * when WireMock stops hangs until its read timeout and blocks the worker for the tests that follow.
+     */
+    class WorkerDrain implements AfterEachCallback {
+        @Override
+        public void afterEach(ExtensionContext context) throws Exception {
+            try {
+                MainApplication.worker.submit(() -> {
+                    /* Sync worker */ }).get(10, TimeUnit.SECONDS);
+            } catch (TimeoutException timeoutException) {
+                Logging.warn("The worker is still busy after " + context.getDisplayName());
             }
         }
     }

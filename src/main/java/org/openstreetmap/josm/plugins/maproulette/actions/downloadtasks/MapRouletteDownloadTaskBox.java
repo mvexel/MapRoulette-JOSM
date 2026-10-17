@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -23,9 +23,9 @@ import org.openstreetmap.josm.gui.progress.ProgressTaskId;
 import org.openstreetmap.josm.io.OsmApiException;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
-import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
@@ -66,23 +66,20 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
     }
 
     /**
-     * Remove the tasks that someone else has locked, since starting them fails (#46). MapRoulette hides tasks locked by
-     * others, but not the members of a bundle someone else locked; for those, and for tasks a reviewer claimed, it
-     * reports the holder in {@code lockedBy}. A task can be listed once per lock, so the duplicates are merged.
+     * Merge the rows MapRoulette sends for one task. A task can be listed once per lock: MapRoulette reports the holder
+     * of a bundle lock or a reviewer claim in {@code lockedBy}. The row with someone else's lock wins, so the task list
+     * shows the task as locked (#46, #112).
      *
      * @param points The tasks from MapRoulette
-     * @return The tasks that are not locked, or locked by this user
+     * @return One row per task, in the order of first appearance
      */
-    static ClusteredPoint[] withoutLockedByOthers(ClusteredPoint[] points) {
-        // Without a MapRoulette login the user id is unknown, so the tasks this plugin started count as the user's
-        final var mine = ModifiedObjects.getLockedTasks().stream().mapToLong(Task::id).boxed()
-                .collect(Collectors.toSet());
-        final var locked = Arrays.stream(points).filter(p -> p.lockedBy() != null).map(ClusteredPoint::id)
-                .collect(Collectors.toSet());
-        locked.removeAll(mine);
-        final var seen = new HashSet<Long>();
-        return Arrays.stream(points).filter(p -> !locked.contains(p.id()) && seen.add(p.id()))
-                .toArray(ClusteredPoint[]::new);
+    static ClusteredPoint[] mergeLockRows(ClusteredPoint[] points) {
+        final var merged = new LinkedHashMap<Long, ClusteredPoint>();
+        for (var point : points) {
+            merged.merge(point.id(), point, (first, second) -> !ModifiedObjects.isLockedByOther(first)
+                    && ModifiedObjects.isLockedByOther(second) ? second : first);
+        }
+        return merged.values().toArray(ClusteredPoint[]::new);
     }
 
     private static class DownloadTask extends PleaseWaitRunnable {
@@ -109,7 +106,9 @@ public class MapRouletteDownloadTaskBox extends AbstractDownloadTask<TaskCluster
         @Override
         protected void realRun() throws IOException, OsmTransferException {
             try {
-                tasks = withoutLockedByOthers(TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(),
+                // Before merging: the user's own locks are not other mappers' locks
+                MapRouletteAuth.lookUpUser();
+                tasks = mergeLockRows(TaskAPI.box(bounds.getMinLon(), bounds.getMinLat(), bounds.getMaxLon(),
                         bounds.getMaxLat(), 1_000, 0, null, null, false));
                 final var challenges = Arrays.stream(tasks).mapToLong(TaskClusteredPoint::parentId).distinct()
                         .toArray();

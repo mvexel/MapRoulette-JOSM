@@ -8,7 +8,10 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 
 import java.io.Reader;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
@@ -18,6 +21,7 @@ import org.openstreetmap.josm.tools.JosmRuntimeException;
 
 import jakarta.annotation.Nullable;
 import jakarta.json.Json;
+import jakarta.json.JsonArray;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonString;
 import jakarta.json.JsonValue;
@@ -81,9 +85,35 @@ public final class ClusteredPointParser {
                     optionalObject(object, "completedBy", UserParser::parse),
                     PointReviewParser.parse(object.getJsonObject("pointReview")), object.getInt("priority", 0),
                     optionalLong(object, "bundleId"), object.getBoolean("isBundlePrimary", false),
-                    optionalLong(object, "lockedBy"));
+                    optionalLong(object, "lockedBy"), parseProperties(object.get("geometries")));
         }
         return null;
+    }
+
+    /**
+     * Get the properties of the first feature that has any, sent with {@code includeGeometries=true}
+     *
+     * @param geometries The GeoJSON feature collection, if any
+     * @return The properties, with every value as text
+     */
+    static Map<String, String> parseProperties(@Nullable JsonValue geometries) {
+        if (geometries instanceof JsonObject collection && collection.get("features")instanceof JsonArray features) {
+            for (var feature : features) {
+                if (feature instanceof JsonObject featureObject
+                        && featureObject.get("properties")instanceof JsonObject properties && !properties.isEmpty()) {
+                    final var map = new TreeMap<String, String>();
+                    properties.forEach((key, value) -> {
+                        if (value instanceof JsonString str) {
+                            map.put(key, str.getString());
+                        } else if (value.getValueType() != JsonValue.ValueType.NULL) {
+                            map.put(key, value.toString());
+                        }
+                    });
+                    return Collections.unmodifiableMap(map);
+                }
+            }
+        }
+        return Collections.emptyMap();
     }
 
     @Nullable

@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -85,7 +86,8 @@ class LockUnlockTaskActionTest {
                 Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
                         new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, TaskStatus.CREATED,
                         null, Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
-                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null))));
+                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
+                        Map.of()))));
         this.table = new JTable(this.model);
         this.table.setRowSorter(new TableRowSorter<>(this.model));
         this.table.getSelectionModel().setSelectionInterval(0, 0);

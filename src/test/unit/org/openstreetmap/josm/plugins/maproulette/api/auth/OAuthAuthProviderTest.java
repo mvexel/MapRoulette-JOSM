@@ -5,6 +5,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
@@ -31,6 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -364,6 +367,29 @@ class OAuthAuthProviderTest {
         assertEquals(1, revoke.size());
         assertEquals(Map.of("client_id", "maproulette-josm", "token", REFRESH_1),
                 form(revoke.get(0).getBodyAsString()));
+    }
+
+    /**
+     * The user id comes from {@code /oauth/mobile/me}, with the token, once per login; a logout forgets it (#112)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testUserIdLookedUpOncePerLogin() throws Exception {
+        final var provider = loggedIn();
+        this.wireMock.register(get(urlPathEqualTo("/oauth/mobile/me"))
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody("{\"id\":2,\"osmId\":11353,\"displayName\":\"tester\",\"scope\":\"tasks:read\"}")));
+        assertEquals(OptionalLong.empty(), provider.knownUserId(), "Not looked up yet");
+        assertEquals(OptionalLong.of(2), provider.userId());
+        assertEquals(OptionalLong.of(2), provider.userId());
+        assertEquals(OptionalLong.of(2), provider.knownUserId());
+        this.wireMock.verifyThat(exactly(1), getRequestedFor(urlPathEqualTo("/oauth/mobile/me"))
+                .withHeader("Authorization", equalTo("Bearer " + ACCESS_1)));
+        this.wireMock.register(post(urlPathEqualTo(REVOKE)).willReturn(aResponse().withStatus(200)));
+        provider.logOut();
+        assertEquals(OptionalLong.empty(), provider.knownUserId());
+        assertEquals(OptionalLong.empty(), provider.userId(), "Nobody is logged in");
     }
 
     /**
