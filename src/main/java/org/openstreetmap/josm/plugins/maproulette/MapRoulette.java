@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.maproulette;
 
 import java.io.IOException;
+import java.util.List;
 
 import org.openstreetmap.josm.actions.UploadAction;
 import org.openstreetmap.josm.data.osm.ChangesetCache;
@@ -15,6 +16,7 @@ import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRoule
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTask;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.LockRefresher;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
@@ -23,6 +25,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePre
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
@@ -62,17 +65,29 @@ public class MapRoulette extends Plugin {
         if (newFrame != null) {
             newFrame.addToggleDialog(new MapRouletteDialog());
         } else {
-            final var lockedTasks = ModifiedObjects.getLockedTasks();
-            // JOSM may be shutting down, so log failures instead of showing a dialog
-            MainApplication.worker.execute(() -> {
-                for (var task : lockedTasks) {
-                    try {
-                        TaskAPI.release(task.id());
-                    } catch (IOException | RuntimeException e) {
-                        Logging.warn(e);
-                    }
+            releaseLocks(ModifiedObjects.getLockedTasks());
+        }
+    }
+
+    /**
+     * Release the tasks the user started, when the map closes
+     *
+     * @param lockedTasks The tasks to release
+     */
+    static void releaseLocks(List<Task> lockedTasks) {
+        // JOSM may be shutting down, so log failures instead of showing a dialog
+        final Runnable release = () -> {
+            for (var task : lockedTasks) {
+                try {
+                    TaskAPI.release(task.id());
+                } catch (IOException | RuntimeException e) {
+                    Logging.warn(e);
                 }
-            });
+            }
+        };
+        // When JOSM quits, the worker is already shut down: release the locks before JOSM exits
+        if (!lockedTasks.isEmpty() && !Workers.tryExecute(release)) {
+            release.run();
         }
     }
 }
