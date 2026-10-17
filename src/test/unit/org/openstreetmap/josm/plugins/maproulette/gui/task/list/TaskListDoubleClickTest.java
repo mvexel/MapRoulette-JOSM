@@ -64,7 +64,7 @@ class TaskListDoubleClickTest {
      */
     private static int doubleClick(Long lockedBy, Consumer<Action> checkAction) {
         MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
-                List.of(TaskListPanelTest.point(1, 15318, "SLC benches", lockedBy))));
+                List.of(TaskListPanelTest.point(1001, 27905, "SLC benches", lockedBy))));
         new MockUp<MapRouletteAuth>() {
             @Mock
             boolean isAvailable() {

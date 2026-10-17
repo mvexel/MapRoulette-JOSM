@@ -156,12 +156,13 @@ public class TaskListPanelTest {
      */
     @Test
     void testChallengeFilterAndFooter() {
+        // Ids that other tests leave off the ignore lists, which last for the whole test run
         final var points = new ArrayList<TaskClusteredPoint>();
-        for (long id = 1; id <= 3; id++) {
+        for (long id = 1001; id <= 1003; id++) {
             points.add(point(id, 18, "SLC benches", null));
         }
-        points.add(point(4, 19, "Missing sidewalks", null));
-        points.add(point(5, 18, "SLC benches", 99L));
+        points.add(point(1004, 19, "Missing sidewalks", null));
+        points.add(point(1005, 18, "SLC benches", 99L));
         MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), points));
         final var panel = new TaskListPanel();
         // The model fills from the layer on the EDT
