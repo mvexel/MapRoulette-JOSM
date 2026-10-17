@@ -5,6 +5,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -189,6 +191,28 @@ class TaskStatusSenderTest {
         }
         assertEquals(List.of(task.id()), sentTo, "Only the status already in flight");
         WireMocks.current().verifyThat(exactly(0), getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+    }
+
+    /**
+     * A skip releases the lock on the server, so the task is fetched again instead of released (#106)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testSkipIsNotReleasedAgain() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = "/api/v2/task/" + task.id();
+        final var wireMock = WireMocks.current();
+        wireMock.register(post(urlPathEqualTo(taskPath + "/skip")).willReturn(aResponse().withStatus(204)));
+        final var modified = new ModifiedTask(task, TaskStatus.SKIPPED, null, null, null, null);
+        ModifiedObjects.addLockedTask(task);
+        ModifiedObjects.addModifiedTask(modified);
+        MainApplication.worker.submit(() -> TaskStatusSender.sendStatuses(List.of(modified))).get(10, TimeUnit.SECONDS);
+        sync();
+        wireMock.verifyThat(postRequestedFor(urlPathEqualTo(taskPath + "/skip")));
+        wireMock.verifyThat(exactly(0), getRequestedFor(urlPathEqualTo(taskPath + "/release")));
+        assertNull(ModifiedObjects.getModifiedTask(task.id()));
+        assertNull(ModifiedObjects.getLockedTask(task.id()));
     }
 
     /**

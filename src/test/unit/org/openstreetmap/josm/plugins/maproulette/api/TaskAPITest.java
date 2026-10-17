@@ -4,8 +4,12 @@ package org.openstreetmap.josm.plugins.maproulette.api;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -15,7 +19,9 @@ import java.io.IOException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
@@ -54,5 +60,20 @@ class TaskAPITest {
                         .withQueryParam("limit", equalTo("1000")).withQueryParam("page", equalTo("2"))
                         .withQueryParam("excludeLocked", absent()).withQueryParam("includeGeometries", absent())
                         .withQueryParam("includeTags", absent()));
+    }
+
+    /**
+     * Skipped is sent as a skip: app logins may not set the Skipped status (#106)
+     *
+     * @throws IOException if the request fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testSkipPostsSkip() throws IOException {
+        WireMocks.current()
+                .register(post(urlPathEqualTo("/api/v2/task/1/skip")).willReturn(aResponse().withStatus(204)));
+        TaskAPI.updateStatus(1, TaskStatus.SKIPPED, null, null, null, null);
+        WireMocks.current().verifyThat(postRequestedFor(urlPathEqualTo("/api/v2/task/1/skip")));
+        WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathMatching("/api/v2/task/1/.*")));
     }
 }
