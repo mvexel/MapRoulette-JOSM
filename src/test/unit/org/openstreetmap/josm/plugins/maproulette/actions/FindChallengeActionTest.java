@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -18,7 +19,7 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 @MapRouletteConfig
 class FindChallengeActionTest {
     /**
-     * Find a challenge browses the website's challenges, and a server without a website has no URL (#111)
+     * The dialog links to the website's challenge list, and a server without a website has no link (#111)
      */
     @Test
     void testBrowseUrl() {
@@ -29,5 +30,22 @@ class FindChallengeActionTest {
         } finally {
             Config.getPref().put("maproulette.website.url", null);
         }
+    }
+
+    /**
+     * A challenge can be pasted as a number or as any website link that names it (#111)
+     */
+    @Test
+    void testChallengeId() {
+        assertEquals(OptionalLong.of(12), FindChallengeAction.challengeId(" 12 "));
+        assertEquals(OptionalLong.of(12),
+                FindChallengeAction.challengeId("https://maproulette.org/browse/challenges/12"));
+        assertEquals(OptionalLong.of(12),
+                FindChallengeAction.challengeId("https://maproulette.org/challenge/12/task/34"));
+        assertEquals(OptionalLong.of(12),
+                FindChallengeAction.challengeId("https://maproulette.org/browse/challenges/12?tab=conversation"));
+        assertTrue(FindChallengeAction.challengeId("https://maproulette.org/browse/challenges").isEmpty());
+        assertTrue(FindChallengeAction.challengeId("bench").isEmpty());
+        assertTrue(FindChallengeAction.challengeId(null).isEmpty());
     }
 }

@@ -46,11 +46,21 @@ public class MapRouletteDownloadChallengeTask extends AbstractDownloadTask<Colle
     public Future<?> loadUrl(DownloadParams settings, String url, ProgressMonitor progressMonitor) {
         final var challengeTaskMatcher = PATTERN_CHALLENGE.matcher(url);
         if (challengeTaskMatcher.matches()) {
-            final var challengeId = challengeTaskMatcher.group(1);
-            this.downloadTask = new DownloadTask(progressMonitor, Long.parseLong(challengeId));
-            return MainApplication.worker.submit(this.downloadTask);
+            return loadChallenge(Long.parseLong(challengeTaskMatcher.group(1)), progressMonitor);
         }
         return null;
+    }
+
+    /**
+     * Load all tasks of a challenge
+     *
+     * @param challengeId     The challenge to load
+     * @param progressMonitor The progress monitor to use, or {@code null} for a new one
+     * @return The download job
+     */
+    public Future<?> loadChallenge(long challengeId, ProgressMonitor progressMonitor) {
+        this.downloadTask = new DownloadTask(progressMonitor, challengeId);
+        return MainApplication.worker.submit(this.downloadTask);
     }
 
     @Override

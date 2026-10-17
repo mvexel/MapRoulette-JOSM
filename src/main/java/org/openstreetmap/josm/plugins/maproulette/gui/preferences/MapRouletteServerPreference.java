@@ -163,9 +163,8 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
         if (!Utils.isStripEmpty(url)) {
             return Optional.of(Utils.strip(url).replaceAll("/+$", ""));
         }
-        final var server = MapRouletteConfig.getInstance() == null ? MAPROULETTE_URL.get()
-                : MapRouletteConfig.getBaseUrl();
-        return MAPROULETTE_URL.getDefaultValue().equals(server) ? Optional.of(DEFAULT_WEBSITE_URL) : Optional.empty();
+        return MAPROULETTE_URL.getDefaultValue().equals(getServerUrl()) ? Optional.of(DEFAULT_WEBSITE_URL)
+                : Optional.empty();
     }
 
     /**
@@ -174,20 +173,38 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
      * @return Production, Dev or Staging for the known servers, otherwise the host
      */
     public static String getServerName() {
-        final var server = MapRouletteConfig.getInstance() == null ? MAPROULETTE_URL.get()
-                : MapRouletteConfig.getBaseUrl();
-        final String host;
-        try {
-            host = Objects.requireNonNullElse(new URI(server).getHost(), server);
-        } catch (URISyntaxException e) {
-            return server;
-        }
+        final var host = getServerHost();
         return switch (host) {
         case "maproulette.org" -> tr("Production");
         case "mr-api.osm.lol" -> tr("Dev");
         case "mr-stage.osm.lol" -> tr("Staging");
         default -> host;
         };
+    }
+
+    /**
+     * Get a tooltip for the server name
+     *
+     * @return The server URL, and a warning for a test server whose edits go to the real OpenStreetMap
+     */
+    public static String getServerTooltip() {
+        final var server = getServerUrl();
+        return "mr-stage.osm.lol".equals(getServerHost())
+                ? tr("{0}. Staging is a test server, but the edits you upload go to the real OpenStreetMap.", server)
+                : server;
+    }
+
+    private static String getServerUrl() {
+        return MapRouletteConfig.getInstance() == null ? MAPROULETTE_URL.get() : MapRouletteConfig.getBaseUrl();
+    }
+
+    private static String getServerHost() {
+        final var server = getServerUrl();
+        try {
+            return Objects.requireNonNullElse(new URI(server).getHost(), server);
+        } catch (URISyntaxException e) {
+            return server;
+        }
     }
 
     /**

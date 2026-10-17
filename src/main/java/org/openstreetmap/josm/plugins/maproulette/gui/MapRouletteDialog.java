@@ -128,6 +128,7 @@ public final class MapRouletteDialog extends ToggleDialog {
 
     private void updateServer() {
         this.server.setText(tr("Server: {0}", MapRouletteServerPreference.getServerName()));
+        this.server.setToolTipText(MapRouletteServerPreference.getServerTooltip());
     }
 
     @Override
