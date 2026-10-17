@@ -31,6 +31,7 @@ import javax.swing.text.html.HTMLDocument;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
+import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.SideButton;
@@ -155,14 +156,26 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
      * @param selected The other selected tasks
      * @return {@code true} if the user agreed
      */
-    private boolean confirmMarkAll(List<TaskClusteredPoint> selected) {
+    boolean confirmMarkAll(List<TaskClusteredPoint> selected) {
+        return markAllDialog(selected).showDialog().getValue() == 1;
+    }
+
+    /**
+     * Build the dialog that asks whether to mark the other selected tasks too. Button 1 marks them, button 2 (the
+     * default) does not.
+     *
+     * @param selected The other selected tasks
+     * @return The dialog, not shown yet
+     */
+    ExtendedDialog markAllDialog(List<TaskClusteredPoint> selected) {
         final var ids = selected.stream().map(p -> Long.toString(p.id())).collect(Collectors.joining(", "));
-        return ConditionalOptionPaneUtil.showConfirmationDialog("TaskStatusAction.markSelected",
-                MRGuiHelper.dialogParent(),
-                tr("<html>Also mark the other selected tasks ({0}) as {1}?<br>"
-                        + "This applies their tag fixes and geometry fixes.</html>", ids, this.status.description()),
-                tr("Mark other selected tasks?"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
-                JOptionPane.NO_OPTION);
+        return new ExtendedDialog(MRGuiHelper.dialogParent(), tr("Mark other selected tasks?"), tr("Mark them too"),
+                tr("Only the current task"))
+                        .setContent(tr(
+                                "<html>Also mark the other selected tasks ({0}) as {1}?<br>"
+                                        + "This applies their tag fixes and geometry fixes.</html>",
+                                ids, this.status.description()))
+                        .setIcon(JOptionPane.WARNING_MESSAGE).setDefaultButton(2).setCancelButton(2);
     }
 
     /**
