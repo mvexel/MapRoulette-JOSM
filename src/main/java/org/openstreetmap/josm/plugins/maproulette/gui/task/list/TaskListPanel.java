@@ -698,12 +698,6 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
-     * An entry of the challenge filter
-     *
-     * @param id    The challenge id, or -1 for all challenges
-     * @param label The text to show
-     */
-    /**
      * Shows the challenge names, which come from challenge authors, as text, never as HTML
      */
     private static final class PlainTextRenderer extends DefaultListCellRenderer {
@@ -715,6 +709,12 @@ public final class TaskListPanel extends JPanel
         }
     }
 
+    /**
+     * An entry of the challenge filter
+     *
+     * @param id    The challenge id, or -1 for all challenges
+     * @param label The text to show
+     */
     private record ChallengeChoice(long id, String label) {
         @Override
         public String toString() {
