@@ -112,40 +112,63 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
         final var primitives = this.uploading;
         final var server = MapRouletteConfig.getBaseUrl();
         final var closed = isChangesetClosedAfterUpload();
+        // Until Fixed is sent, the user can't pick another status or stop the task: those jobs would queue behind the
+        // upload on the worker and lose to the Fixed sent below
+        final var finishingIds = finishing.stream().map(status -> status.task().id()).toList();
+        ModifiedObjects.setFinishPending(finishingIds, true);
         // The upload is queued on the worker after this returns; queue the job from a later EDT event so that it runs
         // after the upload
         SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
-            final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
-                    () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
-            if (changesetId < 0 || !server.equals(MapRouletteConfig.getBaseUrl())) {
-                // Not uploaded: wait for the next upload, and the started task stays started. Another server: the tasks
-                // were forgotten.
-                return;
-            }
-            finish(finishing, changesetId, closed, server);
-            // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
-            // it waits for an upload that has them
-            final var unlinked = ModifiedObjects.getUnlinkedFixed().stream().map(Task::id).collect(Collectors.toSet());
-            final var linked = fixed.stream().filter(task -> unlinked.contains(task.id()))
-                    .filter(task -> inUpload(TaskPrimitives.getPrimitiveIds(task), primitives)).toList();
-            if (linked.isEmpty()) {
-                return;
-            }
-            linked.forEach(ModifiedObjects::removeUnlinkedFixed);
-            if (closed || changesetId == 0) {
-                ChangesetLinks.link(linked, changesetId, server);
-            } else {
-                ChangesetLinks.await(linked, changesetId, server);
+            try {
+                afterUpload(primitives, fixed, finishing, closed, server);
+            } finally {
+                ModifiedObjects.setFinishPending(finishingIds, false);
             }
         }));
+    }
+
+    /**
+     * After an upload, send Fixed for the tasks it finishes, and link the tasks marked Fixed to its changeset. Runs on
+     * the worker.
+     *
+     * @param primitives The primitives of the upload
+     * @param fixed      The tasks marked Fixed before the upload
+     * @param finishing  The statuses the upload finishes
+     * @param closed     {@code true} if JOSM closes the changeset after the upload
+     * @param server     The MapRoulette server of the tasks
+     */
+    private static void afterUpload(List<OsmPrimitive> primitives, List<Task> fixed, List<ModifiedTask> finishing,
+            boolean closed, String server) {
+        final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
+                () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
+        if (changesetId < 0 || !server.equals(MapRouletteConfig.getBaseUrl())) {
+            // Not uploaded: wait for the next upload, and the started task stays started. Another server: the tasks
+            // were forgotten.
+            return;
+        }
+        finish(finishing, changesetId, closed, server);
+        // Skip a task whose status was not sent in the meantime, and one whose OSM objects are not in this upload:
+        // it waits for an upload that has them
+        final var unlinked = ModifiedObjects.getUnlinkedFixed().stream().map(Task::id).collect(Collectors.toSet());
+        final var linked = fixed.stream().filter(task -> unlinked.contains(task.id()))
+                .filter(task -> inUpload(TaskPrimitives.getPrimitiveIds(task), primitives)).toList();
+        if (linked.isEmpty()) {
+            return;
+        }
+        linked.forEach(ModifiedObjects::removeUnlinkedFixed);
+        if (closed || changesetId == 0) {
+            ChangesetLinks.link(linked, changesetId, server);
+        } else {
+            ChangesetLinks.await(linked, changesetId, server);
+        }
     }
 
     /**
      * Send Fixed for the tasks an upload finished, then link them to its changeset: MapRoulette only links a task that
      * is Fixed. Must not be called on the EDT.
      *
-     * @param finishing   The statuses to send
-     * @param changesetId The changeset of the upload
+     * @param allFinishing The statuses to send, unless the task was stopped or got another status meanwhile
+     * @param changesetId  The changeset of the upload
      * @param closed      {@code true} if JOSM closed the changeset after the upload
      * @param server      The MapRoulette server of the tasks
      */

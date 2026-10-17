@@ -392,7 +392,11 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                         this.setTooltip(label(this.status));
                     }
                 }
-                if (MapRouletteAuth.isAvailable()) {
+                if (ModifiedObjects.isFinishPending(task.id())) {
+                    // The upload in progress finishes the task; another status would be overwritten
+                    this.setTooltip(tr("The upload in progress finishes task {0}", task.id()));
+                    this.setEnabled(false);
+                } else if (MapRouletteAuth.isAvailable()) {
                     this.setEnabled(status != state);
                 } else {
                     // Setting a status needs a MapRoulette login; explain why the button is disabled

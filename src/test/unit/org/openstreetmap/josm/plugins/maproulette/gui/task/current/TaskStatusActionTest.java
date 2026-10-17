@@ -22,6 +22,7 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
@@ -41,6 +42,27 @@ class TaskStatusActionTest {
     @MapRouletteLogin
     void testEnabledWithLogin() {
         final var action = new TaskStatusAction(TaskStatus.ALREADY_FIXED, () -> TASK, () -> null);
+        action.updateEnabledState();
+        assertTrue(action.isEnabled());
+    }
+
+    /**
+     * While an upload finishes the task, no other status can be picked: it would be sent after the upload, and the
+     * Fixed sent for the upload would overwrite it
+     */
+    @Test
+    @MapRouletteLogin
+    void testDisabledWhileUploadFinishesTask() {
+        final var action = new TaskStatusAction(TaskStatus.ALREADY_FIXED, () -> TASK, () -> null);
+        ModifiedObjects.setFinishPending(List.of(TASK.id()), true);
+        try {
+            action.updateEnabledState();
+            assertFalse(action.isEnabled());
+            assertTrue(((String) action.getValue(Action.SHORT_DESCRIPTION))
+                    .contains("The upload in progress finishes task 1"));
+        } finally {
+            ModifiedObjects.setFinishPending(List.of(TASK.id()), false);
+        }
         action.updateEnabledState();
         assertTrue(action.isEnabled());
     }

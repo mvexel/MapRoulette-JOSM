@@ -356,7 +356,13 @@ final class LockUnlockTaskAction extends JosmAction {
         } else if (this.table != null && (!this.table.getSelectionModel().isSelectionEmpty()
                 || !ModifiedObjects.getLockedTasks().isEmpty())) {
             updateStartOrStop();
-            if (MapRouletteAuth.isAvailable()) {
+            final var finishing = ModifiedObjects.getLockedTasks().stream()
+                    .filter(task -> ModifiedObjects.isFinishPending(task.id())).findFirst();
+            if (!Boolean.TRUE.equals(getValue("lock")) && finishing.isPresent()) {
+                // Stop would be sent after the upload, and lose to its Fixed
+                this.setTooltip(tr("The upload in progress finishes task {0}", finishing.get().id()));
+                super.setEnabled(false);
+            } else if (MapRouletteAuth.isAvailable()) {
                 super.setEnabled(true);
             } else {
                 // Start and Stop need a MapRoulette login; keep the button visible and explain why it is disabled

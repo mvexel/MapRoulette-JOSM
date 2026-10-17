@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.LogRecord;
 
@@ -604,6 +605,53 @@ class LateUploadHookTest {
                 TimeUnit.SECONDS);
         WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathMatching(taskPath + "/.*")));
         assertFalse(LateUploadHook.isUnfinished(task.id()), "A stopped task is not finished");
+    }
+
+    /**
+     * JOSM's asynchronous upload runs on the worker, so a status picked or a Stop while it runs would queue behind it
+     * and lose to the Fixed sent after it. The task is marked as finishing from the upload until Fixed is sent, which
+     * disables the status buttons and Stop.
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testFinishPendingDuringUpload() throws Exception {
+        final var task = TaskAPI.get(147197178);
+        final var taskPath = stub(task.id(), TaskStatus.FIXED);
+        ModifiedObjects.addLockedTask(task);
+        ModifiedObjects.setFinishing(List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of())));
+        final var hook = hook(true);
+        final var node = uploadedNode(false);
+        final var uploadRuns = new CountDownLatch(1);
+        final var uploadDone = new CountDownLatch(1);
+        // The upload holds the worker
+        MainApplication.worker.execute(() -> {
+            uploadRuns.countDown();
+            try {
+                assertTrue(uploadDone.await(10, TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            GuiHelper.runInEDTAndWait(() -> {
+                node.setModified(false);
+                node.setChangesetId(701203);
+            });
+        });
+        assertTrue(uploadRuns.await(10, TimeUnit.SECONDS));
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            hook.checkUpload(new APIDataSet(node.getDataSet()));
+            hook.modifyChangesetTags(new HashMap<>());
+        });
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
+        assertTrue(ModifiedObjects.isFinishPending(task.id()), "The status buttons and Stop are disabled");
+        WireMocks.current().verifyThat(exactly(0), anyRequestedFor(urlPathMatching(taskPath + "/.*")));
+
+        uploadDone.countDown();
+        sync();
+        assertFalse(ModifiedObjects.isFinishPending(task.id()));
+        WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/" + TaskStatus.FIXED.code())));
     }
 
     /**
