@@ -47,5 +47,25 @@ class FindChallengeActionTest {
         assertTrue(FindChallengeAction.challengeId("https://maproulette.org/browse/challenges").isEmpty());
         assertTrue(FindChallengeAction.challengeId("bench").isEmpty());
         assertTrue(FindChallengeAction.challengeId(null).isEmpty());
+        assertTrue(FindChallengeAction.challengeId("https://maproulette.org/browse/challenges/12abc").isEmpty(),
+                "The number ends at a separator");
+        assertTrue(FindChallengeAction.challengeId("https://maproulette.org/browse/challenges/1234567890123456789012")
+                .isEmpty(), "A number too long for an id is not one");
+    }
+
+    /**
+     * A link from another server's website would load an unrelated challenge with the same number
+     */
+    @Test
+    void testOtherServer() {
+        final var production = Optional.of("https://maproulette.org");
+        assertTrue(
+                FindChallengeAction.otherServer("https://maproulette.org/browse/challenges/12", production).isEmpty());
+        assertTrue(FindChallengeAction.otherServer("12", production).isEmpty(), "A number has no server");
+        assertEquals(Optional.of("maproulette.org"),
+                FindChallengeAction.otherServer("https://maproulette.org/browse/challenges/12", Optional.empty()),
+                "Without a known website, no link can be checked");
+        assertEquals(Optional.of("example.org"),
+                FindChallengeAction.otherServer("https://example.org/browse/challenges/12", production));
     }
 }

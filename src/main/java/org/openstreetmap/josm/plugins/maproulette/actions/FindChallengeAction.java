@@ -6,6 +6,8 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.regex.Pattern;
@@ -33,7 +35,7 @@ public class FindChallengeAction extends JosmAction {
     /**
      * A challenge in a website link, such as /browse/challenges/12 or /challenge/12/task/34
      */
-    private static final Pattern CHALLENGE_LINK = Pattern.compile("/challenges?/(\\d+)(?:[/?#]|$)");
+    private static final Pattern CHALLENGE_LINK = Pattern.compile("/challenges?/(\\d{1,18})(?:[/?#]|$)");
 
     /**
      * Create a new action
@@ -60,6 +62,13 @@ public class FindChallengeAction extends JosmAction {
         if (dialog.showDialog().getValue() != 1) {
             return;
         }
+        final var linkHost = otherServer(input.getText(), MapRouletteServerPreference.getWebsiteUrl());
+        if (linkHost.isPresent()) {
+            new Notification(tr("That link is from {0}, not from the {1} server. Type the challenge number to load it "
+                    + "from {1}.", linkHost.get(), MapRouletteServerPreference.getServerName()))
+                            .setIcon(JOptionPane.WARNING_MESSAGE).show();
+            return;
+        }
         challengeId(input.getText()).ifPresentOrElse(
                 id -> new MapRouletteDownloadChallengeTask().loadChallenge(id, null),
                 () -> new Notification(tr("That is not a challenge link or number."))
@@ -79,6 +88,32 @@ public class FindChallengeAction extends JosmAction {
         }
         final var matcher = CHALLENGE_LINK.matcher(trimmed);
         return matcher.find() ? OptionalLong.of(Long.parseLong(matcher.group(1))) : OptionalLong.empty();
+    }
+
+    /**
+     * Check if a link is from another website than the current server's. Its challenge number would load an unrelated
+     * challenge from the current server.
+     *
+     * @param text    What the user typed
+     * @param website The current server's website, if known
+     * @return The link's host if it is not the current server's website
+     */
+    static Optional<String> otherServer(String text, Optional<String> website) {
+        final var host = host(text == null ? "" : text.strip());
+        if (host.isEmpty()) {
+            return Optional.empty();
+        }
+        return website.flatMap(FindChallengeAction::host).filter(host.get()::equalsIgnoreCase).isPresent()
+                ? Optional.empty()
+                : host;
+    }
+
+    private static Optional<String> host(String url) {
+        try {
+            return Optional.ofNullable(new URI(url).getHost());
+        } catch (URISyntaxException e) {
+            return Optional.empty();
+        }
     }
 
     /**
