@@ -12,6 +12,7 @@ import javax.swing.JOptionPane;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -41,6 +42,19 @@ public final class MapRouletteAuth {
      */
     public static boolean isAvailable() {
         return MapRouletteClient.getInstance().auth().isAvailable();
+    }
+
+    /**
+     * Look up the MapRoulette id of the logged-in user, so tasks they locked are told apart from other mappers' locks.
+     * Call it off the EDT. A failure is logged: the locks then look like other mappers' until the next try.
+     */
+    public static void lookUpUser() {
+        try {
+            MapRouletteClient.getInstance().auth().userId();
+        } catch (MapRouletteException e) {
+            Logging.warn("Could not look up the MapRoulette user: " + e.getMessage());
+            Logging.debug(e);
+        }
     }
 
     /**

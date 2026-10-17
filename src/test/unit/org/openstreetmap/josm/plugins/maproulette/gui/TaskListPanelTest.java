@@ -11,16 +11,23 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.event.ActionEvent;
 import java.lang.reflect.Field;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongPredicate;
 import java.util.function.Predicate;
+import java.util.stream.IntStream;
 
 import javax.swing.Action;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JTable;
 
@@ -30,10 +37,16 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapViewState;
 import org.openstreetmap.josm.gui.SideButton;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
+import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
@@ -136,6 +149,97 @@ public class TaskListPanelTest {
                 .addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), Collections.emptySet()));
         final var panel = assertDoesNotThrow(TaskListPanel::new);
         panel.destroy();
+    }
+
+    /**
+     * The list groups tasks under challenge headers, filters by challenge and counts what the filters hide (#112)
+     */
+    @Test
+    void testChallengeFilterAndFooter() {
+        // Ids that other tests leave off the ignore lists, which last for the whole test run
+        final var points = new ArrayList<TaskClusteredPoint>();
+        for (long id = 1001; id <= 1003; id++) {
+            points.add(point(id, 18, "SLC benches", null));
+        }
+        points.add(point(1004, 19, "Missing sidewalks", null));
+        points.add(point(1005, 18, "SLC benches", 99L));
+        MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), points));
+        final var panel = new TaskListPanel();
+        // The model fills from the layer on the EDT
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
+        try {
+            final var table = find(panel, JTable.class, t -> true);
+            assertEquals(5, table.getRowCount(), "Tasks locked by others are listed too");
+            @SuppressWarnings("unchecked")
+            final JComboBox<Object> challenges = find(panel, JComboBox.class, c -> true);
+            assertEquals(List.of("All challenges in view (2)", "Missing sidewalks (1)", "SLC benches (4)"), IntStream
+                    .range(0, challenges.getItemCount()).mapToObj(i -> challenges.getItemAt(i).toString()).toList());
+            assertEquals(List.of(true, true, false, false, false), headers(table));
+            final var tooltip = ((JComponent) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0))
+                    .getToolTipText();
+            assertTrue(tooltip.contains("Missing sidewalks"), "The row tooltip names the challenge: " + tooltip);
+            final var labels = new ArrayList<JLabel>();
+            collectLabels((Container) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0), labels);
+            assertFalse(labels.isEmpty());
+            assertTrue(labels.stream().allMatch(l -> Boolean.TRUE.equals(l.getClientProperty("html.disable"))),
+                    "Names from MapRoulette are never rendered as HTML");
+            assertEquals(Boolean.TRUE, ((JComponent) challenges.getRenderer()).getClientProperty("html.disable"),
+                    "Challenge names in the filter are never rendered as HTML");
+            final var showAll = find(panel, JButton.class, b -> "Show all".equals(b.getText()));
+            final var footer = (JLabel) showAll.getParent().getComponent(0);
+            assertFalse(footer.getParent().isVisible());
+
+            challenges.setSelectedIndex(1);
+            assertEquals(1, table.getRowCount());
+            assertEquals("4 more tasks are hidden by the filter.", footer.getText());
+            assertTrue(footer.getParent().isVisible());
+
+            showAll.doClick();
+            assertEquals(5, table.getRowCount());
+            assertEquals(0, challenges.getSelectedIndex());
+            assertFalse(footer.getParent().isVisible());
+
+            getFilterField(panel).setText("sidewalks");
+            assertEquals(1, table.getRowCount(), "The text filter searches the challenge name");
+        } finally {
+            panel.destroy();
+        }
+    }
+
+    private static void collectLabels(Container container, List<JLabel> labels) {
+        for (var component : container.getComponents()) {
+            if (component instanceof JLabel label) {
+                labels.add(label);
+            } else if (component instanceof Container child) {
+                collectLabels(child, labels);
+            }
+        }
+    }
+
+    private static List<Boolean> headers(JTable table) {
+        final var headers = new ArrayList<Boolean>();
+        for (var row = 0; row < table.getRowCount(); row++) {
+            final var cell = (Container) table.prepareRenderer(table.getCellRenderer(row, 0), row, 0);
+            headers.add(cell.getComponent(0).isVisible());
+        }
+        return headers;
+    }
+
+    /**
+     * Create a task list point
+     *
+     * @param id            The task id
+     * @param challenge     The challenge id
+     * @param challengeName The challenge name
+     * @param lockedBy      The user holding a lock, if any
+     * @return The point
+     */
+    public static ClusteredPoint point(long id, long challenge, String challengeName, Long lockedBy) {
+        return new ClusteredPoint(id, 1, "", "n" + id, challenge, challengeName, new Point(0, 0), null, "",
+                Instant.EPOCH, null, 2, TaskStatus.CREATED, null, null, null, null,
+                new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, lockedBy,
+                Map.of());
     }
 
     private static List<LongPredicate> getHiddenListTests() throws ReflectiveOperationException {

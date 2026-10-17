@@ -60,7 +60,7 @@ final class LockUnlockTaskAction extends JosmAction {
      * @param table The table to update
      */
     LockUnlockTaskAction(JTable table) {
-        super(tr("Start Task"), "lock", tr("Start MapRoulette Tasks"),
+        super(tr("Start Task"), "dialogs/edit", tr("Start MapRoulette Tasks"),
                 Shortcut.registerShortcut("maproulette:start_stop_tasks", tr("MapRoulette: Start or Stop Tasks"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false);
@@ -358,10 +358,14 @@ final class LockUnlockTaskAction extends JosmAction {
             super.setEnabled(false);
         } else if (this.table != null && (!this.table.getSelectionModel().isSelectionEmpty()
                 || !ModifiedObjects.getLockedTasks().isEmpty())) {
-            updateStartOrStop();
+            final var lockedByOther = updateStartOrStop();
             final var finishing = ModifiedObjects.getLockedTasks().stream()
                     .filter(task -> ModifiedObjects.isFinishPending(task.id())).findFirst();
-            if (!Boolean.TRUE.equals(getValue("lock")) && finishing.isPresent()) {
+            if (lockedByOther) {
+                // MapRoulette refuses to start a task another mapper holds
+                this.setTooltip(tr("Another mapper is working on this task"));
+                super.setEnabled(false);
+            } else if (!Boolean.TRUE.equals(getValue("lock")) && finishing.isPresent()) {
                 // Stop would be sent after the upload, and lose to its Fixed
                 this.setTooltip(tr("The upload in progress finishes task {0}", finishing.get().id()));
                 super.setEnabled(false);
@@ -379,22 +383,32 @@ final class LockUnlockTaskAction extends JosmAction {
 
     /**
      * Show Start if any selected task is not locked, Stop otherwise. With no selection, Stop stops the started tasks.
+     *
+     * @return {@code true} if Start is shown and a selected task is locked by another mapper, so it can't be started
      */
-    private void updateStartOrStop() {
+    private boolean updateStartOrStop() {
+        var start = false;
+        var lockedByOther = false;
         for (var i : this.table.getSelectedRows()) {
             final var index = this.table.getRowSorter().convertRowIndexToModel(i);
             final var point = ((TaskTableModel) this.table.getModel()).get(index);
             if (ModifiedObjects.getLockedTask(point.id()) == null) {
-                this.putValue(NAME, tr("Start Task"));
-                this.setTooltip(tr("Start MapRoulette Tasks"));
-                new ImageProvider("lock").getResource().attachImageIcon(this);
-                putValue("lock", true);
-                return;
+                start = true;
+                lockedByOther |= ModifiedObjects.isLockedByOther(point);
             }
+        }
+        if (start) {
+            this.putValue(NAME, tr("Start Task"));
+            this.setTooltip(tr("Start MapRoulette Tasks"));
+            // A pencil, not a padlock: Start begins work on the task (#112)
+            new ImageProvider("dialogs/edit").getResource().attachImageIcon(this);
+            putValue("lock", true);
+            return lockedByOther;
         }
         putValue("lock", false);
         this.putValue(NAME, tr("Stop Task"));
         this.setTooltip(tr("Stop MapRoulette Tasks"));
         new ImageProvider("presets/vehicle/restriction/stop").getResource().attachImageIcon(this);
+        return false;
     }
 }

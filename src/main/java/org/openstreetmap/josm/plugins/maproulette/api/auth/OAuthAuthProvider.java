@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.api.auth;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.Authenticator;
 import java.net.ConnectException;
 import java.net.MalformedURLException;
@@ -24,11 +25,14 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.Nullable;
+import jakarta.json.Json;
 import jakarta.json.JsonException;
 
 import org.openstreetmap.josm.data.preferences.ListProperty;
@@ -100,6 +104,15 @@ public final class OAuthAuthProvider implements AuthProvider {
      * Set while a login waits for the browser, so every login control shows it
      */
     private final AtomicBoolean loggingIn = new AtomicBoolean();
+    /**
+     * The MapRoulette id of the logged-in user, once looked up
+     */
+    @Nullable
+    private volatile Long userId;
+    /**
+     * Counts logins and logouts, so a user id looked up for an earlier login is not kept
+     */
+    private final AtomicLong loginGeneration = new AtomicLong();
 
     OAuthAuthProvider(String root, Authorizer authorizer, Clock clock) {
         this.root = root;
@@ -223,6 +236,60 @@ public final class OAuthAuthProvider implements AuthProvider {
         return refresh(current) != null;
     }
 
+    @Override
+    public OptionalLong userId() throws MapRouletteException {
+        final var known = this.userId;
+        if (known != null || this.tokens == null) {
+            return knownUserId();
+        }
+        final var generation = this.loginGeneration.get();
+        final var id = fetchUserId();
+        synchronized (this.tokenLock) {
+            if (generation == this.loginGeneration.get() && this.tokens != null) {
+                this.userId = id;
+            }
+        }
+        return OptionalLong.of(id);
+    }
+
+    @Override
+    public OptionalLong knownUserId() {
+        final var known = this.userId;
+        return known == null || this.tokens == null ? OptionalLong.empty() : OptionalLong.of(known);
+    }
+
+    /**
+     * Ask MapRoulette who is logged in
+     *
+     * @return The user's MapRoulette id
+     * @throws MapRouletteException if MapRoulette could not be asked
+     */
+    private long fetchUserId() throws MapRouletteException {
+        final HttpClient client;
+        try {
+            client = HttpClient.create(URI.create(this.root + "/oauth/mobile/me").toURL())
+                    .setAccept("application/json");
+        } catch (MalformedURLException | IllegalArgumentException e) {
+            throw new MapRouletteException("The MapRoulette server URL is not valid: " + this.root, e);
+        }
+        try {
+            authenticate(client, true);
+            final var response = client.connect();
+            final var content = response.fetchContent();
+            if (response.getResponseCode() != 200) {
+                throw new MapRouletteException(
+                        "MapRoulette did not say who is logged in: HTTP " + response.getResponseCode());
+            }
+            try (var reader = Json.createReader(new StringReader(Objects.requireNonNullElse(content, "")))) {
+                return reader.readObject().getJsonNumber("id").longValueExact();
+            }
+        } catch (IOException | JsonException | NullPointerException | ClassCastException | ArithmeticException e) {
+            throw new MapRouletteException("Could not read who is logged in to MapRoulette", e);
+        } finally {
+            client.disconnect();
+        }
+    }
+
     /**
      * Get the server this login is for
      *
@@ -287,6 +354,8 @@ public final class OAuthAuthProvider implements AuthProvider {
             throw new MapRouletteException(tr("MapRoulette did not accept the login."), e);
         }
         synchronized (this.tokenLock) {
+            this.loginGeneration.incrementAndGet();
+            this.userId = null;
             store(received);
         }
         Logging.info("Logged in to MapRoulette at " + this.root);
@@ -306,6 +375,8 @@ public final class OAuthAuthProvider implements AuthProvider {
         final OAuthTokens current;
         synchronized (this.tokenLock) {
             current = this.tokens;
+            this.loginGeneration.incrementAndGet();
+            this.userId = null;
             store(null);
         }
         Logging.info("Logged out of MapRoulette at " + this.root);

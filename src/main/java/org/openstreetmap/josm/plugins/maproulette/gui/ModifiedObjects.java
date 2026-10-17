@@ -11,7 +11,10 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -125,6 +128,24 @@ public final class ModifiedObjects {
     @Nullable
     public static Task getLockedTask(long id) {
         return LOCKED_TASK_MAP.get(id);
+    }
+
+    /**
+     * Check if another mapper holds a lock on a task. Without a MapRoulette user id, the tasks this plugin started count
+     * as the user's.
+     *
+     * @param point The task to check
+     * @return {@code true} if MapRoulette reported a lock on the task by someone other than the logged-in user, and
+     *         this plugin did not start it. Without a known user id, every lock counts as another mapper's.
+     */
+    public static boolean isLockedByOther(@Nonnull TaskClusteredPoint point) {
+        if (!(point instanceof ClusteredPoint clusteredPoint) || clusteredPoint.lockedBy() == null
+                || getLockedTask(point.id()) != null) {
+            return false;
+        }
+        // A lock the user took in an earlier session or on another device is theirs
+        final var self = MapRouletteClient.getInstance().auth().knownUserId();
+        return self.isEmpty() || self.getAsLong() != clusteredPoint.lockedBy();
     }
 
     /**

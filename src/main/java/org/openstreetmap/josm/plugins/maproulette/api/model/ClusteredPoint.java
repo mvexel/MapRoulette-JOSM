@@ -2,14 +2,19 @@
 package org.openstreetmap.josm.plugins.maproulette.api.model;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.time.Instant;
+import java.util.Map;
 
 import org.openstreetmap.josm.data.osm.BBox;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.tools.Logging;
 
 import jakarta.annotation.Nonnull;
+import jakarta.json.Json;
+import jakarta.json.JsonException;
 import jakarta.annotation.Nullable;
 
 
@@ -38,14 +43,35 @@ import jakarta.annotation.Nullable;
  * @param bundleId           The bundle for this task
  * @param isBundlePrimary    If the bundle is the primary bundle
  * @param lockedBy           The MapRoulette user id holding a lock on the task or its bundle, if any
+ * @param properties         The properties of the task's first feature that has any, empty if MapRoulette sent no
+ *                           geometries
  */
 public record ClusteredPoint(long id, long owner, @Nonnull String ownerName, String title, long parentId, @Nonnull String parentName,
                              @Nonnull Point location, @Nullable Object bounding, @Nonnull String blurb, @Nonnull Instant modified,
                              @Nullable Difficulty difficulty, int type, @Nullable TaskStatus status, @Nullable String cooperativeWork,
                              @Nullable Instant mappedOn, @Nullable Long completedTimeSpent, @Nullable BaseUser completedBy,
                              PointReview pointReview, int priority, @Nullable Long bundleId, @Nullable Boolean isBundlePrimary,
-                             @Nullable Long lockedBy)
+                             @Nullable Long lockedBy, @Nonnull Map<String, String> properties)
         implements TaskClusteredPoint {
+
+    /**
+     * Check if this is a multiple-choice task, which is answered in the Street Tally app, not from JOSM
+     *
+     * @return {@code true} for a multiple-choice task
+     */
+    public boolean isChoiceTask() {
+        if (this.cooperativeWork == null || !this.cooperativeWork.contains("meta")) {
+            return false;
+        }
+        try (var reader = Json.createReader(new StringReader(this.cooperativeWork))) {
+            final var meta = reader.readObject().getJsonObject("meta");
+            // Meta type 3, as in TaskParser
+            return meta != null && meta.getInt("type", -1) == 3;
+        } catch (JsonException | ClassCastException e) {
+            Logging.trace(e);
+            return false;
+        }
+    }
 
     /**
      * Get the task for this point.

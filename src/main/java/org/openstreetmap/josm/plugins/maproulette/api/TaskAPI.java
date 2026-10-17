@@ -47,8 +47,9 @@ public final class TaskAPI {
     }
 
     /**
-     * Get tasks in a bounding box. Tasks locked by other mappers are left out: the server's {@code excludeLocked}
-     * parameter actually means "ignore locks", so it is never sent.
+     * Get tasks in a bounding box, with the properties of their features. Tasks locked by other mappers are included
+     * with {@code lockedBy} set, so the task list can show them: the server's {@code excludeLocked} parameter actually
+     * means "ignore locks".
      *
      * @param minLat            The minimum latitude for the bounding box (left)
      * @param minLon            The minimum longitude for the bounding box (bottom)
@@ -80,6 +81,8 @@ public final class TaskAPI {
         if (includeTotal) {
             query.put("includeTotal", "true");
         }
+        query.put("excludeLocked", "true");
+        query.put("includeGeometries", "true");
         final var path = TASKS + "/box/" + minLon + "/" + minLat + "/" + maxLon + "/" + maxLat;
         final var result = MapRouletteClient.getInstance().putRead(path, query, ClusteredPointParser::parse);
         if (result instanceof ClusteredPoint[] points) {

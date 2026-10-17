@@ -10,9 +10,11 @@ import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
@@ -21,6 +23,9 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+
+import jakarta.json.Json;
+import jakarta.json.JsonValue;
 
 /**
  * Test class for {@link ClusteredPointParser}
@@ -40,7 +45,7 @@ class ClusteredPointParserTest {
                 new PointReview(1, photoMC, new PublicUser(9724, null, "Jenn_Bh", null, null),
                         Instant.parse("2022-10-18T07:09:14.455Z"), null, null, null,
                         Instant.parse("2022-10-18T07:08:52.469Z"), new long[0]),
-                0, null, false, null);
+                0, null, false, null, Map.of());
         assertRecordsEqual(expected, actual);
     }
 
@@ -61,5 +66,37 @@ class ClusteredPointParserTest {
         assertEquals(1, points.length);
         assertEquals(136226437L, points[0].id());
         assertNull(points[0].bounding());
+    }
+
+    /**
+     * With {@code includeGeometries=true}, the properties of the first feature that has any are kept (#112)
+     */
+    @Test
+    void testProperties() {
+        final var geometries = Json.createReader(new StringReader("""
+                {"type": "FeatureCollection", "features": [
+                  {"type": "Feature", "properties": {}, "geometry": null},
+                  {"type": "Feature", "properties": {"amenity": "bench", "@id": "node/123", "seats": 3, "x": null},
+                   "geometry": {"type": "Point", "coordinates": [1, 2]}}]}
+                """)).readObject();
+        assertEquals(Map.of("amenity", "bench", "@id", "node/123", "seats", "3"),
+                ClusteredPointParser.parseProperties(geometries));
+        assertEquals(Map.of(), ClusteredPointParser.parseProperties(null));
+        assertEquals(Map.of(), ClusteredPointParser.parseProperties(JsonValue.NULL));
+    }
+
+    /**
+     * A multiple-choice task is recognised from its cooperative work (meta type 3) (#112)
+     *
+     * @param cooperativeWork The cooperative work MapRoulette sends, as text
+     * @param choice          {@code true} if this is a choice task
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = { "{\"meta\": {\"type\": 3, \"version\": 1}}|true",
+            "{\"meta\": {\"type\": 1, \"version\": 2}}|false", "not json, but meta|false", "|false" })
+    void testIsChoiceTask(String cooperativeWork, boolean choice) {
+        final var point = new ClusteredPoint(1, 1, "", "n1", 1, "", new Point(0, 0), null, "", Instant.EPOCH, null, 2,
+                null, cooperativeWork, null, null, null, null, 0, null, false, null, Map.of());
+        assertEquals(choice, point.isChoiceTask());
     }
 }

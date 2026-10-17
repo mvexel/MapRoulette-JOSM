@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,6 +15,7 @@ import java.time.Instant;
 
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JTable;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -71,8 +73,13 @@ class MapRouletteDialogTest {
             final var empty = TaskListPanelTest.find(panel, JLabel.class,
                     l -> "No tasks loaded yet".equals(l.getText()));
             assertTrue(empty.getParent().isVisible(), "The empty state should show while no tasks are loaded");
-            assertFalse(TaskListPanelTest.getFilterField(panel).getParent().getParent().getParent().isVisible(),
-                    "The table should be hidden while no tasks are loaded");
+            assertFalse(TaskListPanelTest.getFilterField(panel).getParent().isVisible(),
+                    "The filters should be hidden while no tasks are loaded");
+            Container ancestor = TaskListPanelTest.find(panel, JTable.class, t -> true);
+            while (ancestor != panel && ancestor.isVisible()) {
+                ancestor = ancestor.getParent();
+            }
+            assertNotSame(panel, ancestor, "The table should be hidden while no tasks are loaded");
             assertFalse(TaskListPanelTest
                     .find(panel, SideButton.class, b -> b.getAction() == TaskListPanelTest.getDownloadAction(panel))
                     .getParent().getParent().isVisible(), "The empty state has its own buttons");

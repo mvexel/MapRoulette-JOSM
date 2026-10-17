@@ -157,7 +157,10 @@ public final class EarlyUploadHook implements UploadHook {
         //noinspection DataFlowIssue -- getPrimitiveId should stably return either a null value or a non-null value
         final var tasks = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
                 .stream().map(MapRouletteClusteredPointLayer::getTasks).flatMap(Collection::stream)
-                .filter(p -> getPrimitiveId(p) != null).collect(Collectors.groupingBy(EarlyUploadHook::getPrimitiveId));
+                .filter(p -> getPrimitiveId(p) != null)
+                // MapRoulette rejects a status for a task another mapper holds
+                .filter(p -> !ModifiedObjects.isLockedByOther(p))
+                .collect(Collectors.groupingBy(EarlyUploadHook::getPrimitiveId));
         final var possiblyDone = ids.stream().filter(id -> tasks.containsKey(id.getUniqueId()))
                 .collect(Collectors.toMap(PrimitiveId::getUniqueId, p -> p));
         final var exceptionList = new ArrayList<Exception>();
