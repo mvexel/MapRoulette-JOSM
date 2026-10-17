@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -39,6 +40,10 @@ public final class ModifiedObjects {
      * Called on the EDT when the started tasks change
      */
     private static final List<Runnable> LOCK_LISTENERS = new CopyOnWriteArrayList<>();
+    /**
+     * The tasks an upload in progress finishes, from the upload until Fixed is sent or the upload fails
+     */
+    private static final Set<Long> FINISH_PENDING = ConcurrentHashMap.newKeySet();
 
     /**
      * Don't allow this static class to be instantiated
@@ -224,6 +229,29 @@ public final class ModifiedObjects {
     }
 
     /**
+     * Mark tasks as finished by the upload in progress, or no longer. Their status buttons and Stop are disabled
+     * meanwhile, so the user's choice can't be overwritten by the Fixed sent after the upload.
+     *
+     * @param ids     The tasks
+     * @param pending {@code true} while the upload runs and Fixed is sent
+     */
+    public static void setFinishPending(Collection<Long> ids, boolean pending) {
+        if (pending ? FINISH_PENDING.addAll(ids) : FINISH_PENDING.removeAll(ids)) {
+            fireLocksChanged();
+        }
+    }
+
+    /**
+     * Check if the upload in progress finishes a task
+     *
+     * @param id The task
+     * @return {@code true} until Fixed is sent or the upload fails
+     */
+    public static boolean isFinishPending(long id) {
+        return FINISH_PENDING.contains(id);
+    }
+
+    /**
      * Forget every task, for example when the user switches to another MapRoulette server. Nothing is sent.
      *
      * @return The ids of the tasks that were forgotten
@@ -236,6 +264,8 @@ public final class ModifiedObjects {
         ids.addAll(MODIFIED_TASK_MAP.keySet());
         ids.addAll(UNLINKED_FIXED_MAP.keySet());
         ids.addAll(FINISHING_MAP.keySet());
+        ids.addAll(FINISH_PENDING);
+        FINISH_PENDING.clear();
         ids.forEach(id -> {
             FINISHING_MAP.remove(id);
             LOCKED_TASK_MAP.remove(id);
