@@ -15,6 +15,8 @@ public class MapRouletteUnsupportedException extends MapRouletteForbiddenExcepti
     @Serial
     private static final long serialVersionUID = 4419275903318246471L;
     private final Reason reason;
+    @Nullable
+    private final String path;
 
     /**
      * Why the server refused the request
@@ -64,8 +66,30 @@ public class MapRouletteUnsupportedException extends MapRouletteForbiddenExcepti
      * @param reason  Why the server refused the request
      */
     public MapRouletteUnsupportedException(String message, @Nonnull Reason reason) {
+        this(message, reason, null);
+    }
+
+    /**
+     * Create a new exception
+     *
+     * @param message The message
+     * @param reason  Why the server refused the request
+     * @param path    The path of the refused request, if known
+     */
+    public MapRouletteUnsupportedException(String message, @Nonnull Reason reason, @Nullable String path) {
         super(message);
         this.reason = reason;
+        this.path = path;
+    }
+
+    /**
+     * Get the path of the refused request
+     *
+     * @return The path, or {@code null} if unknown
+     */
+    @Nullable
+    public String path() {
+        return this.path;
     }
 
     /**

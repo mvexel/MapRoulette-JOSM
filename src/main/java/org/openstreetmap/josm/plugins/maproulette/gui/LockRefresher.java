@@ -112,7 +112,7 @@ public final class LockRefresher {
                 if (e.reason() != MapRouletteUnsupportedException.Reason.CHALLENGE_DRAFT
                         && TOLD_UNSUPPORTED.compareAndSet(false, true)) {
                     tell(tr("JOSM cannot keep your MapRoulette task locks: {0}",
-                            ExceptionDialogUtil.explainRefusal(e.reason())));
+                            ExceptionDialogUtil.explainRefusal(e)));
                 }
             } catch (MapRouletteForbiddenException | MapRouletteNotFoundException e) {
                 // Someone else has the task now, or it is gone
