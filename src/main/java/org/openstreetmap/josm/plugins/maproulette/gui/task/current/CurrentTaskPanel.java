@@ -433,7 +433,8 @@ public final class CurrentTaskPanel extends JPanel {
                 currentTask != null && currentTask.cooperativeWork() != null && !currentTask.isChoiceTask()
                         ? COOPERATIVE_CARD
                         : FINISH_CARD);
-        this.actions[6].updateEnabledState();
+        // A pending finish disables the status buttons
+        this.refreshActions();
     }
 
     /**
