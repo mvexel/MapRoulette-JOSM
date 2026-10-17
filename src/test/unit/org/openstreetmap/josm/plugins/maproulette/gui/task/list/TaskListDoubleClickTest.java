@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
@@ -78,6 +79,9 @@ class TaskListDoubleClickTest {
             }
         };
         final var panel = new TaskListPanel();
+        // The model fills from the layer on the EDT
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
         try {
             final var table = TaskListPanelTest.find(panel, JTable.class, t -> true);
             final var action = TaskListPanelTest

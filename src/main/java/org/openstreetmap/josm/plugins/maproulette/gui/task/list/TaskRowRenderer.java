@@ -22,6 +22,7 @@ import javax.swing.table.TableCellRenderer;
 
 import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Draws a task list row: a challenge header above the first task of each challenge, then the task's readable name
@@ -100,7 +101,10 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
             this.header.setText(TaskRows.challengeName(point) + " · " + trn("{0} task", "{0} tasks", size, size));
         }
         final var rowChip = TaskRows.chip(point);
-        this.name.setText(this.names.apply(point));
+        final var readableName = this.names.apply(point);
+        this.name.setText(readableName);
+        // The name can be cut off in a narrow panel; the challenge is only in the group header
+        this.setToolTipText(tooltip(readableName, TaskRows.challengeName(point)));
         this.name.setFont(this.name.getFont().deriveFont(rowChip == TaskRows.Chip.STARTED ? Font.BOLD : Font.PLAIN));
         this.details.setText(TaskRows.details(point, this.from.get()));
         styleChip(rowChip);
@@ -128,6 +132,18 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
             table.setRowHeight(row, height);
         }
         return this;
+    }
+
+    /**
+     * Get the tooltip of a row
+     *
+     * @param readableName The task's readable name
+     * @param challenge    The challenge name
+     * @return The full name and the challenge, one per line
+     */
+    static String tooltip(String readableName, String challenge) {
+        return "<html>" + Utils.escapeReservedCharactersHTML(readableName) + "<br>"
+                + Utils.escapeReservedCharactersHTML(challenge) + "</html>";
     }
 
     /**

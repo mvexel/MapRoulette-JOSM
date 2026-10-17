@@ -26,6 +26,7 @@ import java.util.stream.IntStream;
 import javax.swing.Action;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JTable;
@@ -36,6 +37,7 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapViewState;
 import org.openstreetmap.josm.gui.SideButton;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.widgets.FilterField;
@@ -162,6 +164,9 @@ public class TaskListPanelTest {
         points.add(point(5, 18, "SLC benches", 99L));
         MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), points));
         final var panel = new TaskListPanel();
+        // The model fills from the layer on the EDT
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
         try {
             final var table = find(panel, JTable.class, t -> true);
             assertEquals(5, table.getRowCount(), "Tasks locked by others are listed too");
@@ -170,6 +175,9 @@ public class TaskListPanelTest {
             assertEquals(List.of("All challenges in view (2)", "Missing sidewalks (1)", "SLC benches (4)"), IntStream
                     .range(0, challenges.getItemCount()).mapToObj(i -> challenges.getItemAt(i).toString()).toList());
             assertEquals(List.of(true, true, false, false, false), headers(table));
+            final var tooltip = ((JComponent) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0))
+                    .getToolTipText();
+            assertTrue(tooltip.contains("Missing sidewalks"), "The row tooltip names the challenge: " + tooltip);
             final var showAll = find(panel, JButton.class, b -> "Show all".equals(b.getText()));
             final var footer = (JLabel) showAll.getParent().getComponent(0);
             assertFalse(footer.getParent().isVisible());
