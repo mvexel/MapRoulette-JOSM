@@ -5,6 +5,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.absent;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,19 +47,37 @@ class ChallengeAPITest {
     }
 
     /**
-     * The open tasks come from /challenge/clustered/:id, which answers with the same points as the task box. The body is
-     * a recorded response of the box route (#134).
+     * The open tasks come from the task box of the whole map, limited to the challenge, without a login. /challenge/view
+     * answers with a GeoJSON export and /challenge/clustered fails with HTTP 500 (#134).
      */
     @Test
     void testOpenTasks() throws Exception {
         final var wireMock = WireMocks.current();
-        final var path = "/api/v2/challenge/clustered/15318";
-        wireMock.register(get(urlPathEqualTo(path)).willReturn(aResponse().withStatus(200).withBody(Files.readString(
+        final var path = "/api/v2" + ChallengeAPI.WORLD_BOX;
+        wireMock.register(put(urlPathEqualTo(path)).willReturn(aResponse().withStatus(200).withBody(Files.readString(
                 Path.of("src/test/resources/__files/api/v2/tasks/box/-119.1139411/36.0770518/-119.0992458/36.0839216")))));
         final var tasks = ChallengeAPI.openTasks(15318);
         assertEquals(4, tasks.length);
-        wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo(path)).withQueryParam("filter", equalTo("0"))
-                .withQueryParam("limit", equalTo(Integer.toString(ChallengeAPI.TASK_LIMIT))));
+        wireMock.verifyThat(1,
+                putRequestedFor(urlPathEqualTo(path)).withQueryParam("cid", equalTo("15318"))
+                        .withQueryParam("excludeLocked", equalTo("true"))
+                        .withQueryParam("limit", equalTo(Integer.toString(ChallengeAPI.TASK_LIMIT))));
+    }
+
+    /**
+     * Tasks that are done are left out: the box lists every status (#134)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testOpenTasksOnlyCreated() throws Exception {
+        final var body = Files
+                .readString(Path.of(
+                        "src/test/resources/__files/api/v2/tasks/box/-119.1139411/36.0770518/-119.0992458/36.0839216"))
+                .replaceFirst("\"status\": 0", "\"status\": 1");
+        WireMocks.current().register(put(urlPathEqualTo("/api/v2" + ChallengeAPI.WORLD_BOX))
+                .willReturn(aResponse().withStatus(200).withBody(body)));
+        assertEquals(3, ChallengeAPI.openTasks(15318).length);
     }
 
     /**
@@ -66,7 +86,7 @@ class ChallengeAPITest {
      */
     @Test
     void testOpenTasksRejectsGeoJson() {
-        WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/clustered/15318"))
+        WireMocks.current().register(put(urlPathEqualTo("/api/v2/tasks/box/-180/-85/180/85"))
                 .willReturn(aResponse().withStatus(200).withBody("""
                         {"type": "FeatureCollection", "features": [{"type": "Feature",
                           "geometry": {"type": "Point", "coordinates": [1, 2]},

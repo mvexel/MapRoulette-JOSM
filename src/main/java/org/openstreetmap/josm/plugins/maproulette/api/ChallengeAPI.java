@@ -10,6 +10,7 @@ import static org.openstreetmap.josm.plugins.maproulette.api.parsers.ParsingUtil
 import java.io.IOException;
 import java.io.Reader;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
@@ -17,6 +18,7 @@ import java.util.TreeMap;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Priority;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeCreation;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ChallengeExtra;
@@ -46,9 +48,13 @@ public final class ChallengeAPI {
      */
     private static final String PATH = "/challenge";
     /**
-     * The most tasks {@link #openTasks(long)} loads, MapRoulette's default for this route
+     * The most tasks {@link #openTasks(long)} loads
      */
     static final int TASK_LIMIT = 2500;
+    /**
+     * The task box that {@link #openTasks(long)} searches: the whole map
+     */
+    static final String WORLD_BOX = "/tasks/box/-180/-85/180/85";
 
     /**
      * Don't allow the API object to be instantiated
@@ -176,25 +182,30 @@ public final class ChallengeAPI {
     }
 
     /**
-     * Get the open tasks of a challenge as task list points, without a login. {@code /challenge/view/:id} is not
-     * used: it answers with a GeoJSON export, not tasks (#134). Full tasks are fetched later, one at a time.
+     * Get the open tasks of a challenge as task list points, without a login. This searches the task box of the whole
+     * map, limited to the challenge. {@code /challenge/view/:id} answers with a GeoJSON export, not tasks, and
+     * {@code /challenge/clustered/:id} fails with HTTP 500 on challenges with tasks (#134). Full tasks are fetched
+     * later, one at a time.
      *
      * @param challengeId The id of the challenge
      * @return The tasks with status Created
      * @throws IOException if there was a problem communicating with the server, or its response could not be read
      */
     public static ClusteredPoint[] openTasks(long challengeId) throws IOException {
-        final var path = PATH + "/clustered/" + challengeId;
-        // filter is the status filter: 0 is Created
-        final var result = MapRouletteClient.getInstance().get(path,
-                Map.of("filter", "0", "limit", Integer.toString(TASK_LIMIT)), ClusteredPointParser::parse);
-        if (result instanceof ClusteredPoint[] points) {
-            return points;
+        final var result = MapRouletteClient.getInstance().putRead(WORLD_BOX, Map.of("cid", Long.toString(challengeId),
+                "excludeLocked", "true", "limit", Integer.toString(TASK_LIMIT)), ClusteredPointParser::parse);
+        final ClusteredPoint[] points;
+        if (result instanceof ClusteredPoint[] array) {
+            points = array;
         } else if (result instanceof ClusteredPoint point) {
-            return new ClusteredPoint[] { point };
+            points = new ClusteredPoint[] { point };
+        } else {
+            throw new MapRouletteParseException("Unexpected MapRoulette response from " + WORLD_BOX,
+                    new IllegalArgumentException(String.valueOf(result)));
         }
-        throw new MapRouletteParseException("Unexpected MapRoulette response from " + path,
-                new IllegalArgumentException(String.valueOf(result)));
+        // The box also lists tasks that are done
+        return Arrays.stream(points).filter(point -> point.status() == TaskStatus.CREATED)
+                .toArray(ClusteredPoint[]::new);
     }
 
     /**

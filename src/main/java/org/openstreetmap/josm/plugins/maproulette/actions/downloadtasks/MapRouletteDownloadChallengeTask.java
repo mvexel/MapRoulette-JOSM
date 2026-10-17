@@ -120,7 +120,9 @@ public class MapRouletteDownloadChallengeTask extends AbstractDownloadTask<Colle
                     return;
                 }
                 try {
-                    final var downloadedTasks = ChallengeAPI.openTasks(challengeId);
+                    // Without a login, MapRoulette lists the tasks other mappers locked too
+                    final var downloadedTasks = MapRouletteDownloadTaskBox
+                            .withoutLockedByOthers(ChallengeAPI.openTasks(challengeId));
                     if (downloadedTasks.length == 0) {
                         GuiHelper.runInEDT(() -> new Notification(
                                 tr("MapRoulette challenge {0} has no open tasks.", Long.toString(challengeId)))

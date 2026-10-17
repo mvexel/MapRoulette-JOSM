@@ -2,7 +2,7 @@
 package org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.put;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -27,8 +27,8 @@ import org.openstreetmap.josm.testutils.annotations.Projection;
 class MapRouletteDownloadChallengeTaskLoadTest {
     @Test
     void testLoadChallenge() throws Exception {
-        // A recorded response of the task box route, which sends the same points
-        WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/clustered/15318")).willReturn(aResponse()
+        // A recorded response of the task box route
+        WireMocks.current().register(put(urlPathEqualTo("/api/v2/tasks/box/-180/-85/180/85")).willReturn(aResponse()
                 .withStatus(200).withHeader("Content-Type", "application/json").withBody(Files.readString(Path.of(
                         "src/test/resources/__files/api/v2/tasks/box/-119.1139411/36.0770518/-119.0992458/36.0839216")))));
         new MapRouletteDownloadChallengeTask().loadChallenge(15318, NullProgressMonitor.INSTANCE).get();
