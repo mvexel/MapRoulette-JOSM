@@ -1,8 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
 
 import javax.swing.Action;
 
@@ -83,5 +86,27 @@ class TaskStatusActionTest {
         } finally {
             MainApplication.getLayerManager().removeLayer(layer);
         }
+    }
+
+    /**
+     * Only a deliberate multi-select that holds the current task offers to mark the other selected tasks. A stray
+     * highlighted row never does (#104).
+     */
+    @Test
+    void testOthersToMark() {
+        final var other = task(2);
+        final var third = task(3);
+        assertEquals(List.of(), TaskStatusAction.othersToMark(List.of(other), TASK), "Only another row selected");
+        assertEquals(List.of(), TaskStatusAction.othersToMark(List.of(other, third), TASK),
+                "Other rows without the current task");
+        assertEquals(List.of(), TaskStatusAction.othersToMark(List.of(TASK), TASK), "Only the current task");
+        assertEquals(List.of(), TaskStatusAction.othersToMark(List.of(other), null), "No current task");
+        assertEquals(List.of(other, third), TaskStatusAction.othersToMark(List.of(TASK, other, third), TASK),
+                "Current task and others");
+    }
+
+    private static Task task(long id) {
+        return new Task(id, "", null, null, 15318, null, null, null, null, null, null, null, null, null, 0, null, null,
+                null, false, null, null);
     }
 }

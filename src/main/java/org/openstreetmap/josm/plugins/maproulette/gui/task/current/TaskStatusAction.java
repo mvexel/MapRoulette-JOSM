@@ -10,11 +10,13 @@ import java.io.IOException;
 import java.io.Serial;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.swing.Action;
@@ -55,6 +57,8 @@ import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Shortcut;
+
+import jakarta.annotation.Nullable;
 
 /**
  * Update the status for a task
@@ -111,19 +115,16 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        final var selected = new ArrayList<TaskClusteredPoint>(
-                MainApplication.getMap().getToggleDialog(TaskListPanel.class).getSelected());
         final var task = this.currentTaskProvider.get();
-        if (task != null) {
-            selected.removeIf(p -> p.id() == task.id());
-        }
+        final var selected = othersToMark(MainApplication.getMap().getToggleDialog(TaskListPanel.class).getSelected(),
+                task);
         final var source = e.getSource();
         // Load the challenge for the feedback dialog on the worker, then show the dialogs on the EDT
         Workers.execute(() -> {
             final var loaded = task == null ? null : load(task);
             GuiHelper.runInEDT(() -> {
                 handleTask(loaded);
-                if (!selected.isEmpty() && confirmMarkAll()) {
+                if (!selected.isEmpty() && confirmMarkAll(selected)) {
                     Workers.execute(() -> markAll(selected, source));
                 } else {
                     updateButtons(source);
@@ -133,16 +134,35 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
     }
 
     /**
-     * Ask whether to mark all selected tasks
+     * Get the other tasks to offer to mark along with the current task. That is only for a deliberate multi-select:
+     * the selection must hold the current task and at least one other task (#104).
      *
+     * @param selected The tasks selected in the task list
+     * @param task     The current task, may be {@code null}
+     * @return The selected tasks other than the current task, or an empty list
+     */
+    static List<TaskClusteredPoint> othersToMark(Collection<? extends TaskClusteredPoint> selected,
+            @Nullable Task task) {
+        if (task == null || selected.stream().noneMatch(p -> p.id() == task.id())) {
+            return List.of();
+        }
+        return selected.stream().filter(p -> p.id() != task.id()).map(TaskClusteredPoint.class::cast).toList();
+    }
+
+    /**
+     * Ask whether to mark the other selected tasks too. The default is No.
+     *
+     * @param selected The other selected tasks
      * @return {@code true} if the user agreed
      */
-    private static boolean confirmMarkAll() {
-        return ConditionalOptionPaneUtil.showConfirmationDialog("TaskStatusAction.bulkUpdate",
+    private boolean confirmMarkAll(List<TaskClusteredPoint> selected) {
+        final var ids = selected.stream().map(p -> Long.toString(p.id())).collect(Collectors.joining(", "));
+        return ConditionalOptionPaneUtil.showConfirmationDialog("TaskStatusAction.markSelected",
                 MRGuiHelper.dialogParent(),
-                tr("<html>Mark all selected tasks?<br>This will apply all tag fixes and geometry fixes!</html>"),
-                tr("Mark all selected tasks?"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
-                JOptionPane.YES_OPTION);
+                tr("<html>Also mark the other selected tasks ({0}) as {1}?<br>"
+                        + "This applies their tag fixes and geometry fixes.</html>", ids, this.status.description()),
+                tr("Mark other selected tasks?"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
+                JOptionPane.NO_OPTION);
     }
 
     /**
