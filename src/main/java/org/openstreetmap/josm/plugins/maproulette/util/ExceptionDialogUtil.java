@@ -8,6 +8,7 @@ import java.awt.Component;
 import java.io.IOException;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.regex.Pattern;
 
 import javax.swing.JOptionPane;
 
@@ -23,6 +24,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeld
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 
@@ -30,6 +32,11 @@ import org.openstreetmap.josm.tools.ExceptionUtil;
  * This is a more generic class for explaining exceptions, see {@link org.openstreetmap.josm.gui.ExceptionDialogUtil}
  */
 public final class ExceptionDialogUtil {
+    /**
+     * A task request path, with what it does to the task
+     */
+    private static final Pattern TASK_PATH = Pattern.compile("/task/\\d+/([A-Za-z0-9]+)$");
+
     private ExceptionDialogUtil() {
         // Hide cosntructor
     }
@@ -62,7 +69,7 @@ public final class ExceptionDialogUtil {
                         .orElseGet(() -> tr("MapRoulette reported a conflict.")), tr("MapRoulette conflict"), null);
             }
         } else if (exception instanceof MapRouletteUnsupportedException unsupported) {
-            showErrorDialog(explainRefusal(unsupported.reason()), tr("Not allowed for this login"), null);
+            showErrorDialog(explainRefusal(unsupported), tr("Not allowed for this login"), null);
         } else if (exception instanceof MapRouletteForbiddenException) {
             showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
                     tr("Not allowed"), null);
@@ -90,6 +97,52 @@ public final class ExceptionDialogUtil {
     }
 
     /**
+     * Explain why MapRoulette refused a request from the JOSM login, naming the refused action when it is known
+     *
+     * @param exception The refusal
+     * @return The explanation
+     */
+    public static String explainRefusal(MapRouletteUnsupportedException exception) {
+        final var action = exception.path() == null ? null : refusedAction(exception.path());
+        if (exception.reason() == MapRouletteUnsupportedException.Reason.INSUFFICIENT_SCOPE && action != null) {
+            return tr("This MapRoulette server does not allow JOSM to {0}.", action);
+        }
+        return explainRefusal(exception.reason());
+    }
+
+    /**
+     * Describe the action of a MapRoulette request for the user
+     *
+     * @param path The request path
+     * @return The action, or {@code null} if it is not a known one
+     */
+    static String refusedAction(String path) {
+        final var matcher = TASK_PATH.matcher(path);
+        if (path.contains("/taskBundle")) {
+            return tr("work on task bundles");
+        } else if (!matcher.find()) {
+            return null;
+        }
+        final var action = matcher.group(1);
+        if (action.chars().allMatch(Character::isDigit)) {
+            try {
+                return tr("mark a task as {0}", TaskStatus.fromCode(Integer.parseInt(action)).description());
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+        return switch (action) {
+        case "start" -> tr("start a task");
+        case "release" -> tr("stop a task");
+        case "refreshLock" -> tr("keep a task started");
+        case "skip" -> tr("skip a task");
+        case "comment" -> tr("comment on a task");
+        case "changeset" -> tr("link a changeset to a task");
+        default -> null;
+        };
+    }
+
+    /**
      * Explain why MapRoulette refused a request from the JOSM login
      *
      * @param reason The reason the server gave
@@ -97,8 +150,7 @@ public final class ExceptionDialogUtil {
      */
     public static String explainRefusal(MapRouletteUnsupportedException.Reason reason) {
         return switch (reason) {
-        case INSUFFICIENT_SCOPE -> tr(
-                "This MapRoulette server or your login does not allow this from JOSM yet. Logging in again may help.");
+        case INSUFFICIENT_SCOPE -> tr("This MapRoulette server does not allow this from JOSM.");
         case MOBILE_WRITES_DISABLED -> tr("This MapRoulette server has switched off changes from apps such as JOSM.");
         case CHALLENGE_DRAFT -> tr(
                 "This challenge is not published yet (it or its project is disabled), so its tasks can''t be changed.");

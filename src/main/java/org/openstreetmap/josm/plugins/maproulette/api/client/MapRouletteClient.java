@@ -288,7 +288,8 @@ public final class MapRouletteClient {
             final var reason = MapRouletteUnsupportedException.Reason.fromCode(errorCode(safeBody));
             yield reason != null
                     ? new MapRouletteUnsupportedException(
-                            "MapRoulette refused this for the JOSM login (" + reason + "): " + url, reason)
+                            "MapRoulette refused this for the JOSM login (" + reason + "): " + url, reason,
+                            url.getPath())
                     : new MapRouletteForbiddenException("MapRoulette refused the request for " + url + message);
         }
         case 404 -> new MapRouletteNotFoundException("Not found in MapRoulette: " + url + message);
