@@ -131,7 +131,7 @@ class MapRouletteClusteredPointLayerTest {
             assertEquals(133361785L, panel.getSelected().iterator().next().id());
             // Now what happens when we filter the images
             final FilterField filter = TaskListPanelTest.getFilterField(panel);
-            filter.setText("foobar12345678912345678");
+            GuiHelper.runInEDTAndWait(() -> filter.setText("foobar12345678912345678"));
             sync();
             assertDoesNotThrow(() -> layer.mouseClicked(generateMouseEvent(false, 36.0778797, -119.1075725)));
             assertEquals(0, panel.getSelected().size());
@@ -169,13 +169,14 @@ class MapRouletteClusteredPointLayerTest {
             final var currentTaskPanel = dialog.currentTask();
             assertTrue(currentTaskPanel.showsLockedTask());
             final FilterField filter = TaskListPanelTest.getFilterField(panel);
-            filter.setText("foobar12345678912345678");
+            // Change Swing state on the EDT: the lock listeners update the list there at the same time
+            GuiHelper.runInEDTAndWait(() -> filter.setText("foobar12345678912345678"));
             sync();
             assertEquals(0, panel.getSelected().size());
             assertTrue(currentTaskPanel.showsLockedTask(), "The filter must not drop the locked task");
             // Once released, the next selection change clears the window
             ModifiedObjects.removeLockedTask(locked);
-            filter.setText("");
+            GuiHelper.runInEDTAndWait(() -> filter.setText(""));
             sync();
             layer.mouseClicked(generateMouseEvent(false, 36.080299, -119.1074128));
             sync();
