@@ -5,6 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -83,6 +84,7 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
 
     @Override
     public boolean ok() {
+        final var oldApiUrl = MAPROULETTE_URL.get();
         final var newApiUrl = this.apiUrl.getText();
         if (!Utils.isStripEmpty(newApiUrl)) {
             if (newApiUrl.equals(MAPROULETTE_URL.getDefaultValue())) {
@@ -92,7 +94,8 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
             }
         }
 
-        final var newWebsiteUrl = Utils.strip(this.websiteUrl.getText());
+        final var newWebsiteUrl = websiteToStore(oldApiUrl, MAPROULETTE_URL.get(), WEBSITE_URL.get(),
+                this.websiteUrl.getText());
         if (newWebsiteUrl.isEmpty()) {
             WEBSITE_URL.remove();
         } else {
@@ -106,6 +109,21 @@ public class MapRouletteServerPreference implements SubPreferenceSetting {
         }
         MapRouletteAuth.configure();
         return false;
+    }
+
+    /**
+     * Get the website URL to store. The website belongs to a server, so switching servers without also changing the
+     * website clears it: tasks must not open on the old server's website.
+     *
+     * @param oldApiUrl     The API URL before the change
+     * @param newApiUrl     The API URL after the change
+     * @param storedWebsite The website URL before the change
+     * @param typedWebsite  The website URL in the field
+     * @return The website URL to store, empty to remove it
+     */
+    static String websiteToStore(String oldApiUrl, String newApiUrl, String storedWebsite, String typedWebsite) {
+        final var typed = Utils.strip(typedWebsite);
+        return !Objects.equals(oldApiUrl, newApiUrl) && typed.equals(Utils.strip(storedWebsite)) ? "" : typed;
     }
 
     /**

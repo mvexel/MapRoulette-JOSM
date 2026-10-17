@@ -71,4 +71,22 @@ class MapRouletteServerPreferenceTest {
             org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(config);
         }
     }
+
+    /**
+     * A website belongs to its server: switching servers clears it unless a new one is typed at the same time
+     */
+    @Test
+    void testWebsiteClearedOnServerSwitch() {
+        final var dev = "https://mr-api.osm.lol/api/v2";
+        final var production = "https://maproulette.org/api/v2";
+        final var website = "https://mr.example.org";
+        assertEquals("", MapRouletteServerPreference.websiteToStore(dev, production, website, website),
+                "Switching servers clears the old server's website");
+        assertEquals("https://other.example.org",
+                MapRouletteServerPreference.websiteToStore(dev, production, website, " https://other.example.org "),
+                "A website typed with the switch is kept");
+        assertEquals(website, MapRouletteServerPreference.websiteToStore(dev, dev, website, website),
+                "Without a switch the website stays");
+        assertEquals("", MapRouletteServerPreference.websiteToStore(dev, dev, website, ""), "Emptied by the user");
+    }
 }
