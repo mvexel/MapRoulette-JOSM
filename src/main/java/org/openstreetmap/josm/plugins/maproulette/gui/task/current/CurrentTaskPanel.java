@@ -4,21 +4,25 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
-import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 
 import javax.swing.Action;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -35,30 +39,33 @@ import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
-import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
-import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
-import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
+import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
-import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
 
+import jakarta.annotation.Nullable;
+
 /**
- * A panel for currently locked tasks
+ * The current task section of the MapRoulette panel, for the task the user started
  */
-public final class CurrentTaskPanel extends ToggleDialog {
+public final class CurrentTaskPanel extends JPanel {
     /**
      * The serial UID for this panel
      */
@@ -69,9 +76,22 @@ public final class CurrentTaskPanel extends ToggleDialog {
      */
     private final VerticallyScrollablePanel panel = new VerticallyScrollablePanel(new GridBagLayout());
     /**
+     * The name of the challenge of the task
+     */
+    private final JLabel challengeLabel = new JLabel();
+    /**
+     * The name of the task
+     */
+    private final JLabel nameLabel = new JLabel();
+    /**
      * The label for the task id
      */
     private final JLabel idLabel = new JLabel();
+    /**
+     * Opens the task on the MapRoulette website
+     */
+    private final OpenOnMapRouletteAction openAction = new OpenOnMapRouletteAction(() -> this.task);
+    private final JButton openButton = new JButton(this.openAction);
     /**
      * The panel for instructions
      */
@@ -92,7 +112,7 @@ public final class CurrentTaskPanel extends ToggleDialog {
      * Shows the instructions, and updates the actions, once the challenge of the task arrives in the background
      */
     private final Runnable challengeListener = () -> {
-        if (this.instructionPending) {
+        if (this.instructionPending || this.task != null) {
             this.refreshPanel();
         }
         this.refreshActions();
@@ -110,10 +130,7 @@ public final class CurrentTaskPanel extends ToggleDialog {
      * Create a new task panel
      */
     public CurrentTaskPanel() {
-        super(tr("Current MapRoulette Task"), "user_no_image", tr("This is the current MapRoulette Task"),
-                Shortcut.registerShortcut("maproulette:task", tr("MapRoulette: Current task"), KeyEvent.CHAR_UNDEFINED,
-                        Shortcut.NONE),
-                200, false, MapRoulettePreferences.class, false);
+        super(new BorderLayout());
 
         final Supplier<Task> supplier = () -> this.task;
         final Supplier<HTMLDocument> docSupplier = () -> (HTMLDocument) this.instructionPane.getEditorPane()
@@ -125,42 +142,65 @@ public final class CurrentTaskPanel extends ToggleDialog {
                 new TaskStatusAction(TaskStatus.ALREADY_FIXED, supplier, docSupplier),
                 new TaskStatusAction(TaskStatus.SKIPPED, supplier, docSupplier), new SelectOsmPrimitives(supplier) };
 
-        final var sideButtons = new ArrayList<SideButton>();
-        sideButtons.add(new SideButton(newActions[0])); // False positive
-        sideButtons.add(new SideButton(newActions[2])); // Fixed
-        sideButtons.add(new SideButton(newActions[4])); // Skipped
-        sideButtons.add(new SideButton(newActions[5])); // Additional actions
-        sideButtons.get(0).createArrow(l -> showPopupMenu(sideButtons.get(0), newActions[0], newActions[1]));
-        sideButtons.get(1).createArrow(l -> showPopupMenu(sideButtons.get(1), newActions[2], newActions[3]));
+        final var falsePositive = new SideButton(newActions[0]);
+        final var fixed = new SideButton(newActions[2]);
+        falsePositive.createArrow(l -> showPopupMenu(falsePositive, newActions[0], newActions[1]));
+        fixed.createArrow(l -> showPopupMenu(fixed, newActions[2], newActions[3]));
         this.actions = newActions;
         this.instructionPane.enableClickableHyperlinks();
+        // The header stays in place while the instructions scroll
+        final var header = new JPanel(new GridBagLayout());
+        // The task name is what people look for; the challenge above it is context
+        final var font = this.nameLabel.getFont();
+        this.challengeLabel.setFont(font.deriveFont(font.getSize2D() * 0.9f));
+        this.challengeLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
+        this.nameLabel.setFont(font.deriveFont(Font.BOLD, font.getSize2D() * 1.2f));
+        header.add(this.challengeLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 0));
+        header.add(this.nameLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
+        header.add(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
+        this.add(header, BorderLayout.NORTH);
         final var gbc = GBC.eol();
-        this.panel.add(this.idLabel, gbc);
         this.panel.add(new JLabel(tr("Instructions: ")), gbc);
         gbc.fill(GridBagConstraints.BOTH);
         this.panel.add(this.instructionPane, gbc);
         this.panel.add(this.cooperativeWork, gbc);
-        super.createLayout(this.panel.getVerticalScrollPane(), false, sideButtons);
+        this.add(this.panel.getVerticalScrollPane(), BorderLayout.CENTER);
+        this.add(MRGuiHelper.buttonRows(List.of(List.of(fixed, falsePositive),
+                List.of(new SideButton(newActions[4]), new SideButton(newActions[5])))), BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         ChallengeCache.addListener(this.challengeListener);
+        this.refreshPanel();
     }
 
-    @Override
+    /**
+     * Get the current task section of the MapRoulette panel
+     *
+     * @return The section, or {@code null} if there is no map
+     */
+    @Nullable
+    public static CurrentTaskPanel get() {
+        final var dialog = MapRouletteDialog.get();
+        return dialog == null ? null : dialog.currentTask();
+    }
+
+    /**
+     * Remove the listeners and actions of the section. The MapRoulette panel calls this when it is destroyed.
+     */
     public void destroy() {
+        // The side buttons destroy their own actions, once; Too Hard and Already Fixed are only in the menus
+        GuiHelper.destroyComponents(this, false);
+        this.actions[1].destroy();
+        this.actions[3].destroy();
+        this.openAction.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
         ChallengeCache.removeListener(this.challengeListener);
-        super.destroy();
     }
 
     private void refreshActions() {
         for (var action : this.actions) {
             action.updateEnabledState();
         }
-    }
-
-    @Override
-    public String helpTopic() {
-        return ht("/Dialog/CurrentMapRouletteTask");
     }
 
     private static void showPopupMenu(Component parent, Object... menuItems) {
@@ -201,33 +241,34 @@ public final class CurrentTaskPanel extends ToggleDialog {
             }
         }
         this.task = task;
-        if ((task == null && this.isVisible()
-                && Config.getPref().getBoolean("maproulette.current_task_panel.autohide", false))
-                || (task != null && !this.isVisible())) {
-            this.toggleAction.actionPerformed(null);
+        if (task != null) {
+            final var dialog = MapRouletteDialog.get();
+            if (dialog != null) {
+                dialog.showTask();
+            }
         }
         this.refreshPanel();
     }
 
     /**
-     * Show a task in the Current Task window, adding the window if the map has none yet
+     * Show a task in the MapRoulette panel, adding the panel if the map has none yet
      *
      * @param task  The task to show
-     * @param focus {@code true} to also open and expand the window, for example after the user started the task
+     * @param focus {@code true} to also expand the panel, for example after the user started the task
      */
     public static void show(Task task, boolean focus) {
         final var map = MainApplication.getMap();
         if (map == null) {
             return;
         }
-        var panel = map.getToggleDialog(CurrentTaskPanel.class);
-        if (panel == null) {
-            panel = new CurrentTaskPanel();
-            map.addToggleDialog(panel);
+        var dialog = MapRouletteDialog.get();
+        if (dialog == null) {
+            dialog = new MapRouletteDialog();
+            map.addToggleDialog(dialog);
         }
-        panel.refreshModel(task);
+        dialog.currentTask().refreshModel(task);
         if (focus) {
-            panel.unfurlDialog();
+            dialog.unfurlDialog();
         }
     }
 
@@ -254,14 +295,22 @@ public final class CurrentTaskPanel extends ToggleDialog {
         for (var action : actions) {
             action.updateEnabledState();
         }
+        this.openAction.updateEnabledState();
         if (currentTask == null) {
             this.instructionPending = false;
+            this.challengeLabel.setText(null);
+            this.nameLabel.setText(tr("No current task"));
             this.idLabel.setText(null);
-            this.instructionPane.setText(tr("Please select a locked task"));
+            this.openButton.setVisible(false);
+            this.instructionPane.setText(tr("Start a task from the list to work on it here."));
             this.cooperativeWork.setVisible(false);
             return;
         }
-        this.idLabel.setText(tr("ID: {0}", currentTask.id()));
+        this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
+                .orElseGet(() -> tr("Challenge {0}", currentTask.parentId())));
+        this.nameLabel.setText(currentTask.name());
+        this.idLabel.setText(tr("Task {0}", currentTask.id()));
+        this.openButton.setVisible(true);
 
         // Checked before building the text, so a challenge arriving in between still triggers a refresh
         this.instructionPending = Utils.isStripEmpty(currentTask.instruction())
@@ -392,6 +441,43 @@ public final class CurrentTaskPanel extends ToggleDialog {
             ModifiedObjects.removeModifiedTask(originalModifiedTask);
             ModifiedObjects.addModifiedTask(modifiedTask);
         }
+    }
+}
+
+/**
+ * Open the task on the MapRoulette website
+ */
+private static final class OpenOnMapRouletteAction extends JosmAction {
+    @Serial
+    private static final long serialVersionUID = 3071722190416473338L;
+    private final transient Supplier<Task> taskSupplier;
+
+    OpenOnMapRouletteAction(Supplier<Task> taskSupplier) {
+        super(tr("Open on MapRoulette"), "presets/misc/contact", tr("Open this task on the MapRoulette website"),
+                Shortcut.registerShortcut("maproulette:open_current_task_in_browser",
+                        tr("MapRoulette: Open the current task on MapRoulette"), KeyEvent.CHAR_UNDEFINED,
+                        Shortcut.NONE),
+                false, false);
+        this.taskSupplier = taskSupplier;
+        updateEnabledState();
+    }
+
+    private Optional<String> url() {
+        final var task = this.taskSupplier == null ? null : this.taskSupplier.get();
+        return task == null ? Optional.empty() : MapRouletteServerPreference.getTaskUrl(task.parentId(), task.id());
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        url().ifPresent(OpenBrowser::displayUrl);
+    }
+
+    @Override
+    protected void updateEnabledState() {
+        final var hasWebsite = MapRouletteServerPreference.getWebsiteUrl().isPresent();
+        this.setEnabled(url().isPresent());
+        this.setTooltip(hasWebsite ? tr("Open this task on the MapRoulette website")
+                : tr("Set the MapRoulette website URL in the MapRoulette server preferences to open tasks there"));
     }
 }
 

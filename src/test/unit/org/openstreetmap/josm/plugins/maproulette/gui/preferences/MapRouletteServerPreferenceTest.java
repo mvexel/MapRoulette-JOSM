@@ -89,4 +89,25 @@ class MapRouletteServerPreferenceTest {
                 "Without a switch the website stays");
         assertEquals("", MapRouletteServerPreference.websiteToStore(dev, dev, website, ""), "Emptied by the user");
     }
+
+    /**
+     * The panel names the known servers, and warns that Staging edits go to the real OpenStreetMap (#111)
+     */
+    @Test
+    void testServerName() {
+        final var config = org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getInstance();
+        try {
+            for (var server : new String[][] { { "https://maproulette.org/api/v2", "Production" },
+                    { "https://mr-api.osm.lol/api/v2", "Dev" }, { "https://mr-stage.osm.lol/api/v2", "Staging" },
+                    { "https://mr.example.org/api/v2", "mr.example.org" } }) {
+                org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(
+                        new org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig(server[0]));
+                assertEquals(server[1], MapRouletteServerPreference.getServerName());
+                assertEquals("Staging".equals(server[1]),
+                        MapRouletteServerPreference.getServerTooltip().contains("real OpenStreetMap"), server[1]);
+            }
+        } finally {
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(config);
+        }
+    }
 }

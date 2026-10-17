@@ -6,7 +6,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 
 import jakarta.annotation.Nonnull;
@@ -28,6 +30,10 @@ public final class ModifiedObjects {
      * The tasks marked Fixed whose edits are not uploaded yet
      */
     private static final Map<Long, Task> UNLINKED_FIXED_MAP = new ConcurrentSkipListMap<>();
+    /**
+     * Called on the EDT when the started tasks change
+     */
+    private static final List<Runnable> LOCK_LISTENERS = new CopyOnWriteArrayList<>();
 
     /**
      * Don't allow this static class to be instantiated
@@ -45,7 +51,11 @@ public final class ModifiedObjects {
     public static boolean addLockedTask(Task task) {
         // A new lock: refresh it even if the old one was lost
         LockRefresher.forget(task.id());
-        return LOCKED_TASK_MAP.put(task.id(), task) == null;
+        final var changed = LOCKED_TASK_MAP.put(task.id(), task) == null;
+        if (changed) {
+            fireLocksChanged();
+        }
+        return changed;
     }
 
     /**
@@ -55,7 +65,35 @@ public final class ModifiedObjects {
      * @return {@code true} if the task list changed
      */
     public static boolean removeLockedTask(Task task) {
-        return LOCKED_TASK_MAP.remove(task.id()) != null;
+        final var changed = LOCKED_TASK_MAP.remove(task.id()) != null;
+        if (changed) {
+            fireLocksChanged();
+        }
+        return changed;
+    }
+
+    /**
+     * Listen for changes to the started tasks, for example to update Stop when a lock is dropped elsewhere
+     *
+     * @param listener Called on the EDT after a task is started or stopped
+     */
+    public static void addLockListener(@Nonnull Runnable listener) {
+        LOCK_LISTENERS.add(listener);
+    }
+
+    /**
+     * Stop listening for changes to the started tasks
+     *
+     * @param listener The listener to remove
+     */
+    public static void removeLockListener(@Nonnull Runnable listener) {
+        LOCK_LISTENERS.remove(listener);
+    }
+
+    private static void fireLocksChanged() {
+        if (!LOCK_LISTENERS.isEmpty()) {
+            GuiHelper.runInEDT(() -> LOCK_LISTENERS.forEach(Runnable::run));
+        }
     }
 
     /**
@@ -156,6 +194,7 @@ public final class ModifiedObjects {
     @Nonnull
     public static Set<Long> forgetAll() {
         final var ids = new TreeSet<Long>();
+        final var hadLocks = !LOCKED_TASK_MAP.isEmpty();
         ids.addAll(LOCKED_TASK_MAP.keySet());
         ids.addAll(MODIFIED_TASK_MAP.keySet());
         ids.addAll(UNLINKED_FIXED_MAP.keySet());
@@ -164,6 +203,9 @@ public final class ModifiedObjects {
             MODIFIED_TASK_MAP.remove(id);
             UNLINKED_FIXED_MAP.remove(id);
         });
+        if (hadLocks) {
+            fireLocksChanged();
+        }
         return ids;
     }
 }

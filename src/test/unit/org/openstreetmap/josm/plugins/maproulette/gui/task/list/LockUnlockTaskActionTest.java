@@ -47,8 +47,8 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
-import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
@@ -273,10 +273,10 @@ class LockUnlockTaskActionTest {
                 action.actionPerformed(null);
             });
             sync();
-            final var panel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
-            assertNotNull(panel);
-            assertTrue(panel.isDialogShowing());
-            assertTrue(panel.showsLockedTask());
+            final var dialog = MapRouletteDialog.get();
+            assertNotNull(dialog);
+            assertTrue(dialog.isDialogShowing());
+            assertTrue(dialog.currentTask().showsLockedTask());
         } finally {
             cleanUp();
         }

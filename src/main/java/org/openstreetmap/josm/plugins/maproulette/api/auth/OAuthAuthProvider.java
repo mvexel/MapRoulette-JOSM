@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.Nullable;
@@ -95,6 +96,10 @@ public final class OAuthAuthProvider implements AuthProvider {
     private final Object tokenLock = new Object();
     @Nullable
     private volatile OAuthTokens tokens;
+    /**
+     * Set while a login waits for the browser, so every login control shows it
+     */
+    private final AtomicBoolean loggingIn = new AtomicBoolean();
 
     OAuthAuthProvider(String root, Authorizer authorizer, Clock clock) {
         this.root = root;
@@ -235,6 +240,28 @@ public final class OAuthAuthProvider implements AuthProvider {
      * @throws InterruptedException if the thread was interrupted while waiting for the user
      */
     public void logIn() throws MapRouletteException, InterruptedException {
+        if (!this.loggingIn.compareAndSet(false, true)) {
+            throw new MapRouletteException(tr("A login to MapRoulette is already waiting for the browser."));
+        }
+        MapRouletteClient.getInstance().fireAuthChanged();
+        try {
+            waitForLogIn();
+        } finally {
+            this.loggingIn.set(false);
+            MapRouletteClient.getInstance().fireAuthChanged();
+        }
+    }
+
+    /**
+     * Check if a login is waiting for the browser
+     *
+     * @return {@code true} while {@link #logIn()} runs
+     */
+    public boolean isLoggingIn() {
+        return this.loggingIn.get();
+    }
+
+    private void waitForLogIn() throws MapRouletteException, InterruptedException {
         final var verifier = randomToken();
         final var state = randomToken();
         final var query = new LinkedHashMap<String, String>();
@@ -263,7 +290,6 @@ public final class OAuthAuthProvider implements AuthProvider {
             store(received);
         }
         Logging.info("Logged in to MapRoulette at " + this.root);
-        MapRouletteClient.getInstance().fireAuthChanged();
     }
 
     /**

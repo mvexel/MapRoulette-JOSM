@@ -4,20 +4,23 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.LongPredicate;
 
+import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -31,12 +34,12 @@ import org.openstreetmap.josm.data.preferences.CachingProperty;
 import org.openstreetmap.josm.data.preferences.NamedColorProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.SideButton;
-import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
 import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.DownloadTasks;
+import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.GoToTaskLocation;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
@@ -51,9 +54,10 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
 import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
-import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.widgets.DefaultPanelListCellRenderer;
@@ -63,17 +67,20 @@ import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
 
+import jakarta.annotation.Nullable;
+
 /**
- * A panel showing the task list for the downloaded bbox
- * Note: This may be folded into a {@link javax.swing.JTabbedPane}.
+ * The task list section of the MapRoulette panel, for the tasks of the downloaded areas
  */
-public final class TaskListPanel extends ToggleDialog
+public final class TaskListPanel extends JPanel
         implements LayerManager.LayerChangeListener, Consumer<Collection<TaskClusteredPoint>> {
     /**
      * The serial UID for this component
      */
     @Serial
     private static final long serialVersionUID = -8983504332024481559L;
+    private static final String TABLE_CARD = "table";
+    private static final String EMPTY_CARD = "empty";
     /**
      * The underlying table
      */
@@ -87,31 +94,56 @@ public final class TaskListPanel extends ToggleDialog
      */
     private final LongPredicate hiddenTest = this::isHidden;
     /**
-     * Re-evaluates Start/Stop when the MapRoulette login changes
+     * Re-evaluates Start/Stop when the MapRoulette login or the started tasks change
      */
     private final Runnable authListener;
+    /**
+     * Re-evaluates Start/Stop and the empty state when the started tasks change
+     */
+    private final Runnable lockListener;
     /**
      * Re-sorts, re-filters and repaints the list when a challenge arrives in the background
      */
     private final Runnable challengeListener;
+    /**
+     * The actions of the section that are not on a side button, destroyed with it
+     */
+    private final List<JosmAction> actions;
+    /**
+     * The section title, with the task counts
+     */
+    private final JLabel title = new JLabel();
+    /**
+     * Shows the table, or the empty state while no tasks are loaded
+     */
+    private final JPanel cards = new JPanel(new CardLayout());
+    /**
+     * The buttons below the list, hidden with the empty state: it has its own buttons
+     */
+    private final JPanel buttons;
 
     /**
      * Create a new task list panel
      */
     public TaskListPanel() {
-        super(tr("MapRoulette Tasks"), "user_no_image.png", tr("Downloaded MapRoulette tasks"),
-                Shortcut.registerShortcut("maproulette:task_window", tr("Downloaded MapRoulette tasks"),
-                        KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                200, false, MapRoulettePreferences.class);
+        super(new BorderLayout());
         model = new TaskTableModel();
         MainApplication.getLayerManager().addAndFireLayerChangeListener(model);
         table = new JTable(model);
-        final var downloadButton = new SideButton(new DownloadDataAction());
+        final var downloadAction = new DownloadDataAction();
+        final var findAction = new FindChallengeAction();
+        final var downloadButton = new SideButton(downloadAction);
         final var lockUnlockAction = new LockUnlockTaskAction(table);
         final var lockUnlockButton = new SideButton(lockUnlockAction);
         this.authListener = lockUnlockAction::updateEnabledState;
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
-        final var browseButton = new SideButton(new OpenInBrowserAction(table));
+        // A lock can also be dropped elsewhere (the current task's status, a server switch), which changes Stop
+        this.lockListener = () -> {
+            lockUnlockAction.updateEnabledState();
+            updateTitle();
+        };
+        ModifiedObjects.addLockListener(this.lockListener);
+        final var browseAction = new OpenInBrowserAction(table);
         final var tableRowSorter = new TableRowSorter<>(model);
         this.challengeListener = () -> {
             tableRowSorter.allRowsChanged();
@@ -147,11 +179,16 @@ public final class TaskListPanel extends ToggleDialog
             HiddenList.update(ids);
             layers.forEach(MapRouletteClusteredPointLayer::invalidate);
         });
-        menu.add(new GoToTaskLocation());
-        menu.add(new DownloadTasks());
-        menu.add(new IgnoreAction(IgnoreAction.IgnoreType.IGNORE_TASK));
-        menu.add(new IgnoreAction(IgnoreAction.IgnoreType.IGNORE_CHALLENGE));
-        menu.add(browseButton.getAction());
+        final var goTo = new GoToTaskLocation();
+        final var downloadTasks = new DownloadTasks();
+        final var ignoreTask = new IgnoreAction(IgnoreAction.IgnoreType.IGNORE_TASK);
+        final var ignoreChallenge = new IgnoreAction(IgnoreAction.IgnoreType.IGNORE_CHALLENGE);
+        menu.add(goTo);
+        menu.add(downloadTasks);
+        menu.add(ignoreTask);
+        menu.add(ignoreChallenge);
+        menu.add(browseAction);
+        this.actions = List.of(findAction, browseAction, goTo, downloadTasks, ignoreTask, ignoreChallenge);
         table.setComponentPopupMenu(menu);
         tableRowSorter.setRowFilter(defaultFilter);
         tableRowSorter.setComparator(0,
@@ -160,8 +197,8 @@ public final class TaskListPanel extends ToggleDialog
         table.setRowSorter(tableRowSorter);
         table.setDefaultRenderer(ClusteredPoint.class, new TaskListCellRenderer());
         table.getSelectionModel().addListSelectionListener(l -> {
-            ((LockUnlockTaskAction) lockUnlockButton.getAction()).updateEnabledState();
-            ((OpenInBrowserAction) browseButton.getAction()).updateEnabledState();
+            lockUnlockAction.updateEnabledState();
+            browseAction.updateEnabledState();
             final Task task;
             if (!l.getValueIsAdjusting() && this.table.getRowCount() > table.getSelectedRow()
                     && this.table.getSelectedRow() >= 0) {
@@ -175,7 +212,7 @@ public final class TaskListPanel extends ToggleDialog
                 if (task != null) {
                     CurrentTaskPanel.show(task, false);
                 } else {
-                    final var currentTaskPanel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
+                    final var currentTaskPanel = CurrentTaskPanel.get();
                     // The window follows the user's locked task: filtering it out or selecting another row must not drop it
                     if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()) {
                         currentTaskPanel.refreshModel(null);
@@ -184,9 +221,30 @@ public final class TaskListPanel extends ToggleDialog
             }
         });
         tableRowSorter.toggleSortOrder(0); // Start with an initial sort
-        super.createLayout(panel, true, Arrays.asList(downloadButton, lockUnlockButton, browseButton));
+        final var titleBar = new JPanel(new GridBagLayout());
+        titleBar.add(this.title, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        this.add(titleBar, BorderLayout.NORTH);
+        this.cards.add(GuiHelper.embedInVerticalScrollPane(panel), TABLE_CARD);
+        this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
+        this.add(this.cards, BorderLayout.CENTER);
+        this.buttons = MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton)));
+        this.add(this.buttons, BorderLayout.SOUTH);
+        this.model.addTableModelListener(e -> updateTitle());
+        tableRowSorter.addRowSorterListener(e -> updateTitle());
+        updateTitle();
         // Existing MapRoulette layers call accept() as soon as we listen to them, which needs the table
         MainApplication.getLayerManager().addAndFireLayerChangeListener(this);
+    }
+
+    /**
+     * Get the task list section of the MapRoulette panel
+     *
+     * @return The section, or {@code null} if there is no map
+     */
+    @Nullable
+    public static TaskListPanel get() {
+        final var dialog = MapRouletteDialog.get();
+        return dialog == null ? null : dialog.taskList();
     }
 
     /**
@@ -222,13 +280,51 @@ public final class TaskListPanel extends ToggleDialog
         }
     }
 
-    @Override
+    /**
+     * Build the empty state, shown while no tasks are loaded
+     *
+     * @param findAction     The action that finds a challenge
+     * @param downloadAction The action that loads the tasks in view
+     * @return The empty state
+     */
+    private static JPanel emptyState(JosmAction findAction, JosmAction downloadAction) {
+        final var empty = new JPanel(new GridBagLayout());
+        empty.add(new JLabel(tr("No tasks loaded yet")), GBC.eol().insets(4));
+        empty.add(new JButton(findAction), GBC.eol().insets(2).fill(GBC.HORIZONTAL));
+        empty.add(new JButton(downloadAction), GBC.eol().insets(2).fill(GBC.HORIZONTAL));
+        empty.add(new JLabel(), GBC.eol().fill(GBC.BOTH));
+        return empty;
+    }
+
+    /**
+     * Show the task counts in the title, and the empty state while nothing is loaded
+     */
+    private void updateTitle() {
+        final var total = this.model.getRowCount();
+        final var shown = this.table.getRowSorter() == null ? total : this.table.getRowSorter().getViewRowCount();
+        final var hidden = total - shown;
+        this.title.setText(
+                hidden > 0 ? tr("Tasks · {0} in view · {1} hidden", shown, hidden) : tr("Tasks · {0} in view", shown));
+        final var hasLayer = !MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
+                .isEmpty();
+        // A started task keeps the list, even without tasks, so the panel never says nothing is loaded next to it
+        final var empty = total == 0 && !hasLayer && ModifiedObjects.getLockedTasks().isEmpty();
+        ((CardLayout) this.cards.getLayout()).show(this.cards, empty ? EMPTY_CARD : TABLE_CARD);
+        this.buttons.setVisible(!empty);
+    }
+
+    /**
+     * Remove the listeners and actions of the section. The MapRoulette panel calls this when it is destroyed.
+     */
     public void destroy() {
-        super.destroy();
+        // The side buttons destroy their own actions, once
+        GuiHelper.destroyComponents(this, false);
+        this.actions.forEach(JosmAction::destroy);
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this.model);
         MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
         HiddenList.removeListUpdater(this.hiddenTest);
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
+        ModifiedObjects.removeLockListener(this.lockListener);
         ChallengeCache.removeListener(this.challengeListener);
     }
 
@@ -269,6 +365,7 @@ public final class TaskListPanel extends ToggleDialog
         if (e.getAddedLayer()instanceof MapRouletteClusteredPointLayer layer) {
             layer.addSelectionListener(this);
             MapRouletteAuth.showUnavailableNoticeOnce();
+            updateTitle();
         }
     }
 
@@ -276,6 +373,7 @@ public final class TaskListPanel extends ToggleDialog
     public void layerRemoving(LayerManager.LayerRemoveEvent e) {
         if (e.getRemovedLayer()instanceof MapRouletteClusteredPointLayer layer) {
             layer.removeSelectionListener(this);
+            GuiHelper.runInEDT(this::updateTitle);
         }
     }
 
@@ -365,7 +463,7 @@ public final class TaskListPanel extends ToggleDialog
          * Create a new action
          */
         DownloadDataAction() {
-            super(tr("Download Data"), "download", tr("Download MapRoulette Tasks"),
+            super(tr("Load tasks here"), "download", tr("Load the MapRoulette tasks in the current map view"),
                     Shortcut.registerShortcut("maproulette:download_tasks", tr("MapRoulette: Download Tasks"),
                             KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                     false);
@@ -402,7 +500,7 @@ public final class TaskListPanel extends ToggleDialog
                     this.task.cancel();
                     this.task = null;
                 }
-                this.putValue(NAME, tr("Download Data"));
+                this.putValue(NAME, tr("Load tasks here"));
                 new ImageProvider("download").getResource().attachImageIcon(this);
             }
         }

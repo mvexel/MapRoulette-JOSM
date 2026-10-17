@@ -31,6 +31,18 @@ class ExceptionDialogUtilTest {
     }
 
     /**
+     * Only a scope refusal names the action: another refusal on a known request keeps its own reason
+     */
+    @Test
+    void testOtherRefusalKeepsItsReason() {
+        assertEquals(ExceptionDialogUtil.explainRefusal(Reason.CHALLENGE_DRAFT), ExceptionDialogUtil.explainRefusal(
+                new MapRouletteUnsupportedException("refused", Reason.CHALLENGE_DRAFT, "/api/v2/task/18/start")));
+        assertEquals(ExceptionDialogUtil.explainRefusal(Reason.MOBILE_WRITES_DISABLED),
+                ExceptionDialogUtil.explainRefusal(new MapRouletteUnsupportedException("refused",
+                        Reason.MOBILE_WRITES_DISABLED, "/api/v2/task/18/3")));
+    }
+
+    /**
      * Each task request has a description for the user
      */
     @Test

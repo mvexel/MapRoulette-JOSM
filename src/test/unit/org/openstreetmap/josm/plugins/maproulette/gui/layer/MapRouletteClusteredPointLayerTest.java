@@ -4,7 +4,6 @@ package org.openstreetmap.josm.plugins.maproulette.gui.layer;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.MouseEvent;
@@ -15,8 +14,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import javax.swing.JComponent;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -33,9 +30,8 @@ import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
-import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
-import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.HTTP;
@@ -67,9 +63,10 @@ class MapRouletteClusteredPointLayerTest {
                 return bounds;
             }
         };
-        final var panel = new TaskListPanel();
+        final var dialog = new MapRouletteDialog();
+        final var panel = dialog.taskList();
         try {
-            MainApplication.getMap().addToggleDialog(panel);
+            MainApplication.getMap().addToggleDialog(dialog);
             TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
             sync();
             final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
@@ -95,7 +92,7 @@ class MapRouletteClusteredPointLayerTest {
             layer.mouseClicked(generateMouseEvent(true, 36.0821182637293, -119.104558450006));
             assertEquals(0, panel.getSelected().size());
         } finally {
-            MainApplication.getMap().removeToggleDialog(panel);
+            MainApplication.getMap().removeToggleDialog(dialog);
         }
     }
 
@@ -114,9 +111,10 @@ class MapRouletteClusteredPointLayerTest {
                 return bounds;
             }
         };
-        final var panel = new TaskListPanel();
+        final var dialog = new MapRouletteDialog();
+        final var panel = dialog.taskList();
         try {
-            MainApplication.getMap().addToggleDialog(panel);
+            MainApplication.getMap().addToggleDialog(dialog);
             TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
             sync();
             final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
@@ -132,15 +130,13 @@ class MapRouletteClusteredPointLayerTest {
             assertEquals(1, panel.getSelected().size());
             assertEquals(133361785L, panel.getSelected().iterator().next().id());
             // Now what happens when we filter the images
-            final FilterField filter = assertInstanceOf(FilterField.class,
-                    ((JComponent) ((JComponent) ((JComponent) panel.getComponent(1)).getComponent(0)).getComponent(0))
-                            .getComponent(0));
+            final FilterField filter = TaskListPanelTest.getFilterField(panel);
             filter.setText("foobar12345678912345678");
             sync();
             assertDoesNotThrow(() -> layer.mouseClicked(generateMouseEvent(false, 36.0778797, -119.1075725)));
             assertEquals(0, panel.getSelected().size());
         } finally {
-            MainApplication.getMap().removeToggleDialog(panel);
+            MainApplication.getMap().removeToggleDialog(dialog);
         }
     }
 
@@ -159,9 +155,10 @@ class MapRouletteClusteredPointLayerTest {
         };
         final var locked = new Task(133361784L, "", null, null, 15318, null, null, new DataSet(), null, null, null,
                 null, null, null, 0, null, null, null, false, null, null);
-        final var panel = new TaskListPanel();
+        final var dialog = new MapRouletteDialog();
+        final var panel = dialog.taskList();
         try {
-            MainApplication.getMap().addToggleDialog(panel);
+            MainApplication.getMap().addToggleDialog(dialog);
             TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
             sync();
             final var layer = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
@@ -169,11 +166,9 @@ class MapRouletteClusteredPointLayerTest {
             ModifiedObjects.addLockedTask(locked);
             layer.mouseClicked(generateMouseEvent(false, 36.0778797, -119.1075725));
             sync();
-            final var currentTaskPanel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
+            final var currentTaskPanel = dialog.currentTask();
             assertTrue(currentTaskPanel.showsLockedTask());
-            final FilterField filter = assertInstanceOf(FilterField.class,
-                    ((JComponent) ((JComponent) ((JComponent) panel.getComponent(1)).getComponent(0)).getComponent(0))
-                            .getComponent(0));
+            final FilterField filter = TaskListPanelTest.getFilterField(panel);
             filter.setText("foobar12345678912345678");
             sync();
             assertEquals(0, panel.getSelected().size());
@@ -187,11 +182,7 @@ class MapRouletteClusteredPointLayerTest {
             assertFalse(currentTaskPanel.showsLockedTask());
         } finally {
             ModifiedObjects.removeLockedTask(locked);
-            final var currentTaskPanel = MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class);
-            if (currentTaskPanel != null) {
-                MainApplication.getMap().removeToggleDialog(currentTaskPanel);
-            }
-            MainApplication.getMap().removeToggleDialog(panel);
+            MainApplication.getMap().removeToggleDialog(dialog);
         }
     }
 
@@ -211,9 +202,10 @@ class MapRouletteClusteredPointLayerTest {
                 return bounds;
             }
         };
-        final var panel = new TaskListPanel();
+        final var dialog = new MapRouletteDialog();
+        final var panel = dialog.taskList();
         try {
-            MainApplication.getMap().addToggleDialog(panel);
+            MainApplication.getMap().addToggleDialog(dialog);
             TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
             sync();
             final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
@@ -227,7 +219,7 @@ class MapRouletteClusteredPointLayerTest {
             assertEquals(1, panel.getSelected().size());
             assertEquals(task.id(), panel.getSelected().iterator().next().id());
         } finally {
-            MainApplication.getMap().removeToggleDialog(panel);
+            MainApplication.getMap().removeToggleDialog(dialog);
         }
     }
 
@@ -262,11 +254,12 @@ class MapRouletteClusteredPointLayerTest {
                 return bounds;
             }
         };
-        final var panel = new TaskListPanel();
-        MainApplication.getMap().addToggleDialog(panel);
+        final var dialog = new MapRouletteDialog();
+        final var panel = dialog.taskList();
+        MainApplication.getMap().addToggleDialog(dialog);
         TaskListPanelTest.getDownloadAction(panel).actionPerformed(null);
         sync();
-        MainApplication.getMap().removeToggleDialog(panel);
+        MainApplication.getMap().removeToggleDialog(dialog);
         final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
         assertEquals(1, layers.size());
         return layers.get(0);

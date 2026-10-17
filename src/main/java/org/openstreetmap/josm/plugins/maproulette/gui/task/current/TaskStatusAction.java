@@ -26,6 +26,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.SwingUtilities;
 import javax.swing.text.html.HTMLDocument;
 
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -117,8 +118,8 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
     @Override
     public void actionPerformed(ActionEvent e) {
         final var task = this.currentTaskProvider.get();
-        final var selected = othersToMark(MainApplication.getMap().getToggleDialog(TaskListPanel.class).getSelected(),
-                task);
+        final var taskList = TaskListPanel.get();
+        final var selected = othersToMark(taskList == null ? List.of() : taskList.getSelected(), task);
         final var source = e.getSource();
         // Load the challenge for the feedback dialog on the worker, then show the dialogs on the EDT
         Workers.execute(() -> {
@@ -254,7 +255,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         } else if (source instanceof SideButton sideButton) {
             button = sideButton;
         }
-        if (button != null && button.getParent().getParent().getParent()instanceof CurrentTaskPanel panel) {
+        if (SwingUtilities.getAncestorOfClass(CurrentTaskPanel.class, button)instanceof CurrentTaskPanel panel) {
             for (var action : panel.actions()) {
                 action.updateEnabledState();
             }
@@ -314,8 +315,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
             }
             MainApplication.worker.execute(() -> TaskStatusSender.sendStatuses(List.of(modifiedTask)));
         }
-        Optional.ofNullable(MainApplication.getMap().getToggleDialog(CurrentTaskPanel.class))
-                .ifPresent(p -> p.refreshModel(task));
+        Optional.ofNullable(CurrentTaskPanel.get()).ifPresent(p -> p.refreshModel(task));
     }
 
     /**

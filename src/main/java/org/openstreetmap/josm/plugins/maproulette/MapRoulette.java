@@ -16,9 +16,8 @@ import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRoule
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.gui.LockRefresher;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
-import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
-import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
@@ -59,9 +58,7 @@ public class MapRoulette extends Plugin {
     public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
         super.mapFrameInitialized(oldFrame, newFrame);
         if (newFrame != null) {
-            newFrame.addToggleDialog(new TaskListPanel());
-            // Hidden until a task is started, but listed in the Windows menu (#92)
-            newFrame.addToggleDialog(new CurrentTaskPanel());
+            newFrame.addToggleDialog(new MapRouletteDialog());
         } else {
             final var lockedTasks = ModifiedObjects.getLockedTasks();
             // JOSM may be shutting down, so log failures instead of showing a dialog
