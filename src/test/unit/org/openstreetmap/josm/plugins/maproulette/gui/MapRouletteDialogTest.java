@@ -24,6 +24,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskReviewFields;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -178,6 +179,26 @@ class MapRouletteDialogTest {
         } finally {
             panel.destroy();
         }
+    }
+
+    /**
+     * A task whose review was rejected always goes back for review, as on the website (#115)
+     */
+    @Test
+    void testRevisionRequestsReview() {
+        final var rejected = new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                new DataSet(), null, TaskStatus.FIXED, null, null, null,
+                new TaskReviewFields(2, null, null, null, null, null, null, null, null, null), 0, null, null, null,
+                false, null, "");
+        final var fresh = new Task(28, "Bench 28", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        assertTrue(CurrentTaskPanel.isInRevision(rejected));
+        assertFalse(CurrentTaskPanel.isInRevision(fresh));
+        assertEquals(Boolean.TRUE, CurrentTaskPanel.reviewRequest(rejected, TaskStatus.FIXED, false));
+        assertEquals(Boolean.TRUE, CurrentTaskPanel.reviewRequest(rejected, TaskStatus.ALREADY_FIXED, false));
+        assertNull(CurrentTaskPanel.reviewRequest(rejected, TaskStatus.SKIPPED, true), "A skip sets no status");
+        assertNull(CurrentTaskPanel.reviewRequest(fresh, TaskStatus.FIXED, false));
+        assertEquals(Boolean.TRUE, CurrentTaskPanel.reviewRequest(fresh, TaskStatus.FIXED, true));
     }
 
     /**

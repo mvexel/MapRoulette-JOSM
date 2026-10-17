@@ -83,6 +83,10 @@ public final class CurrentTaskPanel extends JPanel {
     @Serial
     private static final long serialVersionUID = 6628674700523633284L;
     private static final String FINISH_CARD = "finish";
+    /**
+     * The review status code of a rejected task
+     */
+    private static final int REJECTED = 2;
     private static final String COOPERATIVE_CARD = "cooperative";
     /**
      * The model for the task
@@ -358,8 +362,35 @@ public final class CurrentTaskPanel extends JPanel {
         final var skip = status == TaskStatus.SKIPPED;
         final var tags = skip || !this.tagBox.isVisible() ? "" : Utils.strip(this.tagBox.getText());
         return new ModifiedTask(task, status, comment.isEmpty() ? null : comment, tags.isEmpty() ? null : tags,
-                !skip && this.reviewBox.isSelected() ? Boolean.TRUE : null,
+                reviewRequest(task, status, this.reviewBox.isSelected()),
                 getSelections((HTMLDocument) this.instructionPane.getEditorPane().getDocument()));
+    }
+
+    /**
+     * Get the review request to send with a status. A task whose review was rejected always goes back for review, as on
+     * the website: without the request, MapRoulette uses the user's review setting, and the reviewer may never hear of
+     * the revision.
+     *
+     * @param task   The task
+     * @param status The status to send
+     * @param asked  {@code true} if the user asked for a review
+     * @return {@code true} to request a review, {@code null} to leave it to MapRoulette
+     */
+    @Nullable
+    public static Boolean reviewRequest(Task task, TaskStatus status, boolean asked) {
+        // A skip sets no status, so there is nothing to review
+        return status != TaskStatus.SKIPPED && (asked || isInRevision(task)) ? Boolean.TRUE : null;
+    }
+
+    /**
+     * Check if a task's review was rejected, so the user is revising it
+     *
+     * @param task The task
+     * @return {@code true} if the task is in revision
+     */
+    public static boolean isInRevision(@Nullable Task task) {
+        return task != null && task.review() != null && task.review().reviewStatus() != null
+                && task.review().reviewStatus() == REJECTED;
     }
 
     /**
@@ -438,6 +469,14 @@ public final class CurrentTaskPanel extends JPanel {
         final var hasTask = currentTask != null;
         this.commentField.setVisible(hasTask && !currentTask.isChoiceTask());
         this.reviewBox.setVisible(hasTask && !currentTask.isChoiceTask());
+        // A rejected task always goes back for review
+        final var revision = isInRevision(currentTask);
+        this.reviewBox.setEnabled(!revision);
+        if (revision) {
+            this.reviewBox.setSelected(true);
+        }
+        this.reviewBox.setToolTipText(revision ? tr("The reviewer rejected this task, so your fix goes back for review")
+                : tr("Ask a reviewer to check your work"));
         this.tagBox.setVisible(this.tagBox.isVisible() && hasTask);
         refreshFinish();
         if (currentTask == null) {

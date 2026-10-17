@@ -228,7 +228,9 @@ public final class EarlyUploadHook implements UploadHook {
     private static List<ModifiedTask> askFinishes(List<Task> started) {
         final var panel = CurrentTaskPanel.get();
         final var statuses = started.stream()
-                .map(task -> panel == null ? new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of())
+                .map(task -> panel == null
+                        ? new ModifiedTask(task, TaskStatus.FIXED, null, null,
+                                CurrentTaskPanel.reviewRequest(task, TaskStatus.FIXED, false), Map.of())
                         : panel.feedback(task, TaskStatus.FIXED))
                 .toList();
         return finishDialog(statuses).showDialog().getValue() == 1 ? statuses : List.of();
