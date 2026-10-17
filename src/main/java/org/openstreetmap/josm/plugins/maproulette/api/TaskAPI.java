@@ -162,7 +162,8 @@ public final class TaskAPI {
     }
 
     /**
-     * Update the status of a task
+     * Update the status of a task. Skipped is sent as a skip, which takes no tags, review request or completion
+     * responses.
      *
      * @param task          The task to update
      * @param status        The status to set
@@ -174,6 +175,37 @@ public final class TaskAPI {
      * @throws IOException if there was a problem communicating with the server
      */
     public static boolean updateStatus(long task, TaskStatus status, String comment, String tags, Boolean requestReview,
+            Map<String, Option> completionResponses) throws IOException {
+        if (status == TaskStatus.SKIPPED) {
+            skip(task);
+        } else {
+            putStatus(task, status, tags, requestReview, completionResponses);
+        }
+        if (comment != null && !comment.isBlank()) {
+            try {
+                comment(task, comment);
+            } catch (MapRouletteException e) {
+                // The status is set; failing here would send it again
+                Logging.warn("Could not add the comment to MapRoulette task " + task);
+                Logging.warn(e);
+                tellCommentLost(task);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Skip a task: MapRoulette releases the lock and serves the task again later, without changing its status. App
+     * logins may skip only this way, not with the Skipped status (#106).
+     *
+     * @param task The task to skip
+     * @throws IOException if there was a problem communicating with the server
+     */
+    public static void skip(long task) throws IOException {
+        MapRouletteClient.getInstance().post(TASK + "/" + task + "/skip", Collections.emptyMap(), null, null);
+    }
+
+    private static void putStatus(long task, TaskStatus status, String tags, Boolean requestReview,
             Map<String, Option> completionResponses) throws IOException {
         Map<String, String> query = new TreeMap<>();
         if (tags != null && !tags.isBlank()) {
@@ -194,17 +226,6 @@ public final class TaskAPI {
             body = null;
         }
         MapRouletteClient.getInstance().put(TASK + "/" + task + "/" + status.code(), query, body, null);
-        if (comment != null && !comment.isBlank()) {
-            try {
-                comment(task, comment);
-            } catch (MapRouletteException e) {
-                // The status is set; failing here would send it again
-                Logging.warn("Could not add the comment to MapRoulette task " + task);
-                Logging.warn(e);
-                tellCommentLost(task);
-            }
-        }
-        return true;
     }
 
     private static void tellCommentLost(long task) {
