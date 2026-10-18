@@ -314,7 +314,10 @@ public final class TaskListPanel extends JPanel
         this.footer.add(this.footerText, GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         this.footer.add(this.showAll, GBC.eol().insets(0, 2, 4, 2));
         final var listAndFooter = new JPanel(new BorderLayout());
-        listAndFooter.add(GuiHelper.embedInVerticalScrollPane(panel), BorderLayout.CENTER);
+        final var scrollPane = GuiHelper.embedInVerticalScrollPane(panel);
+        // The scroll pane wraps a panel, so the table's own scroll step is not used: scroll about a row per step (#144)
+        scrollPane.getVerticalScrollBar().setUnitIncrement(scrollStep(this.table));
+        listAndFooter.add(scrollPane, BorderLayout.CENTER);
         listAndFooter.add(this.footer, BorderLayout.SOUTH);
         this.cards.add(listAndFooter, TABLE_CARD);
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
@@ -585,6 +588,16 @@ public final class TaskListPanel extends JPanel
             }
         }
         return true;
+    }
+
+    /**
+     * Get the vertical scroll step of the task list: about one row, which shows a name and a details line
+     *
+     * @param table The task table
+     * @return The step in pixels
+     */
+    static int scrollStep(JTable table) {
+        return 2 * table.getFontMetrics(table.getFont()).getHeight() + 12;
     }
 
     /**
