@@ -43,6 +43,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JViewport;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
@@ -416,6 +417,8 @@ public final class CurrentTaskPanel extends JPanel {
         this.finishCards.add(finishButton, FINISH_CARD);
         this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
         this.actionBar.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
+        // Finishing with an edit and without one are two choices
+        this.actionBar.add(new JSeparator(), GBC.eol().fill(GBC.HORIZONTAL).insets(4, 3, 4, 3));
         // Two rows, so the bar stays low; the task's name in the header zooms to the task
         this.statusButtons = MRGuiHelper
                 .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
@@ -428,7 +431,7 @@ public final class CurrentTaskPanel extends JPanel {
                         tr("Edited the map? Upload here or with File > Upload data, and the task is finished."))));
         uploadHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
         south.add(uploadHint, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 4));
-        this.finishStrip.addAll(List.of(this.actionBar, uploadHint));
+        this.finishStrip.add(uploadHint);
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -558,6 +561,8 @@ public final class CurrentTaskPanel extends JPanel {
             this.nextPanel.show(currentTask,
                     first && result.status() == TaskStatus.FIXED && NextTaskPanel.AUTO_START.get());
         }
+        // Only a started task has outcomes; otherwise the list gets the height
+        this.actionBar.setVisible(!next && showsLockedTask());
         if (next != this.showsNext) {
             this.showsNext = next;
             ((CardLayout) this.centerCards.getLayout()).show(this.centerCards, next ? NEXT_CARD : INSTRUCTIONS_CARD);
@@ -610,6 +615,20 @@ public final class CurrentTaskPanel extends JPanel {
             choice.action().run();
         });
         return button;
+    }
+
+    /**
+     * Select the shown task's objects and zoom to them, as clicking the task's name does. Call on the EDT.
+     *
+     * @return {@code false} if the panel shows no task
+     */
+    public static boolean zoomToTask() {
+        final var panel = get();
+        if (panel == null || panel.task == null) {
+            return false;
+        }
+        TaskData.loadAndSelect(panel.task);
+        return true;
     }
 
     /**

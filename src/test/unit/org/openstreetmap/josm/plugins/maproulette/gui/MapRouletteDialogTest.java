@@ -536,8 +536,11 @@ class MapRouletteDialogTest {
                 "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.", null,
                 new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
         try {
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, false));
+            assertFalse(dialog.currentTask().actionBar().isVisible(), "Not started: no outcomes");
             ModifiedObjects.addLockedTask(task);
             GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, false));
+            assertTrue(dialog.currentTask().actionBar().isVisible(), "Started");
             final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
                     dialog.currentTask().getParent());
             final var card = scroll.getParent();
