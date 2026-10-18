@@ -485,6 +485,23 @@ class LockUnlockTaskActionTest {
     }
 
     /**
+     * A status sent in this session counts, even though the server list still says open (#146)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartTaskSentDoneAsks() throws Exception {
+        final var messages = startDone(TaskStatus.CREATED, 1,
+                () -> ModifiedObjects.setSentStatus(132279499L, TaskStatus.ALREADY_FIXED));
+        try {
+            assertEquals(List.of("Task 132279499 is already done (Already fixed).\nStart it anyway?|Cancel"), messages);
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
      * Closing the question (Esc or the close button) starts nothing (#142)
      *
      * @throws Exception if the test fails
@@ -611,9 +628,16 @@ class LockUnlockTaskActionTest {
      * @return The questions asked, each followed by the option that was the default
      */
     private List<String> startDone(TaskStatus status, int choice) throws Exception {
+        return startDone(status, choice, () -> {
+            // Nothing set in this session
+        });
+    }
+
+    private List<String> startDone(TaskStatus status, int choice, Runnable afterLoad) throws Exception {
         MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
                 .forEach(MainApplication.getLayerManager()::removeLayer);
         MainApplication.getLayerManager().addLayer(layer(status));
+        afterLoad.run();
         GuiHelper.runInEDTAndWait(() -> this.table.getSelectionModel().setSelectionInterval(0, 0));
         final var messages = new CopyOnWriteArrayList<String>();
         new MockUp<JOptionPane>() {
@@ -693,6 +717,7 @@ class LockUnlockTaskActionTest {
     }
 
     private static void cleanUp() {
+        ModifiedObjects.clearSentStatuses(List.of(132279499L));
         final var modified = ModifiedObjects.getModifiedTask(132279499L);
         if (modified != null) {
             ModifiedObjects.removeModifiedTask(modified);
