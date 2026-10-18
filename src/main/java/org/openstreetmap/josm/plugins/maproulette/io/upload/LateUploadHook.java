@@ -219,8 +219,10 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
     private static void explainNotFinished(Task task, Exception exception) {
         if (exception instanceof MapRouletteLockHeldException lockHeld && lockHeld.heldTaskId().isEmpty()) {
             // locked_by_other: the lock expired and another mapper started the task
-            final var message = tr("Your edits are uploaded, but MapRoulette did not mark task {0} as fixed: another "
-                    + "mapper has started it. {1}", task.id(), lockHeld.serverMessage().orElse(""));
+            final var message = tr(
+                    "Your edits are uploaded, but MapRoulette did not mark task {0} as fixed: another "
+                            + "mapper has started it. {1}",
+                    Long.toString(task.id()), lockHeld.serverMessage().orElse(""));
             Logging.warn(message);
             if (!GraphicsEnvironment.isHeadless()) {
                 GuiHelper.runInEDT(() -> new Notification(message.strip()).setIcon(JOptionPane.WARNING_MESSAGE)

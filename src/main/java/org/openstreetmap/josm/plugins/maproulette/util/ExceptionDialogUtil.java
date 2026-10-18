@@ -61,7 +61,8 @@ public final class ExceptionDialogUtil {
             if (lockHeld.heldTaskId().isPresent()) {
                 showErrorDialog(
                         tr("You already have MapRoulette task {0} started. MapRoulette allows one started task"
-                                + " at a time; stop that task first.", lockHeld.heldTaskId().getAsLong()),
+                                + " at a time; stop that task first.",
+                                Long.toString(lockHeld.heldTaskId().getAsLong())),
                         tr("MapRoulette task already started"), null);
             } else {
                 // MapRoulette also answers 409 for conflicts that are not about locks, such as OSM change conflicts

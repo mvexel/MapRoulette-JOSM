@@ -80,7 +80,7 @@ public class ApplyCooperativeChange {
                     || ConditionalOptionPaneUtil.showConfirmationDialog(BULK_OPERATION_VERSION_MISMATCH,
                             MRGuiHelper.dialogParent(),
                             tr("The {0} {1} (v{2}) has changed since the challenge was created.<br>Continue?",
-                                    update.osmType().getAPIName(), update.osmId(), update.version()),
+                                    update.osmType().getAPIName(), Long.toString(update.osmId()), update.version()),
                             tr("Cooperative Challenge: Mismatched version types"), JOptionPane.YES_NO_OPTION,
                             JOptionPane.WARNING_MESSAGE, JOptionPane.YES_OPTION)) {
                 final var tagMap = new HashMap<>(update.tags().updates());

@@ -120,7 +120,7 @@ public final class LockRefresher {
                 Logging.debug(e);
                 LOST.add(task.id());
                 tell(tr("MapRoulette task {0} is no longer locked by you. Someone else may be working on it.",
-                        task.id()));
+                        Long.toString(task.id())));
             } catch (IOException | RuntimeException e) {
                 // Tried again at the next interval; one bad task must not stop the others
                 Logging.warn("Could not refresh the lock on MapRoulette task " + task.id());

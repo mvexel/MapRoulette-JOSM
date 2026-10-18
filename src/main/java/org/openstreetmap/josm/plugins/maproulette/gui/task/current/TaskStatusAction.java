@@ -388,7 +388,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 }
                 if (ModifiedObjects.isFinishPending(task.id())) {
                     // The upload in progress finishes the task; another status would be overwritten
-                    this.setTooltip(tr("The upload in progress finishes task {0}", task.id()));
+                    this.setTooltip(tr("The upload in progress finishes task {0}", Long.toString(task.id())));
                     this.setEnabled(false);
                 } else if (MapRouletteAuth.isAvailable()) {
                     this.setEnabled(status != state);

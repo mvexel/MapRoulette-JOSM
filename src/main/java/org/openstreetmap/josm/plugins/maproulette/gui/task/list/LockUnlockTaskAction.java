@@ -501,7 +501,7 @@ final class LockUnlockTaskAction extends JosmAction {
                 super.setEnabled(false);
             } else if (!Boolean.TRUE.equals(getValue("lock")) && finishing.isPresent()) {
                 // Stop would be sent after the upload, and lose to its Fixed
-                this.setTooltip(tr("The upload in progress finishes task {0}", finishing.get().id()));
+                this.setTooltip(tr("The upload in progress finishes task {0}", Long.toString(finishing.get().id())));
                 super.setEnabled(false);
             } else if (MapRouletteAuth.isAvailable()) {
                 super.setEnabled(true);
