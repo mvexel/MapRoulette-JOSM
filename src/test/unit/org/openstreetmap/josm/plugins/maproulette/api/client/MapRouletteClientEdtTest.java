@@ -2,9 +2,8 @@
 package org.openstreetmap.josm.plugins.maproulette.api.client;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
-import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
-import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -79,7 +78,8 @@ class MapRouletteClientEdtTest {
         WireMocks.current().register(get(urlPathEqualTo("/api/v2/challenge/1")).willReturn(aResponse().withBody("{}")));
         GuiHelper.runInEDTAndWaitWithException(() -> assertThrows(IllegalStateException.class,
                 () -> MapRouletteClient.getInstance().get("/challenge/1", Collections.emptyMap(), reader -> null)));
-        WireMocks.current().verifyThat(0, anyRequestedFor(anyUrl()));
+        // Only this call counts: a job left by an earlier test may still reach the server meanwhile
+        WireMocks.current().verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/challenge/1")));
     }
 
     @Test
