@@ -51,27 +51,21 @@ class TaskListRightClickTest {
                     "A selected row keeps the selection");
 
             table.setRowSelectionInterval(first, first);
-            pressAt(table, first + 2, MouseEvent.BUTTON1, InputEvent.BUTTON1_DOWN_MASK);
-            assertArrayEquals(new int[] { first }, table.getSelectedRows(), "Left presses are left to the table");
+            GuiHelper.runInEDTAndWait(() -> table.getPopupLocation(null));
+            assertArrayEquals(new int[] { first }, table.getSelectedRows(), "The menu key keeps the selection");
         } finally {
             panel.destroy();
         }
     }
 
-    private static void rightPress(JTable table, int row) {
-        pressAt(table, row, MouseEvent.BUTTON3, InputEvent.BUTTON3_DOWN_MASK);
-    }
-
     /**
-     * Send a press to the panel's own mouse listeners only, not the table's UI, which also selects on a left press
+     * Open the menu with the mouse over a row. Swing asks the table where to show its menu, with the mouse event,
+     * whichever press or release triggers it.
      */
-    private static void pressAt(JTable table, int row, int button, int modifiers) {
+    private static void rightPress(JTable table, int row) {
         final var cell = table.getCellRect(row, 0, true);
-        for (var listener : table.getMouseListeners()) {
-            if (listener.getClass().getName().startsWith(TaskListPanel.class.getName())) {
-                listener.mousePressed(new MouseEvent(table, MouseEvent.MOUSE_PRESSED, 0, modifiers, cell.x + 5,
-                        cell.y + 5, 1, button == MouseEvent.BUTTON3, button));
-            }
-        }
+        final var event = new MouseEvent(table, MouseEvent.MOUSE_PRESSED, 0, InputEvent.BUTTON3_DOWN_MASK, cell.x + 5,
+                cell.y + 5, 1, true, MouseEvent.BUTTON3);
+        GuiHelper.runInEDTAndWait(() -> table.getPopupLocation(event));
     }
 }
