@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,7 +21,6 @@ import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
@@ -30,6 +30,7 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
 
+import mockit.Invocation;
 import mockit.Mock;
 import mockit.MockUp;
 
@@ -87,8 +88,27 @@ class TaskDataTest {
                 noted.add(taskId);
             }
         };
-        assertEquals(1, loadWithDownload(false));
+        final var notFound = new CopyOnWriteArrayList<PrimitiveId>();
+        assertEquals(1, loadWithDownload(Server.NOT_FOUND, notFound));
         assertEquals(List.of(27L), noted, "The panel says the download brought nothing (#145)");
+        assertEquals(List.of(NODE), notFound, "The panel names the objects the server doesn't have (#116)");
+    }
+
+    /**
+     * If the OSM server can't be reached, the panel says the objects could not be downloaded, but the caller is not
+     * told that they don't exist
+     */
+    @Test
+    void testServerUnreachable() throws Exception {
+        final var noted = new CopyOnWriteArrayList<Long>();
+        new MockUp<CurrentTaskPanel>() {
+            @Mock
+            void notDownloaded(long taskId) {
+                noted.add(taskId);
+            }
+        };
+        assertEquals(0, loadWithDownload(Server.UNREACHABLE));
+        assertEquals(List.of(27L), noted);
     }
 
     /**
@@ -105,7 +125,7 @@ class TaskDataTest {
                 noted.add(taskId);
             }
         };
-        assertEquals(0, loadWithDownload(true));
+        assertEquals(0, loadWithDownload(Server.FOUND));
         assertEquals(List.of(), noted);
     }
 
@@ -127,29 +147,46 @@ class TaskDataTest {
     /**
      * Load a task's node that is not in the edit layer yet
      *
-     * @param found {@code true} if the OSM server has the node
+     * @param server What the OSM server answers
      * @return How often the caller was told that nothing could be downloaded
      */
-    private static int loadWithDownload(boolean found) throws Exception {
+    private static int loadWithDownload(Server server) throws Exception {
+        return loadWithDownload(server, new CopyOnWriteArrayList<>());
+    }
+
+    /**
+     * Load a task's node that is not in the edit layer yet
+     *
+     * @param server   What the OSM server answers
+     * @param notFound Gets the objects the server doesn't have, as the caller is told
+     * @return How often the caller was told that nothing could be downloaded
+     */
+    private static int loadWithDownload(Server server, List<PrimitiveId> notFound) throws Exception {
         final var dataSet = new DataSet();
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "loadWithDownload", null));
-        new MockUp<DownloadPrimitivesWithReferrersTask>() {
+        new MockUp<TaskData.ObjectsDownload>() {
             @Mock
-            void realRun() {
-                if (found) {
+            void realRun(Invocation invocation) throws ReflectiveOperationException {
+                final TaskData.ObjectsDownload download = invocation.getInvokedInstance();
+                if (server == Server.FOUND) {
                     final var node = new Node(LatLon.ZERO);
                     node.setOsmId(1, 1);
-                    dataSet.addPrimitive(node);
+                    final var tmpLayer = TaskData.ObjectsDownload.class.getDeclaredField("tmpLayer");
+                    tmpLayer.setAccessible(true);
+                    ((OsmDataLayer) tmpLayer.get(download)).data.addPrimitive(node);
+                } else if (server == Server.NOT_FOUND) {
+                    // The OSM server answers 404
+                    final var missing = TaskData.ObjectsDownload.class.getDeclaredField("notFound");
+                    missing.setAccessible(true);
+                    missing.set(download, Set.of(NODE));
                 }
-            }
-
-            @Mock
-            void finish() {
-                // The real one reports the objects it could not download
             }
         };
         final var told = new AtomicInteger();
-        GuiHelper.runInEDTAndWait(() -> TaskData.load(task(null), List.of(NODE), told::incrementAndGet));
+        GuiHelper.runInEDTAndWait(() -> TaskData.load(task(null), List.of(NODE), ids -> {
+            told.incrementAndGet();
+            notFound.addAll(ids);
+        }));
         MainApplication.worker.submit(() -> {
             /* Sync worker */ }).get(10, TimeUnit.SECONDS);
         GuiHelper.runInEDTAndWait(() -> {
@@ -167,6 +204,18 @@ class TaskDataTest {
         assertTrue(bounds.contains(new LatLon(40.5, -111.9)));
         assertEquals(0.002, bounds.getHeight(), 1e-9);
         assertEquals(0.002, bounds.getWidth(), 1e-9);
+    }
+
+    /**
+     * What the OSM server answers for the task's node
+     */
+    private enum Server {
+        /** It has the node */
+        FOUND,
+        /** 404 */
+        NOT_FOUND,
+        /** No answer: the download fails, and JOSM shows the error */
+        UNREACHABLE
     }
 
     private static Task task(Point location) {

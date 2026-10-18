@@ -3,9 +3,12 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.net.URI;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadOsmTask;
@@ -14,10 +17,15 @@ import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.actions.downloadtasks.DownloadReferrersTask;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
+import org.openstreetmap.josm.gui.PleaseWaitRunnable;
+import org.openstreetmap.josm.gui.io.DownloadPrimitivesTask;
 import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
@@ -55,9 +63,10 @@ public final class TaskData {
      * Download the task's objects and select them, as {@link #loadAndSelect(Task)}
      *
      * @param task      The task
-     * @param onMissing Called on the EDT if none of the task's objects could be downloaded, or {@code null}
+     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for, if none of the task's
+     *                  objects could be loaded, or {@code null}
      */
-    public static void loadAndSelect(@Nonnull Task task, @Nullable Runnable onMissing) {
+    public static void loadAndSelect(@Nonnull Task task, @Nullable Consumer<List<PrimitiveId>> onMissing) {
         // Finding the objects may need the challenge from the server
         Workers.execute(() -> {
             final var ids = List.copyOf(TaskPrimitives.getPrimitiveIds(task));
@@ -80,9 +89,11 @@ public final class TaskData {
      *
      * @param task      The task
      * @param ids       The task's objects
-     * @param onMissing Called on the EDT if none of the task's objects could be downloaded, or {@code null}
+     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for, if none of the task's
+     *                  objects could be loaded, or {@code null}
      */
-    static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids, @Nullable Runnable onMissing) {
+    static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids,
+            @Nullable Consumer<List<PrimitiveId>> onMissing) {
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
         if (ids.isEmpty()) {
             loadArea(task, dataSet);
@@ -93,18 +104,113 @@ public final class TaskData {
             select(ids);
             return;
         }
-        // Merged into the edit layer, or a new layer if there is none; the worker runs the jobs in order
-        MainApplication.worker.submit(new DownloadPrimitivesWithReferrersTask(false, missing, true, true, null, null));
-        MainApplication.worker.submit(() -> GuiHelper.runInEDT(() -> {
+        // Merged into the edit layer, or a new layer if there is none
+        MainApplication.worker.submit(new ObjectsDownload(missing, notFound -> {
             // Objects that don't exist on the server (404) stay missing, for example a task made for another server
             if (missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
                 CurrentTaskPanel.notDownloaded(task.id());
-                if (onMissing != null) {
-                    onMissing.run();
+                // Without a 404, the download failed and JOSM explained why: the objects may well exist
+                if (onMissing != null && !notFound.isEmpty()) {
+                    onMissing.accept(notFound);
                 }
             }
             select(ids);
         }));
+    }
+
+    /**
+     * Name the OSM server the task's objects come from
+     *
+     * @return "OpenStreetMap" for the main server, its host otherwise
+     */
+    public static String osmServerName() {
+        final var url = OsmApi.getOsmApi().getServerUrl();
+        if (url.equals(Config.getUrls().getDefaultOsmApiUrl())) {
+            return tr("OpenStreetMap");
+        }
+        try {
+            return Optional.ofNullable(URI.create(url).getHost()).orElse(url);
+        } catch (IllegalArgumentException e) {
+            return url;
+        }
+    }
+
+    /**
+     * Download objects with their referrers into the edit layer, as {@link DownloadPrimitivesWithReferrersTask} does,
+     * but without its dialog for objects the server doesn't have: the panel says so instead (#116). Unlike JOSM's
+     * download, it always asks the OSM API, never Overpass: a task has only a few objects.
+     */
+    static final class ObjectsDownload extends PleaseWaitRunnable {
+        private final List<PrimitiveId> ids;
+        private final Consumer<List<PrimitiveId>> onDone;
+        private final OsmDataLayer tmpLayer = new OsmDataLayer(new DataSet(), OsmDataLayer.createNewName(), null);
+        private Set<PrimitiveId> notFound = Set.of();
+        private PleaseWaitRunnable current;
+        private boolean canceled;
+
+        /**
+         * Create a download
+         *
+         * @param ids    The objects
+         * @param onDone Called on the EDT once the objects are merged, with the ones the server doesn't have
+         */
+        ObjectsDownload(List<PrimitiveId> ids, Consumer<List<PrimitiveId>> onDone) {
+            super(tr("Download objects"), false);
+            this.ids = List.copyOf(ids);
+            this.onDone = onDone;
+        }
+
+        @Override
+        protected synchronized void cancel() {
+            this.canceled = true;
+            if (this.current != null) {
+                this.current.operationCanceled();
+            }
+        }
+
+        @Override
+        protected void realRun() {
+            getProgressMonitor().setTicksCount(2);
+            final var objects = new DownloadPrimitivesTask(this.tmpLayer, this.ids, true,
+                    getProgressMonitor().createSubTaskMonitor(1, false));
+            if (!this.start(objects)) {
+                return;
+            }
+            objects.run();
+            this.notFound = Optional.ofNullable(objects.getMissingPrimitives()).map(Set::copyOf).orElse(Set.of());
+            // The referrers of the objects that exist, as JOSM's own download does
+            final var visible = this.ids.stream().map(this.tmpLayer.data::getPrimitiveById)
+                    .filter(p -> p != null && p.isVisible()).map(OsmPrimitive::getPrimitiveId).toList();
+            if (!visible.isEmpty()) {
+                final var referrers = new DownloadReferrersTask(this.tmpLayer, visible);
+                if (this.start(referrers)) {
+                    referrers.run();
+                }
+            }
+        }
+
+        private synchronized boolean start(PleaseWaitRunnable task) {
+            this.current = this.canceled ? null : task;
+            return !this.canceled;
+        }
+
+        @Override
+        protected void finish() {
+            synchronized (this) {
+                if (this.canceled) {
+                    return;
+                }
+            }
+            GuiHelper.runInEDTAndWait(() -> {
+                final var layer = MainApplication.getLayerManager().getEditLayer();
+                if (layer == null || !layer.isDownloadable()) {
+                    MainApplication.getLayerManager().addLayer(this.tmpLayer);
+                } else {
+                    layer.mergeFrom(this.tmpLayer);
+                }
+                this.onDone.accept(this.ids.stream().filter(this.notFound::contains).toList());
+            });
+        }
     }
 
     /**

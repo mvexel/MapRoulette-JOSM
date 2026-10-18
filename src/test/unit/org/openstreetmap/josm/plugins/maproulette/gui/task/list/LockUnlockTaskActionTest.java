@@ -14,11 +14,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -28,6 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.Action;
 import javax.swing.Icon;
+import javax.swing.JButton;
 import javax.swing.JOptionPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
@@ -38,8 +43,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.io.AbstractPrimitiveTask;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
@@ -53,7 +63,9 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
@@ -62,7 +74,7 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
-import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
+import org.openstreetmap.josm.tools.Utils;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
@@ -349,17 +361,18 @@ class LockUnlockTaskActionTest {
                 .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
         wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/start")).atPriority(1).inScenario("forgotten")
                 .whenScenarioStateIs("released").willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
-        final var asked = new AtomicInteger();
+        // The panel shows the started task with the question: the recorded task, as task 125
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/125")).atPriority(1)
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody(Files.readString(Path.of("src/test/resources/__files/api/v2/task/132279499/start"))
+                                .replace("\"id\": 132279499", "\"id\": 125"))));
+        final var dialogs = new AtomicInteger();
         new MockUp<JOptionPane>() {
             @Mock
             int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
                     int messageType, Icon icon, Object[] options, Object initialValue) {
-                if (!String.valueOf(message).contains("still have")) {
-                    // Task 132279499's object is not on the test OSM server: keep the task started
-                    return 1;
-                }
-                asked.incrementAndGet();
-                return choice;
+                dialogs.incrementAndGet();
+                return 1;
             }
         };
         final var action = new LockUnlockTaskAction(this.table);
@@ -367,12 +380,157 @@ class LockUnlockTaskActionTest {
             action.updateEnabledState();
             action.actionPerformed(null);
         });
-        // Start, the question (queued on the EDT), then the second start
+        // Start, then the question (queued on the EDT)
         sync();
         sync();
+        // Asked in the panel, which shows task 125, not in a dialog (#116)
+        assertEquals(0, dialogs.get());
+        assertNotNull(stateText("Task 125 is still started"));
+        click(choice == 0 ? "Stop task 125 and start 132279499" : "Cancel");
+        // The release and the second start
         sync();
-        assertEquals(1, asked.get(), "Start must ask before stopping the forgotten task");
+        sync();
         return wireMock;
+    }
+
+    /**
+     * Start while this JOSM has another task started asks in the panel first, without asking MapRoulette (#116).
+     * Putting the started task back stops it, then starts the selected one.
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedPutBack() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/147197178/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/147197178/start")));
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(stateText("Start task 132279499? Task 147197178 is still started."));
+            click("Finish task 147197178 first");
+            sync();
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+            assertNotNull(ModifiedObjects.getLockedTask(147197178L), "Finish first keeps the task started");
+
+            GuiHelper.runInEDTAndWaitWithException(() -> action.actionPerformed(null));
+            sync();
+            click("Stop task 147197178 and start 132279499");
+            // The stop, then the start
+            for (var i = 0; i < 4; i++) {
+                sync();
+            }
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNull(ModifiedObjects.getLockedTask(147197178L));
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * The start-blocked question goes once the started task is finished or stopped elsewhere, so it doesn't hide the
+     * task's real state (#116)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedQuestionDropped() throws Exception {
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertNotNull(stateText("Start task 132279499? Task 147197178 is still started."));
+            GuiHelper.runInEDTAndWait(() -> ModifiedObjects.removeLockedTask(started));
+            assertNull(TaskListPanelTest.findOrNull(Objects.requireNonNull(CurrentTaskPanel.get()),
+                    JMultilineLabel.class, l -> l.getText().contains("still started")),
+                    "The question is gone with the lock");
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * "Stop task X and start Y" doesn't start Y when MapRoulette doesn't release X: MapRoulette would refuse the start
+     * anyway, and X stays started
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedReleaseFails() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/147197178/release")).atPriority(1)
+                .willReturn(aResponse().withStatus(500)));
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            click("Stop task 147197178 and start 132279499");
+            for (var i = 0; i < 4; i++) {
+                sync();
+            }
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(ModifiedObjects.getLockedTask(147197178L), "The held task stays started");
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            assertFalse(explained.isEmpty(), "The failed release is explained");
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * Find the state line of the current task section, by its start
+     *
+     * @param start The start of its text
+     * @return The label
+     */
+    static JMultilineLabel stateText(String start) {
+        return TaskListPanelTest.find(Objects.requireNonNull(CurrentTaskPanel.get()), JMultilineLabel.class,
+                l -> l.getText().contains(Utils.escapeReservedCharactersHTML(start)));
+    }
+
+    /**
+     * Click a button of the current task section on the EDT
+     *
+     * @param label The button's label
+     */
+    static void click(String label) {
+        GuiHelper.runInEDTAndWait(() -> TaskListPanelTest
+                .find(Objects.requireNonNull(CurrentTaskPanel.get()), JButton.class, b -> label.equals(b.getText()))
+                .doClick());
     }
 
     /**
@@ -677,15 +835,15 @@ class LockUnlockTaskActionTest {
         final var wireMock = WireMocks.current();
         wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
                 .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
-        new MockUp<DownloadPrimitivesWithReferrersTask>() {
+        new MockUp<AbstractPrimitiveTask>() {
             @Mock
             void realRun() {
                 // The OSM server answers 404
             }
 
             @Mock
-            void finish() {
-                // The real one reports the objects it could not download
+            Set<PrimitiveId> getMissingPrimitives() {
+                return Set.of(new SimplePrimitiveId(9494185766L, OsmPrimitiveType.NODE));
             }
         };
         final var messages = new CopyOnWriteArrayList<String>();
@@ -707,8 +865,12 @@ class LockUnlockTaskActionTest {
             for (var i = 0; i < 4; i++) {
                 sync();
             }
-            assertEquals(1, messages.size(), String.valueOf(messages));
-            assertTrue(messages.get(0).contains("132279499"), messages.get(0));
+            // Asked in the panel, not in a dialog (#116)
+            assertEquals(List.of(), messages);
+            assertNotNull(stateText("Task 132279499's object (node 9494185766) doesn't exist on"));
+            click("Stop task");
+            sync();
+            sync();
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
             assertNull(ModifiedObjects.getLockedTask(132279499L));
         } finally {
