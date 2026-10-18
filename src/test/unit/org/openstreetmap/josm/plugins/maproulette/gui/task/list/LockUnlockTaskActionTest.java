@@ -43,6 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
@@ -61,6 +62,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
@@ -445,6 +447,32 @@ class LockUnlockTaskActionTest {
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
             assertNull(ModifiedObjects.getLockedTask(147197178L));
             assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * Starting the next task (#117) goes through the same start-blocked question while another task is started, and
+     * doesn't ask MapRoulette for the lock
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartNextBlocked() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            final var next = new Task(132279499L, "node/1", null, null, 0, null, null, new DataSet(), null, null, null,
+                    null, null, null, 0, null, null, null, false, null, null);
+            GuiHelper.runInEDTAndWaitWithException(() -> action.start(next, new int[0]));
+            sync();
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(stateText("Start task 132279499? Task 147197178 is still started."));
         } finally {
             Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
             cleanUp();

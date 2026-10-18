@@ -94,4 +94,34 @@ class ChallengeAPITest {
                         """)));
         assertThrows(IOException.class, () -> ChallengeAPI.openTasks(15318));
     }
+
+    /**
+     * The next task: up to ten tasks by the challenge's priorities, or the nearest to the finished task (#117). Recorded
+     * from mr-api.osm.lol, challenges 10 and 11, 2026-10-18.
+     */
+    @Test
+    void testRandomTask() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var files = "src/test/resources/__files/api/v2/challenge/";
+        wireMock.register(get(urlPathEqualTo("/api/v2/challenge/11/tasks/prioritizedTasks")).willReturn(
+                aResponse().withStatus(200).withBody(Files.readString(Path.of(files + "11/tasks/prioritizedTasks")))));
+        final var tasks = ChallengeAPI.randomTask(11, null, null, 10, -1);
+        assertEquals(2, tasks.length);
+        assertEquals(242, tasks[0].id());
+        assertEquals(11, tasks[0].parentId());
+        wireMock.verifyThat(getRequestedFor(urlPathEqualTo("/api/v2/challenge/11/tasks/prioritizedTasks"))
+                .withQueryParam("limit", equalTo("10")).withQueryParam("proximity", absent()));
+
+        wireMock.register(get(urlPathEqualTo("/api/v2/challenge/10/tasks/prioritizedTasks"))
+                .withQueryParam("proximity", equalTo("236")).willReturn(aResponse().withStatus(200)
+                        .withBody(Files.readString(Path.of(files + "10/tasks/prioritizedTasks-proximity-236")))));
+        final var nearby = ChallengeAPI.randomTask(10, null, null, 10, 236);
+        assertEquals(1, nearby.length);
+        assertEquals(237, nearby[0].id());
+
+        wireMock.register(get(urlPathEqualTo("/api/v2/challenge/10/tasks/prioritizedTasks"))
+                .withQueryParam("proximity", absent()).willReturn(aResponse().withStatus(200)
+                        .withBody(Files.readString(Path.of(files + "10/tasks/prioritizedTasks-none")))));
+        assertEquals(0, ChallengeAPI.randomTask(10, null, null, 10, -1).length, "No open tasks left");
+    }
 }

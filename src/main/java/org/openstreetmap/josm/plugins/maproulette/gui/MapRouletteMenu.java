@@ -14,6 +14,7 @@ import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.HowItWorksAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.LoadTasksInViewAction;
+import org.openstreetmap.josm.plugins.maproulette.actions.NextTaskAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.OpenLinkAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.ShowPanelAction;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteLoginPreference;
@@ -45,6 +46,7 @@ public final class MapRouletteMenu {
         MainMenu.add(menu, new LoadTasksInViewAction());
         MainMenu.add(menu, new OpenLinkAction());
         MainMenu.add(menu, new ShowPanelAction());
+        MainMenu.add(menu, new NextTaskAction());
         menu.addSeparator();
         MainMenu.add(menu,
                 PreferencesAction.forPreferenceSubTab(tr("MapRoulette login…"),
