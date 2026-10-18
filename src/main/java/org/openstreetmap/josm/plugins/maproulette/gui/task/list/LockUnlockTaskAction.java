@@ -3,11 +3,14 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.io.Serial;
+import java.time.ZoneId;
+import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,11 +25,14 @@ import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.PleaseWaitRunnable;
+import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
-import org.openstreetmap.josm.io.OsmApi;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
@@ -36,6 +42,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClustered
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
  * Lock tasks
@@ -87,13 +94,103 @@ final class LockUnlockTaskAction extends JosmAction {
      * the EDT.
      */
     private void lockTasks() {
-        final var selected = this.table.getSelectionModel().getSelectedIndices();
+        final var selection = this.table.getSelectionModel().getSelectedIndices();
         final var model = (TaskTableModel) this.table.getModel();
-        final var ids = new long[selected.length];
-        for (int j = 0; j < selected.length; j++) {
-            ids[j] = model.get(this.table.getRowSorter().convertRowIndexToModel(selected[j])).id();
+        final var ids = new ArrayList<Long>();
+        final var selected = new ArrayList<Integer>();
+        final var done = new ArrayList<TaskClusteredPoint>();
+        final var removed = new ArrayList<TaskClusteredPoint>();
+        for (int row : selection) {
+            final var point = model.get(this.table.getRowSorter().convertRowIndexToModel(row));
+            final var chip = TaskRows.chip(point);
+            if (chip == TaskRows.Chip.UNAVAILABLE) {
+                // MapRoulette starts these, but no finish can follow (#142)
+                removed.add(point);
+                continue;
+            }
+            if (chip == TaskRows.Chip.DONE) {
+                done.add(point);
+            }
+            ids.add(point.id());
+            selected.add(row);
         }
-        lockTasks(ids, selected, -1);
+        if (!removed.isEmpty()) {
+            showRemoved(removed);
+        }
+        if (ids.isEmpty() || !done.isEmpty() && !confirmStartDone(done)) {
+            return;
+        }
+        lockTasks(ids.stream().mapToLong(Long::longValue).toArray(),
+                selected.stream().mapToInt(Integer::intValue).toArray(), -1);
+    }
+
+    /**
+     * Tell the user that deleted or disabled tasks are not started
+     *
+     * @param removed The selected tasks that the challenge owner removed
+     */
+    private static void showRemoved(List<TaskClusteredPoint> removed) {
+        final String message;
+        if (removed.size() == 1) {
+            message = tr("Task {0} was removed by the challenge owner.", Long.toString(removed.get(0).id()));
+        } else {
+            message = trn("{0} of the selected tasks was removed by the challenge owner and is not started.",
+                    "{0} of the selected tasks were removed by the challenge owner and are not started.",
+                    removed.size(), removed.size());
+        }
+        JOptionPane.showMessageDialog(MRGuiHelper.dialogParent(), message, tr("MapRoulette task removed"),
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /**
+     * Ask before starting tasks that are already done (#142)
+     *
+     * @param done The selected tasks that are done
+     * @return {@code true} if the user wants to start them anyway
+     */
+    private static boolean confirmStartDone(List<TaskClusteredPoint> done) {
+        final String message;
+        if (done.size() == 1) {
+            final var point = done.get(0);
+            final var modified = ModifiedObjects.getModifiedTask(point.id());
+            final var status = modified != null ? modified.status() : point.status();
+            final var label = status == null ? tr("Done") : MRGuiHelper.statusLabel(status);
+            final var id = Long.toString(point.id());
+            final var mappedOn = modified != null ? null : point.mappedOn();
+            final var doneText = mappedOn == null ? tr("Task {0} is already done ({1}).", id, label)
+                    : tr("Task {0} is already done ({1}, {2}).", id, label, DateUtils
+                            .getDateFormatter(FormatStyle.MEDIUM).withZone(ZoneId.systemDefault()).format(mappedOn));
+            final var completedBy = modified != null ? null : completedBy(point);
+            final var self = MapRouletteClient.getInstance().auth().knownUserId();
+            if (completedBy != null && self.isPresent() && completedBy != self.getAsLong()) {
+                // MapRoulette only lets the mapper who finished a task change its status
+                message = doneText + "\n" + tr("Another mapper finished it, so MapRoulette won''t accept a new status.")
+                        + "\n" + tr("Start it anyway?");
+            } else {
+                message = doneText + "\n" + tr("Start it anyway?");
+            }
+        } else {
+            message = trn("{0} of the selected tasks is already done.\nStart them anyway?",
+                    "{0} of the selected tasks are already done.\nStart them anyway?", done.size(), done.size());
+        }
+        final var options = new String[] { tr("Start anyway"), tr("Cancel") };
+        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(), message,
+                tr("MapRoulette task already done"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+                options, options[1]);
+        return choice == 0;
+    }
+
+    /**
+     * Get who finished a task
+     *
+     * @param point The task
+     * @return The MapRoulette user id, or {@code null} if not known
+     */
+    private static Long completedBy(TaskClusteredPoint point) {
+        if (point instanceof ClusteredPoint clusteredPoint) {
+            return clusteredPoint.completedBy() == null ? null : clusteredPoint.completedBy().id();
+        }
+        return point instanceof Task task ? task.completedBy() : null;
     }
 
     /**

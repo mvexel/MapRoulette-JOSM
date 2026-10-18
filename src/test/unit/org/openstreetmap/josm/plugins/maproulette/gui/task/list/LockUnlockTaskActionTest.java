@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -38,10 +39,10 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
@@ -61,6 +62,7 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
+import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
@@ -83,15 +85,25 @@ class LockUnlockTaskActionTest {
     void setUp() {
         this.model = new TaskTableModel();
         MainApplication.getLayerManager().addAndFireLayerChangeListener(this.model);
-        MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
-                Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
-                        new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, TaskStatus.CREATED,
-                        null, Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
-                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
-                        Map.of()))));
+        MainApplication.getLayerManager().addLayer(layer(TaskStatus.CREATED));
         this.table = new JTable(this.model);
         this.table.setRowSorter(new TableRowSorter<>(this.model));
         this.table.getSelectionModel().setSelectionInterval(0, 0);
+    }
+
+    /**
+     * A layer with task 132279499
+     *
+     * @param status The task's status
+     * @return The layer
+     */
+    private static MapRouletteClusteredPointLayer layer(TaskStatus status) {
+        return new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
+                Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
+                        new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, status, null,
+                        Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
+                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
+                        Map.of())));
     }
 
     @AfterEach
@@ -429,6 +441,205 @@ class LockUnlockTaskActionTest {
             }
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
         }
+    }
+
+    /**
+     * Start on a task that is already Fixed asks first; Cancel starts nothing (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartDoneTaskCancelled() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var messages = startDone(1);
+        try {
+            assertEquals(1, messages.size());
+            assertTrue(messages.get(0).endsWith("|Cancel"), "Cancel is the default: " + messages.get(0));
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Start on a task that is already Fixed asks first; Start anyway starts it (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartDoneTaskConfirmed() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var messages = startDone(0);
+        try {
+            assertEquals(1, messages.size());
+            assertTrue(messages.get(0).startsWith("Task 132279499 is already done (Fixed, "), messages.get(0));
+            assertFalse(messages.get(0).contains("Another mapper"), "Who finished it is not known");
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Closing the question (Esc or the close button) starts nothing (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartDoneTaskClosed() throws Exception {
+        final var wireMock = WireMocks.current();
+        assertEquals(1, startDone(JOptionPane.CLOSED_OPTION).size());
+        try {
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * A task another mapper finished: the question says MapRoulette won't take a new status (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartTaskDoneByOther() throws Exception {
+        final var login = MapRouletteClient.getInstance().auth();
+        MapRouletteClient.getInstance().setAuthProvider(new AuthProvider() {
+            @Override
+            public boolean isAvailable() {
+                return login.isAvailable();
+            }
+
+            @Override
+            public Set<Capability> capabilities() {
+                return login.capabilities();
+            }
+
+            @Override
+            public void authenticate(HttpClient client, boolean loginRequired)
+                    throws MapRouletteAuthUnavailableException {
+                login.authenticate(client, loginRequired);
+            }
+
+            @Override
+            public OptionalLong knownUserId() {
+                return OptionalLong.of(2);
+            }
+        });
+        final var messages = startDone(TaskStatus.ALREADY_FIXED, 1);
+        try {
+            assertEquals(1, messages.size());
+            assertTrue(messages.get(0).contains("(Already fixed, "), messages.get(0));
+            assertTrue(messages.get(0).contains("Another mapper finished it"), messages.get(0));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * A deleted task is not started, and there is no "Start anyway" (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartDeletedTaskRefused() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var messages = startDone(TaskStatus.DELETED, 0);
+        try {
+            assertEquals(List.of("Task 132279499 was removed by the challenge owner."), messages);
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Start on an open task doesn't ask
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartOpenTaskDoesNotAsk() throws Exception {
+        final var asked = new AtomicInteger();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                asked.incrementAndGet();
+                return 1;
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertEquals(0, asked.get());
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Click Start on task 132279499 marked Fixed, answering the question with {@code choice}
+     *
+     * @param choice The option picked in the question
+     * @return The questions asked
+     */
+    private List<String> startDone(int choice) throws Exception {
+        return startDone(TaskStatus.FIXED, choice);
+    }
+
+    /**
+     * Click Start on task 132279499 with a status, answering the question with {@code choice}
+     *
+     * @param status The task's status
+     * @param choice The option picked in the question
+     * @return The questions asked, each followed by the option that was the default
+     */
+    private List<String> startDone(TaskStatus status, int choice) throws Exception {
+        MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
+                .forEach(MainApplication.getLayerManager()::removeLayer);
+        MainApplication.getLayerManager().addLayer(layer(status));
+        GuiHelper.runInEDTAndWait(() -> this.table.getSelectionModel().setSelectionInterval(0, 0));
+        final var messages = new CopyOnWriteArrayList<String>();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                if (String.valueOf(message).contains("could not be downloaded")) {
+                    // The task's node is not on the test OSM server (#143); keep the task started
+                    return 1;
+                }
+                messages.add(message + "|" + initialValue);
+                return choice;
+            }
+
+            @Mock
+            void showMessageDialog(Component parentComponent, Object message, String title, int messageType) {
+                messages.add(String.valueOf(message));
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            action.updateEnabledState();
+            action.actionPerformed(null);
+        });
+        sync();
+        return messages;
     }
 
     /**
