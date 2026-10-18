@@ -21,22 +21,27 @@ import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.JTable;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
+import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.gui.widgets.UrlLabel;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskReviewFields;
+import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -327,10 +332,212 @@ class MapRouletteDialogTest {
             final var withTask = dialog.neededSize();
             assertTrue(withTask.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, withTask::toString);
             assertTrue(withTask.height > noTask.height, "A task needs more room than the list alone");
-            assertTrue(withTask.height <= 380, () -> "Fits a short docked panel: " + withTask);
+            // A docked panel under JOSM's four default panels at 1600x1000 gets about 270 px, with the header line
+            assertTrue(noTask.height <= 160, () -> "The list works in a short docked panel: " + noTask);
+            assertTrue(withTask.height <= 160, () -> "The task works in a short docked panel: " + withTask);
+            final var scroll = assertInstanceOf(JScrollPane.class,
+                    SwingUtilities.getAncestorOfClass(JScrollPane.class, dialog.currentTask()));
+            assertSame(scroll, SwingUtilities.getAncestorOfClass(JScrollPane.class, dialog.currentTask().getParent()));
+            assertTrue(SwingUtilities.isDescendingFrom(scroll, dialog.taskList().getParent()),
+                    "The current task scrolls as a whole, inside the split");
         } finally {
             MainApplication.getMap().removeToggleDialog(dialog);
         }
+    }
+
+    /**
+     * The first tasks of a JOSM session open the panel; later ones leave JOSM's visibility setting alone (dry run 2)
+     */
+    @Test
+    void testOpensForFirstTasks() {
+        MapRouletteDialog.resetOpenedForTasks();
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testOpensForFirstTasks", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            if (dialog.isDialogShowing()) {
+                dialog.hideDialog();
+            }
+            MainApplication.getLayerManager()
+                    .addLayer(new MapRouletteClusteredPointLayer(new Bounds(40, -112, 41, -111), List.of()));
+            GuiHelper.runInEDTAndWait(() -> {
+                // The panel opens after the layer is in
+            });
+            assertTrue(dialog.isDialogShowing(), "The first tasks open the panel");
+
+            dialog.hideDialog();
+            MainApplication.getLayerManager()
+                    .addLayer(new MapRouletteClusteredPointLayer(new Bounds(40, -112, 41, -111), List.of()));
+            GuiHelper.runInEDTAndWait(() -> {
+                // As above
+            });
+            assertFalse(dialog.isDialogShowing(), "Once per session: then the user's choice wins");
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+            MapRouletteDialog.resetOpenedForTasks();
+        }
+    }
+
+    /**
+     * The header is one line that fits JOSM's default sidebar width, with the help as an icon (dry run 2)
+     */
+    @Test
+    void testHeaderOneLine() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testHeaderOneLine", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            final var header = dialog.login().status().getParent();
+            final var help = TaskListPanelTest.find(dialog, UrlLabel.class, l -> l.getText().contains(">Help<"));
+            assertTrue(help.getToolTipText().startsWith("How it works"), help::getToolTipText);
+            assertTrue(SwingUtilities.isDescendingFrom(help, header), "The help link is in the header");
+            final var size = header.getPreferredSize();
+            assertTrue(size.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, size::toString);
+            assertTrue(size.height < 2 * header.getFontMetrics(header.getFont()).getHeight(), size::toString);
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * In a narrow header the login text is cut short, never dropped (dry run 2, #173)
+     */
+    @Test
+    void testHeaderKeepsLoginText() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testHeaderKeepsLogin", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            final var status = dialog.login().status();
+            status.setText("Logged in as mvexelmrtest");
+            final var header = status.getParent();
+            // Narrower than the header wants, as in a docked panel with a long name
+            final var preferred = header.getPreferredSize();
+            header.setSize(preferred.width - 40, preferred.height);
+            layOut(header);
+            assertTrue(status.getWidth() >= 40, () -> "The login text keeps room: " + status.getBounds());
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * In a short panel the current task scrolls as a whole and keeps a few lines of instructions; the list's buttons
+     * stay below its challenge filter (dry run 2)
+     */
+    @Test
+    void testShortPanelKeepsInstructions() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testShortPanel", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            CurrentTaskPanel.show(new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1,
+                    "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.",
+                    null, new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false,
+                    null, ""), false);
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            final var view = (javax.swing.Scrollable) scroll.getViewport().getView();
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 150);
+            layOut(scroll);
+            assertFalse(view.getScrollableTracksViewportHeight(), "Short: the task scrolls");
+            final var line = dialog.getFontMetrics(dialog.getFont()).getHeight();
+            final var instructions = TaskListPanelTest.find(dialog.currentTask(), JLabel.class,
+                    l -> "Instructions: ".equals(l.getText()));
+            final var inner = SwingUtilities.getAncestorOfClass(JScrollPane.class, instructions);
+            assertTrue(inner.getHeight() >= instructions.getHeight() + 3 * line,
+                    () -> "The instructions keep three lines: " + inner.getBounds());
+
+            scroll.getViewport().setViewPosition(new java.awt.Point(0, 60));
+            CurrentTaskPanel.show(
+                    new Task(28, "Bench 28", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""),
+                    false);
+            layOut(scroll);
+            GuiHelper.runInEDTAndWait(() -> {
+                // The scroll to the top waits for the layout
+            });
+            assertEquals(0, scroll.getViewport().getViewPosition().y, "Another task starts at its name");
+
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 2000);
+            layOut(scroll);
+            assertTrue(view.getScrollableTracksViewportHeight(), "Tall: the task fills the view");
+
+            final var list = dialog.taskList();
+            MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
+                    List.of(TaskListPanelTest.point(1006, 18, "SLC benches", null))));
+            GuiHelper.runInEDTAndWait(() -> {
+                // The list fills in
+            });
+            assertTrue(
+                    SwingUtilities.getAncestorOfClass(JPanel.class,
+                            TaskListPanelTest.find(list, javax.swing.JComboBox.class, c -> true)).isVisible(),
+                    "The filters show");
+            list.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, list.squeezedSize().height);
+            layOut(list);
+            // The whole filters block: the challenge row and the text filter row
+            final var filter = SwingUtilities.getAncestorOfClass(JPanel.class,
+                    TaskListPanelTest.find(list, javax.swing.JComboBox.class, c -> true));
+            final var button = TaskListPanelTest.find(list, SideButton.class, b -> true);
+            final var filterBottom = SwingUtilities.convertPoint(filter, 0, filter.getHeight(), list).y;
+            final var buttonTop = SwingUtilities.convertPoint(button, 0, 0, list).y;
+            assertTrue(buttonTop >= filterBottom, () -> "Buttons " + buttonTop + " below the filter " + filterBottom);
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * A started task opens at its name: its text fields set their text, and their carets ask to be scrolled into view
+     * afterwards (dry run 2)
+     */
+    @Test
+    void testStartedTaskShowsItsName() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testStartedTask", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        final var task = new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1,
+                "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 150);
+            layOut(scroll);
+            ModifiedObjects.addLockedTask(task);
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, true));
+            for (int i = 0; i < 5; i++) {
+                GuiHelper.runInEDTAndWait(() -> layOut(scroll));
+            }
+            // The task's data arrives
+            MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testStartedTaskData", null));
+            for (int i = 0; i < 5; i++) {
+                GuiHelper.runInEDTAndWait(() -> layOut(scroll));
+            }
+            assertFalse(((javax.swing.Scrollable) scroll.getViewport().getView()).getScrollableTracksViewportHeight(),
+                    "Short: the task scrolls");
+            assertEquals(0, scroll.getViewport().getViewPosition().y, "The started task shows its name");
+        } finally {
+            ModifiedObjects.removeLockedTask(task);
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    private static void layOut(Container container) {
+        container.doLayout();
+        for (var child : container.getComponents()) {
+            if (child instanceof Container c) {
+                layOut(c);
+            }
+        }
+    }
+
+    /**
+     * The panel asks for a fair share of the column, at least what it asked before
+     */
+    @Test
+    void testDefaultHeight() {
+        assertTrue(MapRouletteDialog.defaultHeight() >= 300);
     }
 
     /**

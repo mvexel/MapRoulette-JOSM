@@ -43,4 +43,17 @@ public class HowItWorksAction extends JosmAction {
     public static UrlLabel link() {
         return new UrlLabel(HELP_URL, tr("How it works"), 2);
     }
+
+    /**
+     * Get a short "Help" link to the help page, for the one-line panel header
+     *
+     * @return The link
+     */
+    public static UrlLabel headerLink() {
+        final var link = new UrlLabel(HELP_URL, tr("Help"), 2);
+        link.setToolTipText(tr("How it works: open the MapRoulette help page in your browser"));
+        // Never wrap: the header is one line
+        link.setMinimumSize(link.getPreferredSize());
+        return link;
+    }
 }

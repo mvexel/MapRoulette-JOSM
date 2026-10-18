@@ -17,6 +17,7 @@ import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -42,8 +43,10 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JViewport;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.ListDataEvent;
@@ -938,10 +941,17 @@ enum Tone {
         if (this.prompt != null && (task == null || task.id() != this.prompt.taskId())) {
             this.prompt = null;
         }
+        final var otherTask = task != null && (this.task == null || this.task.id() != task.id());
         this.task = task;
         this.refreshPanel();
         // With no task, the panel gives the task list the room (#132)
         Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
+        if (otherTask) {
+            // A new task starts at its name, where the panel scrolls as a whole; after the layout has settled
+            SwingUtilities.invokeLater(
+                    () -> Optional.ofNullable((JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this))
+                            .ifPresent(viewport -> viewport.setViewPosition(new Point(0, 0))));
+        }
     }
 
     /**
@@ -997,6 +1007,21 @@ enum Tone {
             south += this.feedbackToggle.getPreferredSize().height - this.feedbackPanel.getPreferredSize().height;
         }
         return new Dimension(width, this.header.getPreferredSize().height + instructions + south);
+    }
+
+    /**
+     * Get the height the panel takes when its view scrolls: the header and the lower part as they are now, with up to six
+     * lines of instructions (at least three), so the instructions never collapse
+     *
+     * @return The height
+     */
+    public int scrolledHeight() {
+        final var line = this.getFontMetrics(this.getFont()).getHeight();
+        final var label = this.panel.getComponent(0).getPreferredSize().height;
+        final var center = Math.max(label + 3 * line,
+                Math.min(this.centerCards.getPreferredSize().height, label + 6 * line));
+        return Math.max(neededSize().height,
+                this.header.getPreferredSize().height + center + this.south.getPreferredSize().height);
     }
 
     /**

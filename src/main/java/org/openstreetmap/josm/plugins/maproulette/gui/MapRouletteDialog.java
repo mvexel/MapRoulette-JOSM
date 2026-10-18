@@ -7,18 +7,26 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Dimension;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.KeyboardFocusManager;
+import java.awt.Rectangle;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JViewport;
+import javax.swing.Scrollable;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -53,6 +61,15 @@ public final class MapRouletteDialog extends ToggleDialog {
      * the user drags (#132)
      */
     private static final int HYSTERESIS = 24;
+    /**
+     * The lines of the current task that must show before the panel says it is too small; the rest scrolls
+     */
+    private static final int TASK_LINES = 6;
+    /**
+     * {@code true} once the panel opened itself for the first tasks of this JOSM session; after that JOSM's own
+     * visibility setting wins
+     */
+    private static final AtomicBoolean OPENED_FOR_TASKS = new AtomicBoolean();
     private static final String TASK_CARD = "task";
     private static final String NORMAL_VIEW = "normal";
     private static final String SMALL_VIEW = "small";
@@ -63,7 +80,7 @@ public final class MapRouletteDialog extends ToggleDialog {
     /**
      * The server and the login, shown in every view
      */
-    private final JPanel header = new JPanel(new GridBagLayout());
+    private final JPanel header = new JPanel(new BorderLayout());
     /**
      * Shows the server name again when the login changes, which also happens when the server changes
      */
@@ -117,15 +134,26 @@ public final class MapRouletteDialog extends ToggleDialog {
     public MapRouletteDialog() {
         super(tr("MapRoulette"), "user_no_image", tr("MapRoulette tasks and the current task"), Shortcut
                 .registerShortcut("maproulette:task_window", tr("MapRoulette"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                300, false, MapRoulettePreferences.class);
+                defaultHeight(), false, MapRoulettePreferences.class);
         this.taskList = new TaskListPanel();
         this.currentTask = new CurrentTaskPanel();
-        this.lower.add(this.currentTask, TASK_CARD);
+        // In a short panel the current task scrolls as a whole, instead of the panel saying it is too small
+        final var taskScroll = new JScrollPane(new TaskView(this.currentTask));
+        taskScroll.setBorder(null);
+        taskScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        this.lower.add(taskScroll, TASK_CARD);
 
-        this.header.add(this.server, GBC.std().insets(4, 2, 4, 2));
-        this.header.add(this.login.status(), GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        this.header.add(this.login.button(), GBC.std().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
-        this.header.add(HowItWorksAction.link(), GBC.eol().anchor(GBC.LINE_END).insets(4, 2, 4, 2));
+        this.server.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        this.header.add(this.server, BorderLayout.WEST);
+        // The header stays one line: the login text takes the room that is left, and is cut short with "…" in a narrow
+        // panel
+        final var status = this.login.status();
+        status.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        this.header.add(status, BorderLayout.CENTER);
+        final var end = new JPanel(new GridBagLayout());
+        end.add(this.login.button(), GBC.std().insets(0, 2, 2, 2));
+        end.add(HowItWorksAction.headerLink(), GBC.eol().insets(4, 2, 4, 2));
+        this.header.add(end, BorderLayout.EAST);
 
         // The list collapses with the arrows
         this.split.setOneTouchExpandable(true);
@@ -179,6 +207,43 @@ public final class MapRouletteDialog extends ToggleDialog {
     public static MapRouletteDialog get() {
         final var map = MainApplication.getMap();
         return map == null ? null : map.getToggleDialog(MapRouletteDialog.class);
+    }
+
+    /**
+     * Get the height the panel asks for when it opens: about half the screen, so it gets a fair share of a column that
+     * already holds JOSM's own panels
+     *
+     * @return The height
+     */
+    static int defaultHeight() {
+        if (GraphicsEnvironment.isHeadless()) {
+            return 300;
+        }
+        final Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        return Math.max(300, screen.height / 2);
+    }
+
+    /**
+     * Open the panel with a fair share of its column, the first time tasks arrive in this JOSM session. Call on the EDT.
+     */
+    public void openForFirstTasks() {
+        if (OPENED_FOR_TASKS.getAndSet(true)) {
+            return;
+        }
+        if (isDialogInDefaultView() && this.isDocked && this.dialogsPanel != null && this.dialogsPanel.initialized) {
+            // Already open, maybe squeezed by the panels above: lay the column out again with this panel as the one
+            // that asks for room
+            this.dialogsPanel.reconstruct(DialogsPanel.Action.COLLAPSED_TO_DEFAULT, this);
+        } else {
+            unfurlDialog();
+        }
+    }
+
+    /**
+     * Forget that the panel opened itself this session, for tests
+     */
+    static void resetOpenedForTasks() {
+        OPENED_FOR_TASKS.set(false);
     }
 
     /**
@@ -244,10 +309,13 @@ public final class MapRouletteDialog extends ToggleDialog {
             // The list may shrink to its title and challenge filter: the current task matters more, and the divider moves
             final var list = this.taskList.squeezedSize();
             final var task = this.currentTask.neededSize();
+            // The current task scrolls, so a few of its lines are enough
+            final var taskLines = TASK_LINES * this.getFontMetrics(this.getFont()).getHeight();
             return new Dimension(Math.max(list.width, task.width),
-                    list.height + this.split.getDividerSize() + task.height);
+                    list.height + this.split.getDividerSize() + Math.min(task.height, taskLines));
         }
-        final var list = this.taskList.neededSize(4);
+        // The list scrolls, so one row is enough
+        final var list = this.taskList.neededSize(1);
         return new Dimension(list.width, list.height + this.noTask.getPreferredSize().height);
     }
 
@@ -354,6 +422,65 @@ public final class MapRouletteDialog extends ToggleDialog {
         final var room = this.split.getHeight() - this.split.getDividerSize();
         if (room > 0 && Boolean.TRUE.equals(this.showsSplit)) {
             DIVIDER_RATIO.put(Math.min(0.9, Math.max(0.1, this.split.getDividerLocation() / (double) room)));
+        }
+    }
+
+    /**
+     * Holds the current task in its scroll pane: it fills the view while there is room for what the task needs, and
+     * keeps that height and scrolls below it
+     */
+    private static final class TaskView extends JPanel implements Scrollable {
+        @Serial
+        private static final long serialVersionUID = 2370384614519425187L;
+        private final CurrentTaskPanel task;
+
+        TaskView(CurrentTaskPanel task) {
+            super(new BorderLayout());
+            this.task = task;
+            this.add(task, BorderLayout.CENTER);
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            return new Dimension(super.getPreferredSize().width, this.task.scrolledHeight());
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return this.getFontMetrics(this.getFont()).getHeight();
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(visibleRect.height - getScrollableUnitIncrement(visibleRect, orientation, direction), 1);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return this.getParent()instanceof JViewport viewport && viewport.getHeight() >= this.task.scrolledHeight();
+        }
+
+        /**
+         * Text fields ask to be scrolled into view whenever their text is set, for example when the task's data
+         * arrives. Only follow them while the user works in the task, so a refresh doesn't scroll the task away from
+         * its name.
+         */
+        @Override
+        public void scrollRectToVisible(Rectangle rect) {
+            final var focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            if (focus != null && SwingUtilities.isDescendingFrom(focus, this)) {
+                super.scrollRectToVisible(rect);
+            }
         }
     }
 

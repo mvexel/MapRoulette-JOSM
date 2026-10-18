@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -257,9 +258,11 @@ public class TaskListPanelTest {
         try {
             GuiHelper.runInEDTAndWait(() -> {
                 /* Sync EDT */ });
-            final var reason = find(panel, JLabel.class, l -> "Log in to start tasks:".equals(l.getText()));
+            final var reason = find(panel, JLabel.class,
+                    l -> "Log in at the top of the panel to start tasks.".equals(l.getText()));
             assertTrue(reason.getParent().isVisible());
-            assertTrue(find(reason.getParent(), JButton.class, b -> "Log in…".equals(b.getText())).isVisible());
+            assertThrows(AssertionError.class, () -> find(reason.getParent(), JButton.class, b -> true),
+                    "One Log in button, in the panel header");
             loggedOut.set(false);
             MapRouletteClient.getInstance().fireAuthChanged();
             GuiHelper.runInEDTAndWait(() -> {
