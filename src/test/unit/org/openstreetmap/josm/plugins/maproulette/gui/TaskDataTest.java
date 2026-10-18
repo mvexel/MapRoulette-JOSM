@@ -6,10 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.data.DataSource;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -23,6 +25,7 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
@@ -77,7 +80,15 @@ class TaskDataTest {
      */
     @Test
     void testNothingDownloaded() throws Exception {
+        final var noted = new CopyOnWriteArrayList<Long>();
+        new MockUp<CurrentTaskPanel>() {
+            @Mock
+            void notDownloaded(long taskId) {
+                noted.add(taskId);
+            }
+        };
         assertEquals(1, loadWithDownload(false));
+        assertEquals(List.of(27L), noted, "The panel says the download brought nothing (#145)");
     }
 
     /**
@@ -87,7 +98,30 @@ class TaskDataTest {
      */
     @Test
     void testDownloaded() throws Exception {
+        final var noted = new CopyOnWriteArrayList<Long>();
+        new MockUp<CurrentTaskPanel>() {
+            @Mock
+            void notDownloaded(long taskId) {
+                noted.add(taskId);
+            }
+        };
         assertEquals(0, loadWithDownload(true));
+        assertEquals(List.of(), noted);
+    }
+
+    /**
+     * A task that names no objects zooms to its location, even when its area is loaded already (#145)
+     */
+    @Test
+    void testZoomToTaskWithoutObjects() {
+        final var task = task(new Point(40.5, -111.9));
+        final var dataSet = new DataSet();
+        dataSet.addDataSource(new DataSource(TaskData.bounds(task), "test"));
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testZoomToTask", null));
+        GuiHelper.runInEDTAndWait(() -> TaskData.load(task, List.of()));
+        final var centre = MainApplication.getMap().mapView.getRealBounds().getCenter();
+        assertEquals(40.5, centre.lat(), 0.001);
+        assertEquals(-111.9, centre.lon(), 0.001);
     }
 
     /**

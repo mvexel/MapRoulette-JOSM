@@ -75,11 +75,13 @@ import org.openstreetmap.josm.plugins.maproulette.gui.TaskChanges;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskRows;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
@@ -110,9 +112,9 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JLabel challengeLabel = new JLabel();
     /**
-     * The name of the task
+     * The name of the task. It zooms to the task, so the user finds the way back after panning away (#145).
      */
-    private final JLabel nameLabel = new JLabel();
+    private final JButton nameLink = new JButton();
     /**
      * The label for the task id
      */
@@ -167,6 +169,11 @@ public final class CurrentTaskPanel extends JPanel {
      * Shown when the task's objects are not in the edit layer, with a button to download them (#114)
      */
     private final JPanel dataPanel = new JPanel(new GridBagLayout());
+    private final JLabel dataLabel = new JLabel();
+    /**
+     * The task whose objects a download did not bring, or {@code -1}
+     */
+    private long notDownloaded = -1;
     /**
      * The task name and id, above the instructions
      */
@@ -257,12 +264,22 @@ public final class CurrentTaskPanel extends JPanel {
         // The header stays in place while the instructions scroll
         final var header = this.header;
         // The task name is what people look for; the challenge above it is context
-        final var font = this.nameLabel.getFont();
+        final var font = this.challengeLabel.getFont();
         this.challengeLabel.setFont(font.deriveFont(font.getSize2D() * 0.9f));
         this.challengeLabel.setForeground(UIManager.getColor("Label.disabledForeground"));
-        this.nameLabel.setFont(font.deriveFont(Font.BOLD, font.getSize2D() * 1.2f));
+        this.nameLink.setFont(font.deriveFont(Font.BOLD, font.getSize2D() * 1.2f));
+        // A link-like button: it takes keyboard focus and has a tooltip, but no button border
+        this.nameLink.setBorderPainted(false);
+        this.nameLink.setContentAreaFilled(false);
+        this.nameLink.setHorizontalAlignment(SwingConstants.LEADING);
+        this.nameLink.setMargin(new Insets(0, 0, 0, 0));
+        this.nameLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        this.nameLink.setToolTipText(tr("Zoom to task"));
+        // The zoom icon says the name is clickable, without link colours JOSM doesn't use
+        this.nameLink.setHorizontalTextPosition(SwingConstants.LEADING);
+        this.nameLink.addActionListener(newActions[5]);
         header.add(this.challengeLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 0));
-        header.add(this.nameLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        header.add(this.nameLink, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
         header.add(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
         this.add(header, BorderLayout.NORTH);
@@ -283,7 +300,7 @@ public final class CurrentTaskPanel extends JPanel {
         retry.addActionListener(
                 e -> Optional.ofNullable(this.task).map(Task::id).ifPresent(LateUploadHook::retryFinish));
         this.unfinishedPanel.add(retry, GBC.eol().anchor(GBC.LINE_END));
-        this.dataPanel.add(new JLabel(tr("The task''s objects are not in the data.")), GBC.std().fill(GBC.HORIZONTAL));
+        this.dataPanel.add(this.dataLabel, GBC.std().fill(GBC.HORIZONTAL));
         final var download = new JButton(tr("Download"));
         download.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
         download.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
@@ -379,6 +396,20 @@ public final class CurrentTaskPanel extends JPanel {
     }
 
     /**
+     * Note that a download did not bring any of a task's objects, so the panel says so instead of offering the same
+     * download again without a word (#145). Call on the EDT.
+     *
+     * @param taskId The task
+     */
+    public static void notDownloaded(long taskId) {
+        final var panel = get();
+        if (panel != null) {
+            panel.notDownloaded = taskId;
+            panel.refreshDataState();
+        }
+    }
+
+    /**
      * Show whether the task's objects are in the edit layer, and which are selected
      */
     private void refreshDataState() {
@@ -391,8 +422,13 @@ public final class CurrentTaskPanel extends JPanel {
                 .orElse(List.of());
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
         this.dataPanel.setVisible(!TaskData.missing(ids, dataSet).isEmpty());
+        // A download that brought nothing: the server may be unreachable, or the objects deleted on OSM (#145)
+        this.dataLabel.setText(this.notDownloaded == currentTask.id()
+                ? tr("Task {0}''s objects could not be downloaded. They may no longer exist on OpenStreetMap.",
+                        Long.toString(currentTask.id()))
+                : tr("The task''s objects are not in the data."));
         final var started = showsLockedTask();
-        final var selection = started ? selection(ids, dataSet) : null;
+        final var selection = started ? selection(ids, dataSet, TaskRows.readableName(currentTask)) : null;
         // The selection goes on a line of its own, so the narrow panel doesn't cut it off
         this.idLabel.setText(selection == null ? header(currentTask, started)
                 : "<html>" + Utils.escapeReservedCharactersHTML(header(currentTask, true)) + "<br>"
@@ -413,18 +449,21 @@ public final class CurrentTaskPanel extends JPanel {
     /**
      * Describe the selected objects of a task
      *
-     * @param ids     The task's objects
-     * @param dataSet The edit data set, or {@code null}
-     * @return Such as "Bench selected", or {@code null} if none of them is selected
+     * @param ids      The task's objects
+     * @param dataSet  The edit data set, or {@code null}
+     * @param taskName The task's readable name, used when the task has one object
+     * @return Such as "Bench "sue" selected", or {@code null} if none of them is selected
      */
     @Nullable
-    static String selection(List<PrimitiveId> ids, @Nullable DataSet dataSet) {
+    static String selection(List<PrimitiveId> ids, @Nullable DataSet dataSet, String taskName) {
         final List<OsmPrimitive> selected = dataSet == null ? List.of()
                 : ids.stream().map(dataSet::getPrimitiveById).filter(p -> p != null && p.isSelected()).toList();
         if (selected.isEmpty()) {
             return null;
         } else if (selected.size() == 1) {
-            return tr("{0} selected", DefaultNameFormatter.getInstance().format(selected.get(0)));
+            // The same name as the header and the list, not JOSM's "a bench named sue"
+            return tr("{0} selected",
+                    ids.size() == 1 ? taskName : DefaultNameFormatter.getInstance().format(selected.get(0)));
         }
         return trn("{0} object selected", "{0} objects selected", selected.size(), selected.size());
     }
@@ -684,7 +723,9 @@ public final class CurrentTaskPanel extends JPanel {
             this.dataPanel.setVisible(false);
             this.instructionPending = false;
             this.challengeLabel.setText(null);
-            this.nameLabel.setText(tr("No current task"));
+            this.nameLink.setText(tr("No current task"));
+            this.nameLink.setIcon(null);
+            this.nameLink.setEnabled(false);
             this.idLabel.setText(null);
             this.openButton.setVisible(false);
             this.instructionPane.setText(tr("Start a task from the list to work on it here."));
@@ -693,7 +734,9 @@ public final class CurrentTaskPanel extends JPanel {
         }
         this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
                 .orElseGet(() -> tr("Challenge {0}", currentTask.parentId())));
-        this.nameLabel.setText(currentTask.name());
+        this.nameLink.setText(TaskRows.readableName(currentTask));
+        this.nameLink.setIcon(ImageProvider.get("dialogs/autoscale", "selection", ImageProvider.ImageSizes.SMALLICON));
+        this.nameLink.setEnabled(true);
         this.openButton.setVisible(true);
         refreshDataState();
 
@@ -966,7 +1009,8 @@ private static class SelectOsmPrimitives extends InnerAction {
     private final Supplier<Task> taskSuppler;
 
     SelectOsmPrimitives(Supplier<Task> taskSupplier) {
-        super(tr("Select objects"), "dialogs/select", tr("Select the OSM objects for this task, downloading them if needed"),
+        super(tr("Zoom to task"), "dialogs/autoscale/selection",
+                tr("Select the task''s objects and zoom to them, downloading them if needed"),
                 Shortcut.registerShortcut("maproulette:select_task_primitives",
                         tr("MapRoulette: Select task primitives"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false);
@@ -979,7 +1023,7 @@ private static class SelectOsmPrimitives extends InnerAction {
     public void actionPerformed(ActionEvent e) {
         final var task = this.taskSuppler.get();
         if (task != null) {
-            // Downloads the objects that are not in the data yet (#114)
+            // Downloads the objects that are not in the data yet (#114), then selects and zooms (#145)
             TaskData.loadAndSelect(task);
         }
     }
@@ -988,9 +1032,8 @@ private static class SelectOsmPrimitives extends InnerAction {
     public void updateEnabledState() {
         if (this.taskSuppler != null) { // This check is only needed for the constructor. Watch JEP draft 8300786.
             final var task = this.taskSuppler.get();
-            // Called on the EDT: until the challenge arrives, stay enabled for any task and let the worker find out
-            this.setEnabled(task != null
-                    && TaskPrimitives.cachedPrimitiveIds(task).map(ids -> !ids.isEmpty()).orElse(Boolean.TRUE));
+            // A task with no objects zooms to its location
+            this.setEnabled(task != null);
         }
     }
 }}

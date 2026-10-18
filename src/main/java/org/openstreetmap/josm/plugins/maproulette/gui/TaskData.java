@@ -97,9 +97,11 @@ public final class TaskData {
         MainApplication.worker.submit(new DownloadPrimitivesWithReferrersTask(false, missing, true, true, null, null));
         MainApplication.worker.submit(() -> GuiHelper.runInEDT(() -> {
             // Objects that don't exist on the server (404) stay missing, for example a task made for another server
-            if (onMissing != null
-                    && missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
-                onMissing.run();
+            if (missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
+                CurrentTaskPanel.notDownloaded(task.id());
+                if (onMissing != null) {
+                    onMissing.run();
+                }
             }
             select(ids);
         }));
@@ -113,8 +115,12 @@ public final class TaskData {
      */
     private static void loadArea(@Nonnull Task task, @Nullable DataSet dataSet) {
         final var bounds = bounds(task);
-        if (bounds == null || dataSet != null
-                && dataSet.getDataSourceBounds().stream().anyMatch(loaded -> loaded.contains(bounds))) {
+        if (bounds == null) {
+            return;
+        }
+        // Back to the task, whether or not its area is loaded (#145)
+        Optional.ofNullable(MainApplication.getMap()).ifPresent(map -> map.mapView.zoomTo(bounds));
+        if (dataSet != null && dataSet.getDataSourceBounds().stream().anyMatch(loaded -> loaded.contains(bounds))) {
             return;
         }
         final var maxArea = Config.getPref().getDouble("osm-server.max-request-area", 0.25);
@@ -172,6 +178,9 @@ public final class TaskData {
             if (!present.isEmpty()) {
                 dataSet.setSelected(present);
                 AutoScaleAction.autoScale(AutoScaleAction.AutoScaleMode.SELECTION);
+            } else if (!ids.isEmpty() && missing(ids, dataSet).isEmpty()) {
+                // In the data but deleted there: nothing to select, and no download would help (#145)
+                new Notification(tr("The task''s objects are deleted in your data.")).show();
             }
         }
         CurrentTaskPanel.refreshData();

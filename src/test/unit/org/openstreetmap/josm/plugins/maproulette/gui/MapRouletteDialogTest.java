@@ -15,6 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -24,6 +26,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.JTable;
 
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
@@ -41,6 +44,9 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.HTTP;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
+
+import mockit.Mock;
+import mockit.MockUp;
 
 /**
  * Test class for {@link MapRouletteDialog}
@@ -109,7 +115,23 @@ class MapRouletteDialogTest {
         try {
             final var panel = dialog.currentTask();
             assertNotNull(TaskListPanelTest.find(panel, JLabel.class, l -> "Task 27".equals(l.getText())));
-            assertNotNull(TaskListPanelTest.find(panel, JLabel.class, l -> "Bench 27".equals(l.getText())));
+            final var nameLink = TaskListPanelTest.find(panel, JButton.class, l -> "Bench 27".equals(l.getText()));
+            assertNotNull(nameLink, "The task name is a link that zooms to the task (#145)");
+            assertNotNull(nameLink.getIcon(), "The zoom icon says the name is clickable");
+            TestUtils.assumeWorkingJMockit();
+            final var zoomed = new ArrayList<Task>();
+            new MockUp<TaskData>() {
+                @Mock
+                void loadAndSelect(Task zoomedTask) {
+                    zoomed.add(zoomedTask);
+                }
+            };
+            GuiHelper.runInEDTAndWait(nameLink::doClick);
+            assertEquals(List.of(task), zoomed, "Clicking the name zooms to the task");
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.notDownloaded(task.id()));
+            assertNotNull(TaskListPanelTest.find(panel, JLabel.class,
+                    l -> ("Task 27's objects could not be downloaded." + " They may no longer exist on OpenStreetMap.")
+                            .equals(l.getText())));
             assertEquals("Challenge 1", ((JLabel) ((Container) panel.getComponent(0)).getComponent(0)).getText(),
                     "The challenge is not cached, so its id is shown");
         } finally {
