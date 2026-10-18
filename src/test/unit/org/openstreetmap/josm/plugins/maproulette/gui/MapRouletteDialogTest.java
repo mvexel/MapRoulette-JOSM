@@ -541,6 +541,11 @@ class MapRouletteDialogTest {
             ModifiedObjects.addLockedTask(task);
             GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, false));
             assertTrue(dialog.currentTask().actionBar().isVisible(), "Started");
+            // The too-small notice keeps room for a few of the task's lines above the bar
+            final var line = dialog.getFontMetrics(dialog.getFont()).getHeight();
+            final var forTask = dialog.neededSize().height - dialog.taskList().squeezedSize().height;
+            assertTrue(forTask - dialog.currentTask().barHeight() >= 6 * line,
+                    () -> forTask + " for the task with a bar of " + dialog.currentTask().barHeight());
             final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
                     dialog.currentTask().getParent());
             final var card = scroll.getParent();

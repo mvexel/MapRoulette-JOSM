@@ -1053,7 +1053,12 @@ enum Tone {
         return new Dimension(width, this.header.getPreferredSize().height + instructions + south + barHeight());
     }
 
-    private int barHeight() {
+    /**
+     * Get the height of the {@link #actionBar()}
+     *
+     * @return The height, 0 when the bar is hidden
+     */
+    public int barHeight() {
         return this.actionBar.isVisible() ? this.actionBar.getPreferredSize().height : 0;
     }
 

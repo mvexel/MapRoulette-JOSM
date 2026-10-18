@@ -313,8 +313,9 @@ public final class MapRouletteDialog extends ToggleDialog {
             // The list may shrink to its title and challenge filter: the current task matters more, and the divider moves
             final var list = this.taskList.squeezedSize();
             final var task = this.currentTask.neededSize();
-            // The current task scrolls, so a few of its lines are enough
-            final var taskLines = TASK_LINES * this.getFontMetrics(this.getFont()).getHeight();
+            // The current task scrolls, so a few of its lines are enough, above the action bar that doesn't scroll
+            final var taskLines = TASK_LINES * this.getFontMetrics(this.getFont()).getHeight()
+                    + this.currentTask.barHeight();
             return new Dimension(Math.max(list.width, task.width),
                     list.height + this.split.getDividerSize() + Math.min(task.height, taskLines));
         }
