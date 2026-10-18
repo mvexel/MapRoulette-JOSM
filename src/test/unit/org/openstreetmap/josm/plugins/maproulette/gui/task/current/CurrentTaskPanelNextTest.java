@@ -100,6 +100,28 @@ class CurrentTaskPanelNextTest {
         }
     }
 
+    /**
+     * With the option on, a status other than Fixed doesn't start the next task on its own
+     */
+    @Test
+    void testNoAutoStartAfterOtherStatus() {
+        NextTaskPanel.AUTO_START.put(true);
+        final var offers = mockOffers();
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(CurrentTaskPanel::new);
+        try {
+            GuiHelper.runInEDTAndWait(() -> {
+                panel.refreshModel(TASK);
+                TaskResults.sent(TASK, TaskStatus.SKIPPED);
+            });
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            assertFalse(offers.isEmpty());
+            assertEquals(List.of(Boolean.FALSE), offers.stream().distinct().toList());
+        } finally {
+            GuiHelper.runInEDTAndWait(panel::destroy);
+        }
+    }
+
     private static boolean isCardShown(NextTaskPanel next) {
         // The scroll pane of the card
         return next.getParent().getParent().isVisible();
