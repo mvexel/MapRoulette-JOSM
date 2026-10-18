@@ -233,12 +233,13 @@ public final class CurrentTaskPanel extends JPanel {
         this.refreshDataState();
     };
     /**
-     * Drops a question about a task once the task is no longer started, for example finished or stopped, so it doesn't
-     * hide the task's real state (#116), then updates like {@link #editsListener}
+     * Drops a question about a task once the task is started or stopped, for example finished, or started on a retry
+     * after a failed start, so it doesn't hide the task's real state (#116, #166), then updates like
+     * {@link #editsListener}
      */
     private final Runnable lockListener = () -> {
         final var question = this.prompt;
-        if (question != null && this.promptHeldLock && ModifiedObjects.getLockedTask(question.taskId()) == null) {
+        if (question != null && this.promptHeldLock != (ModifiedObjects.getLockedTask(question.taskId()) != null)) {
             this.prompt = null;
         }
         this.editsListener.run();
