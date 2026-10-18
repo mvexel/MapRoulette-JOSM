@@ -175,6 +175,8 @@ public final class EarlyUploadHook implements UploadHook {
                     .toList();
             if (!started.isEmpty()) {
                 final List<ModifiedTask> finishing = GuiHelper.runInEDTAndWaitAndReturn(() -> askFinishes(started));
+                // The answer replaces one carried over from an upload that did not go through
+                LateUploadHook.forgetCarried(started);
                 ModifiedObjects.setFinishing(Objects.requireNonNull(finishing));
             }
             return UploadHook.super.checkUpload(apiDataSet);

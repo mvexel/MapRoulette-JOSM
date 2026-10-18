@@ -198,6 +198,18 @@ class EarlyUploadHookTest {
     }
 
     /**
+     * A started choice task is never one an upload finishes (#130)
+     */
+    @Test
+    void testChoiceTaskNotFinishable() {
+        final var choice = startedTask(true);
+        assertTrue(EarlyUploadHook.finishable().isEmpty(), "A choice task");
+        ModifiedObjects.removeLockedTask(choice);
+        final var task = startedTask(false);
+        assertEquals(List.of(task), EarlyUploadHook.finishable());
+    }
+
+    /**
      * The question repeats the comment and the review request, so the user sees what is sent
      */
     @Test
