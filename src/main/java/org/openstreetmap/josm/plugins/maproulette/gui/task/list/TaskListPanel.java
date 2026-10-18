@@ -243,6 +243,8 @@ public final class TaskListPanel extends JPanel
         this.filterField.setToolTipText(tr("Task name, street or number"));
         filters.add(challengeLabel, GBC.std().insets(4, 2, 4, 2));
         this.challengeFilter.setRenderer(new PlainTextRenderer());
+        // Arrow keys move through the open list without picking each entry, so they don't open Find a challenge…
+        this.challengeFilter.putClientProperty("JComboBox.isTableCellEditor", Boolean.TRUE);
         filters.add(this.challengeFilter, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
         filters.add(filterLabel, GBC.std().insets(4, 2, 4, 2));
         filters.add(this.filterField, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
@@ -830,16 +832,16 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
+     * The id of the challenge filter's Find a challenge… item
+     */
+    private static final long FIND_CHALLENGE = -2;
+
+    /**
      * An entry of the challenge filter
      *
      * @param id    The challenge id, or -1 for all challenges
      * @param label The text to show
      */
-    /**
-     * The id of the challenge filter's Find a challenge… item
-     */
-    private static final long FIND_CHALLENGE = -2;
-
     private record ChallengeChoice(long id, String label) {
         @Override
         public String toString() {
