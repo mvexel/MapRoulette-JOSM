@@ -7,18 +7,24 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.MouseEvent;
+import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -27,8 +33,13 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
+import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
@@ -238,6 +249,28 @@ class MapRouletteClusteredPointLayerTest {
         } finally {
             graphics.dispose();
         }
+    }
+
+    /**
+     * Markers too close to tell apart are grouped; the others stay single markers (#113)
+     */
+    @Test
+    void testCluster() {
+        // One degree is 10 000 px
+        final Function<ILatLon, Point2D> screen = ll -> new Point2D.Double(ll.lon() * 10_000, -ll.lat() * 10_000);
+        final var same1 = point(900_201, 40.7600, -111.8900);
+        final var same2 = point(900_202, 40.7600, -111.8900);
+        final var near1 = point(900_203, 40.7700, -111.8800);
+        final var near2 = point(900_204, 40.77001, -111.88001);
+        final var far = point(900_205, 40.7500, -111.9000);
+        final var groups = MapRouletteClusteredPointLayer.cluster(List.of(same1, near1, far, same2, near2), screen);
+        assertEquals(List.of(List.of(same1, same2), List.of(near1, near2), List.of(far)), groups);
+    }
+
+    private static TaskClusteredPoint point(long id, double lat, double lon) {
+        return new ClusteredPoint(id, 1, "", "n" + id, 15318, "Benches", new Point(lat, lon), null, "", Instant.EPOCH,
+                null, 2, TaskStatus.CREATED, null, null, null, null,
+                new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null, Map.of());
     }
 
     /**

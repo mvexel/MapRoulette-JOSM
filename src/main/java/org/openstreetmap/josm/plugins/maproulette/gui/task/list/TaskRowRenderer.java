@@ -40,6 +40,7 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
     private final JPanel body = new JPanel(new BorderLayout(6, 2));
     private final JLabel name = new JLabel();
     private final JLabel chip = new JLabel();
+    private final JLabel symbol = new JLabel();
     private final JLabel details = new JLabel();
     /**
      * The number of listed tasks of a challenge
@@ -68,7 +69,7 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
         this.from = from;
         this.names = names;
         // Task and challenge names come from challenge authors: show them as text, never as HTML
-        for (var label : new JLabel[] { this.header, this.name, this.chip, this.details }) {
+        for (var label : new JLabel[] { this.header, this.name, this.chip, this.symbol, this.details }) {
             label.putClientProperty("html.disable", Boolean.TRUE);
         }
         this.header.setOpaque(true);
@@ -82,6 +83,7 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
         this.details.setFont(this.details.getFont().deriveFont(this.details.getFont().getSize2D() - 1f));
         final var line = new JPanel(new BorderLayout(6, 0));
         line.setOpaque(false);
+        line.add(this.symbol, BorderLayout.LINE_START);
         line.add(this.name, BorderLayout.CENTER);
         line.add(this.chip, BorderLayout.LINE_END);
         this.body.add(line, BorderLayout.NORTH);
@@ -112,6 +114,8 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
         this.name.setFont(this.name.getFont().deriveFont(rowChip == TaskRows.Chip.STARTED ? Font.BOLD : Font.PLAIN));
         this.details.setText(TaskRows.details(point, this.from.get()));
         styleChip(rowChip);
+        // The same symbol as the task's marker on the map (#113)
+        this.symbol.setIcon(TaskMarker.icon(TaskMarker.kind(point), isSelected));
 
         final Color background;
         final Color foreground;
