@@ -346,6 +346,38 @@ class MapRouletteDialogTest {
     }
 
     /**
+     * A finished task's long name is cut short and its outcome wraps instead of making the panel too small to use,
+     * which left it on "Make this panel bigger" until another task was shown (#197). The outcome is never cut.
+     */
+    @Test
+    void testFinishedTaskFits() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testFinishedTaskFits", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            CurrentTaskPanel.show(new Task(147197178, "Bench by the playground on the north side of the park",
+                    Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(), null,
+                    TaskStatus.FALSE_POSITIVE, null, null, null, null, 0, null, null, null, false, null, ""), false);
+            final var needed = dialog.neededSize();
+            assertTrue(needed.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, needed::toString);
+            final var panel = dialog.currentTask();
+            GuiHelper.runInEDTAndWait(() -> {
+                panel.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 400);
+                layOut(panel);
+            });
+            // The resize event refits the line; lay out the result
+            GuiHelper.runInEDTAndWait(() -> layOut(panel));
+            final var line = TaskListPanelTest.find(panel, JLabel.class,
+                    l -> l.getText() != null && l.getText().contains("Not an Issue"));
+            // On one line, two lines, or over the Open on MapRoulette button, depending on the fonts: never cut
+            assertTrue(line.getWidth() >= line.getPreferredSize().width,
+                    () -> line.getWidth() + " for " + line.getPreferredSize());
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
      * The first tasks of a JOSM session open the panel; later ones leave JOSM's visibility setting alone (dry run 2)
      */
     @Test
