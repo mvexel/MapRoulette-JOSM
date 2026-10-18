@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -83,6 +84,10 @@ public final class TaskEdits
      * those of an edit or redo before it, so they are sorted out once the undo list has changed. Guarded by itself.
      */
     private final Batch batch = new Batch();
+    /**
+     * The tasks that were started when the lock listener last ran
+     */
+    private Set<Long> followedTasks = Set.of();
     private boolean started;
     /**
      * {@code true} while the OSM data layers are followed, which is while a task is started
@@ -200,6 +205,15 @@ public final class TaskEdits
         INSTANCE.touch(List.of(primitive));
     }
 
+    /**
+     * Count the commands since Start that are still in the undo list, for tests
+     *
+     * @return The number of commands
+     */
+    static int commandsSinceStart() {
+        return INSTANCE.commandsSinceStart.size();
+    }
+
     private static boolean pending(OsmPrimitive primitive) {
         return primitive.getDataSet() != null && (primitive.isNew() || primitive.isModified() || primitive.isDeleted());
     }
@@ -209,7 +223,11 @@ public final class TaskEdits
      * or stopped task no longer count.
      */
     private void locksChanged() {
-        final var started = !ModifiedObjects.getLockedTasks().isEmpty();
+        final var ids = ModifiedObjects.getLockedTasks().stream().map(Task::id).collect(Collectors.toSet());
+        final var started = !ids.isEmpty();
+        // The listener runs later on the EDT, so the next task may already be started when it learns that one ended
+        final var ended = !ids.containsAll(this.followedTasks);
+        this.followedTasks = ids;
         if (started && !this.attached) {
             this.attached = true;
             UndoRedoHandler.getInstance().addCommandQueuePreciseListener(this);
@@ -220,13 +238,15 @@ public final class TaskEdits
             UndoRedoHandler.getInstance().removeCommandQueuePreciseListener(this);
             UndoRedoHandler.getInstance().removeCommandQueueListener(this);
             MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
+        }
+        if (!started || ended) {
             this.commandsSinceStart.clear();
             synchronized (this.batch) {
                 this.batch.clear();
             }
-        }
-        if (!started && !this.touched.isEmpty()) {
-            clear();
+            if (!this.touched.isEmpty()) {
+                clear();
+            }
         }
         if (!started) {
             this.baseline.clear();
@@ -381,6 +401,13 @@ public final class TaskEdits
 
     @Override
     public void commandChanged(int queueSize, int redoSize) {
+        if (this.commandsSinceStart.size() > queueSize + redoSize) {
+            // JOSM dropped the oldest commands from its undo list, or cleaned it
+            final var kept = Collections.newSetFromMap(new IdentityHashMap<Command, Boolean>());
+            kept.addAll(UndoRedoHandler.getInstance().getUndoCommands());
+            kept.addAll(UndoRedoHandler.getInstance().getRedoCommands());
+            this.commandsSinceStart.retainAll(kept);
+        }
         final List<OsmPrimitive> created;
         final var dropped = new ArrayList<OsmPrimitive>();
         synchronized (this.batch) {

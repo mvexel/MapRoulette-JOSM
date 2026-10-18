@@ -34,6 +34,8 @@ import org.openstreetmap.josm.testutils.annotations.Projection;
 class TaskEditsTest {
     private static final Task TASK = new Task(27, "Bench 27", null, null, 15318, null, null, null, null, null, null,
             null, null, null, 0, null, null, null, false, null, null);
+    private static final Task NEXT_TASK = new Task(28, "Bench 28", null, null, 15318, null, null, null, null, null,
+            null, null, null, null, 0, null, null, null, false, null, null);
 
     @AfterEach
     void tearDown() {
@@ -203,6 +205,54 @@ class TaskEditsTest {
         bench.put("amenity", "bench");
         assertEquals(0, TaskEdits.count(), "An edit in a removed layer");
         assertFalse(TaskEdits.touches(List.of(bench)));
+    }
+
+    /**
+     * The next task starts with no edits, even if it was started before the lock listener learnt that the last one
+     * ended; undoing the last task's edit is not work on the next one (#130)
+     */
+    @Test
+    void testNextTaskStartsWithoutEdits() {
+        TaskEdits.start();
+        final var bench = new Node(LatLon.ZERO);
+        bench.setOsmId(6, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(bench);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testNextTaskStartsWithoutEdits", null));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(bench, "amenity", "bench"));
+        assertEquals(1, TaskEdits.count());
+
+        // As the auto-start after Fixed does: both changes reach the listener after the next task is started
+        ModifiedObjects.removeLockedTask(TASK);
+        ModifiedObjects.addLockedTask(NEXT_TASK);
+        sync();
+        assertEquals(List.of(NEXT_TASK), ModifiedObjects.getLockedTasks());
+        assertEquals(0, TaskEdits.count(), "The last task's edit");
+        UndoRedoHandler.getInstance().undo();
+        UndoRedoHandler.getInstance().redo();
+        assertEquals(0, TaskEdits.count(), "Undoing and redoing the last task's edit");
+        assertFalse(TaskEdits.touches(List.of(bench)));
+    }
+
+    /**
+     * Commands JOSM drops from its undo list are forgotten, and edits made since Start still count (#130)
+     */
+    @Test
+    void testDroppedCommandsForgotten() {
+        TaskEdits.start();
+        final var dataSet = new DataSet();
+        final var bench = new Node(LatLon.ZERO);
+        bench.setOsmId(7, 1);
+        dataSet.addPrimitive(bench);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testDroppedCommandsForgotten", null));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(bench, "amenity", "bench"));
+        UndoRedoHandler.getInstance().clean();
+        assertEquals(0, TaskEdits.commandsSinceStart(), "Cleaned from the undo list");
+        assertEquals(1, TaskEdits.count(), "Still an edit");
     }
 
     private static void sync() {
