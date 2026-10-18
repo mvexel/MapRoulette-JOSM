@@ -49,10 +49,11 @@ jobs:
     # Plugin-Mainversion, into a Maven repository of their own, and the plugin is built and tested against them.
     name: Build and test (JOSM minimum)
     runs-on: ubuntu-latest
-    env:
-      MINIMUM_REPO: ${{ github.workspace }}/../josm-minimum-m2
     steps:
       - uses: actions/checkout@v4
+      # actions/cache takes no '..' in its path, and the job env can't see the runner context
+      - name: Set the JOSM repository path
+        run: echo "MINIMUM_REPO=$RUNNER_TEMP/josm-minimum-m2" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -81,9 +82,32 @@ jobs:
           git -C ../josm-core checkout -q "$commit"
           mvn -B -ntp -f ../josm-core/nodist/pom.xml -Dmaven.repo.local="$MINIMUM_REPO" install -DskipTests \
             -Dmaven.javadoc.skip=true -Dcheckstyle.skip -Dpmd.skip -Dspotbugs.skip -Djacoco.skip
+          # Record what was built, so every run can check the jars it tests against
+          {
+            echo "revision=${REVISION}"
+            echo "commit=${commit}"
+            (cd "$MINIMUM_REPO" && sha256sum org/openstreetmap/josm/josm/*/josm-*.jar \
+              org/openstreetmap/josm/josm-unittest/*/josm-unittest-*.jar)
+          } > "$MINIMUM_REPO/josm-minimum.txt"
       - name: Build and test
         # No snapshot updates, so the JOSM built above is the one used
         run: mvn -B -ntp -nsu -Dmaven.repo.local="$MINIMUM_REPO" verify
+      - name: Check the JOSM tested against
+        # The jars must be the ones built from source at Plugin-Mainversion, not downloaded snapshots
+        env:
+          REVISION: ${{ steps.minimum.outputs.revision }}
+        run: |
+          cd "$MINIMUM_REPO"
+          tee -a "$GITHUB_STEP_SUMMARY" < josm-minimum.txt
+          grep -qx "revision=${REVISION}" josm-minimum.txt || { echo "::error::JOSM was not built at r${REVISION}"; exit 1; }
+          grep -v = josm-minimum.txt | sha256sum -c
+          for file in org/openstreetmap/josm/josm/*/_remote.repositories \
+              org/openstreetmap/josm/josm-unittest/*/_remote.repositories; do
+            if grep -E '\.jar>.+=' "$file"; then
+              echo "::error::A JOSM jar was downloaded: $file"
+              exit 1
+            fi
+          done
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
