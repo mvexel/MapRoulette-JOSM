@@ -17,6 +17,7 @@ import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -44,6 +45,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.ListDataEvent;
@@ -938,10 +940,15 @@ enum Tone {
         if (this.prompt != null && (task == null || task.id() != this.prompt.taskId())) {
             this.prompt = null;
         }
+        final var otherTask = task != null && (this.task == null || this.task.id() != task.id());
         this.task = task;
         this.refreshPanel();
         // With no task, the panel gives the task list the room (#132)
         Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
+        if (otherTask) {
+            // A new task starts at its name, where the panel scrolls as a whole; after the layout has settled
+            SwingUtilities.invokeLater(() -> this.scrollRectToVisible(new Rectangle(0, 0, 1, 1)));
+        }
     }
 
     /**

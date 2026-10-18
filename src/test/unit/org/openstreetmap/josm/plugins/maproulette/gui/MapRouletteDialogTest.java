@@ -448,6 +448,17 @@ class MapRouletteDialogTest {
             assertTrue(inner.getHeight() >= instructions.getHeight() + 3 * line,
                     () -> "The instructions keep three lines: " + inner.getBounds());
 
+            scroll.getViewport().setViewPosition(new java.awt.Point(0, 60));
+            CurrentTaskPanel.show(
+                    new Task(28, "Bench 28", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""),
+                    false);
+            layOut(scroll);
+            GuiHelper.runInEDTAndWait(() -> {
+                // The scroll to the top waits for the layout
+            });
+            assertEquals(0, scroll.getViewport().getViewPosition().y, "Another task starts at its name");
+
             scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 2000);
             layOut(scroll);
             assertTrue(view.getScrollableTracksViewportHeight(), "Tall: the task fills the view");
@@ -464,7 +475,9 @@ class MapRouletteDialogTest {
                     "The filters show");
             list.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, list.squeezedSize().height);
             layOut(list);
-            final var filter = TaskListPanelTest.find(list, javax.swing.JComboBox.class, c -> true);
+            // The whole filters block: the challenge row and the text filter row
+            final var filter = SwingUtilities.getAncestorOfClass(JPanel.class,
+                    TaskListPanelTest.find(list, javax.swing.JComboBox.class, c -> true));
             final var button = TaskListPanelTest.find(list, SideButton.class, b -> true);
             final var filterBottom = SwingUtilities.convertPoint(filter, 0, filter.getHeight(), list).y;
             final var buttonTop = SwingUtilities.convertPoint(button, 0, 0, list).y;

@@ -738,16 +738,15 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
-     * Get the size the list needs while a task is started: its title, the challenge filter and the buttons, which
-     * would otherwise be drawn over the filter. The rows may be squeezed out, since the user can drag the divider
-     * (#132).
+     * Get the size the list needs while a task is started: its title with the filters, and the buttons, which would
+     * otherwise be drawn over the filters and the current task. The rows may be squeezed out, since the user can drag the
+     * divider (#132).
      *
      * @return The size
      */
     public Dimension squeezedSize() {
-        final var challengeRow = this.filters.isVisible() ? this.challengeFilter.getPreferredSize().height + 4 : 0;
         return new Dimension(this.buttons.getPreferredSize().width,
-                this.title.getPreferredSize().height + 4 + challengeRow + this.buttons.getPreferredSize().height);
+                this.titleBar.getPreferredSize().height + this.buttons.getPreferredSize().height);
     }
 
     /**
