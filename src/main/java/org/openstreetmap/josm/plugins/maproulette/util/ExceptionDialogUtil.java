@@ -15,7 +15,7 @@ import javax.swing.JOptionPane;
 
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
+import org.openstreetmap.josm.plugins.maproulette.gui.LoginControl;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
@@ -58,7 +58,7 @@ public final class ExceptionDialogUtil {
             // A connection problem: explain the underlying exception
             explainExceptionOnEdt(cause);
         } else if (exception instanceof MapRouletteAuthUnavailableException) {
-            notify(MapRouletteAuth.unavailableMessage(), JOptionPane.INFORMATION_MESSAGE, null);
+            LoginControl.showUnavailableNotice(Notification.TIME_LONG);
         } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
             if (lockHeld.heldTaskId().isPresent()) {
                 showError(tr(

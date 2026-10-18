@@ -3,14 +3,9 @@ package org.openstreetmap.josm.plugins.maproulette.api.auth;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.awt.GraphicsEnvironment;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.swing.JOptionPane;
-
-import org.openstreetmap.josm.gui.Notification;
-import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
@@ -64,8 +59,7 @@ public final class MapRouletteAuth {
      */
     public static String unavailableMessage() {
         if (MapRouletteClient.getInstance().auth() instanceof OAuthAuthProvider) {
-            return tr("Log in to MapRoulette in the MapRoulette preferences (Login tab) to start tasks and set their "
-                    + "status.");
+            return tr("Log in to MapRoulette to start tasks and set their status. The login opens in your browser.");
         }
         return tr("MapRoulette does not accept logins from JOSM at the moment. "
                 + "You can browse and download tasks, but set task status on the MapRoulette website.");
@@ -78,7 +72,7 @@ public final class MapRouletteAuth {
      */
     public static String unavailableTooltip() {
         if (MapRouletteClient.getInstance().auth() instanceof OAuthAuthProvider) {
-            return tr("Log in to MapRoulette in the MapRoulette preferences first.");
+            return tr("Log in to MapRoulette first, with Log in… at the top of the MapRoulette panel.");
         }
         return tr("Not available while MapRoulette does not accept logins from JOSM. "
                 + "Set task status on the MapRoulette website.");
@@ -106,18 +100,12 @@ public final class MapRouletteAuth {
     }
 
     /**
-     * Tell the user, once per session, that the MapRoulette login is unavailable
+     * Check, once per session, whether to tell the user that the MapRoulette login is unavailable
+     *
+     * @return {@code true} if the user is not logged in and has not been told yet in this session
      */
-    public static void showUnavailableNoticeOnce() {
-        if (isAvailable() || UNAVAILABLE_NOTICE_SHOWN.getAndSet(true)) {
-            return;
-        }
-        if (GraphicsEnvironment.isHeadless()) {
-            Logging.info(unavailableMessage());
-        } else {
-            GuiHelper.runInEDT(() -> new Notification(unavailableMessage()).setIcon(JOptionPane.INFORMATION_MESSAGE)
-                    .setDuration(Notification.TIME_VERY_LONG).show());
-        }
+    public static boolean tellUnavailableOnce() {
+        return !isAvailable() && !UNAVAILABLE_NOTICE_SHOWN.getAndSet(true);
     }
 
     /**

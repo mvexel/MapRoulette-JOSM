@@ -57,7 +57,6 @@ import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.GoToTaskLocation;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
-import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
@@ -341,13 +340,8 @@ public final class TaskListPanel extends JPanel
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
         this.add(this.cards, BorderLayout.CENTER);
         final var logIn = new JButton(tr("Log in…"));
-        logIn.addActionListener(e -> {
-            final var dialog = MapRouletteDialog.get();
-            if (dialog != null) {
-                // The panel header shows the login's progress and errors
-                dialog.login().logIn();
-            }
-        });
+        logIn.setToolTipText(tr("Opens MapRoulette in your browser to log in"));
+        logIn.addActionListener(e -> LoginControl.logInFromPanel());
         this.loginNotice.add(new JLabel(tr("Log in to start tasks:")), GBC.std().insets(4, 2, 4, 2));
         this.loginNotice.add(logIn, GBC.std().insets(0, 2, 4, 2));
         this.loginNotice.add(new JLabel(), GBC.eol().fill(GBC.HORIZONTAL));
@@ -638,7 +632,7 @@ public final class TaskListPanel extends JPanel
     public void layerAdded(LayerManager.LayerAddEvent e) {
         if (e.getAddedLayer()instanceof MapRouletteClusteredPointLayer layer) {
             layer.addSelectionListener(this);
-            MapRouletteAuth.showUnavailableNoticeOnce();
+            LoginControl.showUnavailableNoticeOnce();
             updateTitle();
         }
     }
