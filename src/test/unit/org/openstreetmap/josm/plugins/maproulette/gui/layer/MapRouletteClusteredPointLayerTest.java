@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.awt.Color;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
@@ -265,6 +266,32 @@ class MapRouletteClusteredPointLayerTest {
         final var far = point(900_205, 40.7500, -111.9000);
         final var groups = MapRouletteClusteredPointLayer.cluster(List.of(same1, near1, far, same2, near2), screen);
         assertEquals(List.of(List.of(same1, same2), List.of(near1, near2), List.of(far)), groups);
+
+        // The same column, 100 px apart
+        final var below = point(900_206, 40.7500 - 0.01, -111.9000);
+        assertEquals(List.of(List.of(far), List.of(below)),
+                MapRouletteClusteredPointLayer.cluster(List.of(far, below), screen));
+    }
+
+    /**
+     * Over imagery, the legend stays clear of the attribution, logo and terms of use at the bottom of the map
+     */
+    @Test
+    void testLegendLeavesRoomForAttribution() {
+        final var image = new BufferedImage(640, 360, BufferedImage.TYPE_INT_RGB);
+        final var g = image.createGraphics();
+        MapRouletteClusteredPointLayer.paintLegend(g, 640, 360, MapRouletteClusteredPointLayer.ATTRIBUTION_ROOM);
+        g.dispose();
+        var lowest = -1;
+        for (var y = 0; y < image.getHeight(); y++) {
+            for (var x = 0; x < image.getWidth(); x++) {
+                if (image.getRGB(x, y) != Color.BLACK.getRGB()) {
+                    lowest = y;
+                }
+            }
+        }
+        assertTrue(lowest > 0, "The legend is painted");
+        assertTrue(lowest < 360 - MapRouletteClusteredPointLayer.ATTRIBUTION_ROOM, "Lowest row " + lowest);
     }
 
     private static TaskClusteredPoint point(long id, double lat, double lon) {

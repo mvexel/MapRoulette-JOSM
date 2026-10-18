@@ -18,10 +18,9 @@ import javax.swing.Icon;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 
 import jakarta.annotation.Nonnull;
-import jakarta.annotation.Nullable;
 
 /**
- * The symbol of a task, the same on the map and in the list (#113): an open ring, a filled marker for the user's
+ * The symbol of a task, the same on the map and in the list (#113): an open ring, a filled dot for the user's
  * started task, a muted check for a done task, and a dashed ring for a task another mapper holds. A selected task gets
  * a highlight ring.
  */
@@ -49,7 +48,7 @@ public final class TaskMarker {
     public enum Kind {
         /** Open to work on, skipped, or can't complete: an open ring */
         OPEN,
-        /** The user's started task: filled, with its number */
+        /** The user's started task: a filled dot; its label has the number */
         STARTED,
         /** Done: muted, with a check */
         DONE,
@@ -115,10 +114,9 @@ public final class TaskMarker {
      * @param y        The centre
      * @param size     The diameter
      * @param selected {@code true} to add the highlight ring
-     * @param number   The text in a started marker, or {@code null}
      */
     public static void paint(@Nonnull Graphics2D g, @Nonnull Kind kind, double x, double y, int size,
-            boolean selected, @Nullable String number) {
+            boolean selected) {
         final var g2 = (Graphics2D) g.create();
         try {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -145,12 +143,6 @@ public final class TaskMarker {
                 g2.setColor(Color.WHITE);
                 g2.setStroke(new BasicStroke(line));
                 g2.draw(inner);
-                if (number != null) {
-                    g2.setFont(g2.getFont().deriveFont(Font.BOLD, size * 0.36f));
-                    final var metrics = g2.getFontMetrics();
-                    g2.drawString(number, (float) (x - metrics.stringWidth(number) / 2.0),
-                            (float) (y + (metrics.getAscent() - metrics.getDescent()) / 2.0));
-                }
             }
             case DONE -> {
                 g2.setColor(DONE);
@@ -310,8 +302,7 @@ public final class TaskMarker {
         @Override
         public void paintIcon(Component c, Graphics g, int x, int y) {
             final var centre = getIconWidth() / 2.0;
-            paint((Graphics2D) g, this.kind, x + centre, y + centre, this.selected ? SIZE - 4 : SIZE, this.selected,
-                    null);
+            paint((Graphics2D) g, this.kind, x + centre, y + centre, this.selected ? SIZE - 4 : SIZE, this.selected);
         }
 
         @Override

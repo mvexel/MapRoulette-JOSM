@@ -51,6 +51,7 @@ import org.openstreetmap.josm.data.preferences.NamedColorProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapView;
 import org.openstreetmap.josm.gui.draw.SymbolShape;
+import org.openstreetmap.josm.gui.layer.AbstractTileSourceLayer;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSStyleSource;
 import org.openstreetmap.josm.gui.mappaint.styleelement.Symbol;
@@ -99,6 +100,10 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
      * Show the legend of the markers on the map
      */
     private static final BooleanProperty SHOW_LEGEND = new BooleanProperty("maproulette.map.legend", true);
+    /** The gap between the legend and the edges of the map */
+    static final int LEGEND_MARGIN = 12;
+    /** The room below the legend over imagery: its attribution text, terms of use link and logo */
+    static final int ATTRIBUTION_ROOM = 64;
 
     /**
      * Markers grouped into a count, as last painted
@@ -264,7 +269,10 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
         paintStartedGeometries(painter, box, symbol, stroke, mrColorOpacity);
         paintMarkers(g, mv, box, listSelected);
         if (SHOW_LEGEND.get()) {
-            paintLegend(g, mv);
+            // Imagery draws its attribution, logo and terms of use at the bottom; some licences require them visible
+            final var imagery = MainApplication.getLayerManager().getVisibleLayersInZOrder().stream()
+                    .anyMatch(AbstractTileSourceLayer.class::isInstance);
+            paintLegend(g, mv.getWidth(), mv.getHeight(), imagery ? ATTRIBUTION_ROOM : LEGEND_MARGIN);
         }
     }
 
@@ -297,7 +305,7 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
                 final var point = cell.get(0);
                 final var screen = mv.getPoint2D(point.location());
                 final var kind = TaskMarker.kind(point);
-                TaskMarker.paint(g, kind, screen.getX(), screen.getY(), TaskMarker.size(kind), false, null);
+                TaskMarker.paint(g, kind, screen.getX(), screen.getY(), TaskMarker.size(kind), false);
             } else {
                 final var bounds = new BBox(cell.get(0).location());
                 cell.forEach(point -> bounds.add(point.location().lon(), point.location().lat()));
@@ -314,14 +322,11 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
             final var kind = TaskMarker.kind(point);
             final var isSelected = this.selected.contains(point) || listSelected.contains(point);
             final var size = TaskMarker.size(kind);
-            // Long task ids don't fit in the marker; the label has the number
-            TaskMarker.paint(g, kind, screen.getX(), screen.getY(), size, isSelected,
-                    kind == TaskMarker.Kind.STARTED && point.id() < 1000 ? Long.toString(point.id()) : null);
+            TaskMarker.paint(g, kind, screen.getX(), screen.getY(), size, isSelected);
             final var labelX = screen.getX() + size / 2.0 + 10;
             if (kind == TaskMarker.Kind.STARTED) {
-                TaskMarker.paintLabel(g,
-                        point.id() < 1000 ? tr("Your task") : tr("Your task {0}", Long.toString(point.id())), labelX,
-                        screen.getY(), TaskMarker.BLUE, Color.WHITE);
+                TaskMarker.paintLabel(g, tr("Your task {0}", Long.toString(point.id())), labelX, screen.getY(),
+                        TaskMarker.BLUE, Color.WHITE);
             } else if (isSelected && labelSelected) {
                 TaskMarker.paintLabel(g, tr("Task {0} · selected", Long.toString(point.id())), labelX, screen.getY(),
                         TaskMarker.HIGHLIGHT, Color.BLACK);
@@ -353,10 +358,12 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
     /**
      * Paint the legend of the markers, at the bottom left of the map
      *
-     * @param g  The graphics
-     * @param mv The map view
+     * @param g      The graphics
+     * @param width  The width of the map
+     * @param height The height of the map
+     * @param bottom The room to leave below the legend
      */
-    private static void paintLegend(Graphics2D g, MapView mv) {
+    static void paintLegend(Graphics2D g, int width, int height, int bottom) {
         final var g2 = (Graphics2D) g.create();
         try {
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
@@ -369,16 +376,16 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
             items.add(Map.entry(TaskMarker.icon(TaskMarker.Kind.OPEN, true), tr("Selected")));
             items.add(Map.entry(TaskMarker.groupIcon(), tr("Group, zoom in")));
             // Lay the items out in rows that fit the map
-            final var maxWidth = Math.max(120, mv.getWidth() - 24);
+            final var maxWidth = Math.max(120, width - 2 * LEGEND_MARGIN);
             final var rows = new ArrayList<List<Map.Entry<Icon, String>>>();
             var row = new ArrayList<Map.Entry<Icon, String>>();
             var rowWidth = 0;
-            var width = 0;
+            var legendWidth = 0;
             for (var item : items) {
                 final var itemWidth = item.getKey().getIconWidth() + 4 + metrics.stringWidth(item.getValue()) + 12;
                 if (!row.isEmpty() && rowWidth + itemWidth > maxWidth - 16) {
                     rows.add(row);
-                    width = Math.max(width, rowWidth);
+                    legendWidth = Math.max(legendWidth, rowWidth);
                     row = new ArrayList<>();
                     rowWidth = 0;
                 }
@@ -386,20 +393,20 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
                 rowWidth += itemWidth;
             }
             rows.add(row);
-            width = Math.max(width, rowWidth);
+            legendWidth = Math.max(legendWidth, rowWidth);
             final var lineHeight = Math.max(18, metrics.getHeight());
-            final var height = rows.size() * lineHeight + 8;
-            final var left = 12;
-            final var top = mv.getHeight() - 12 - height;
+            final var legendHeight = rows.size() * lineHeight + 8;
+            final var left = LEGEND_MARGIN;
+            final var top = height - bottom - legendHeight;
             g2.setColor(new Color(255, 255, 255, 235));
-            g2.fillRoundRect(left, top, width + 16, height, 6, 6);
+            g2.fillRoundRect(left, top, legendWidth + 16, legendHeight, 6, 6);
             g2.setColor(Color.DARK_GRAY);
             var y = top + 4;
             for (var line : rows) {
                 var x = left + 8;
                 for (var item : line) {
                     final var icon = item.getKey();
-                    icon.paintIcon(mv, g2, x, y + (lineHeight - icon.getIconHeight()) / 2);
+                    icon.paintIcon(null, g2, x, y + (lineHeight - icon.getIconHeight()) / 2);
                     x += icon.getIconWidth() + 4;
                     g2.setColor(Color.DARK_GRAY);
                     g2.drawString(item.getValue(), x,
