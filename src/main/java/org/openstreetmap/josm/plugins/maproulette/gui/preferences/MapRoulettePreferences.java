@@ -24,8 +24,9 @@ public class MapRoulettePreferences extends ExtensibleTabPreferenceSetting {
      */
     public MapRoulettePreferences() {
         super("dialogs/user_no_image", tr("MapRoulette"), tr("MapRoulette Preferences"));
-        this.subPreferenceSettingList.add(new MapRouletteServerPreference());
+        // Login first: it is what new users come here for (#118)
         this.subPreferenceSettingList.add(new MapRouletteLoginPreference());
+        this.subPreferenceSettingList.add(new MapRouletteServerPreference());
         this.subPreferenceSettingList.add(new MapRouletteTaskListPreferences());
         this.subPreferenceSettingList.add(new MapRouletteTaskPreference());
     }

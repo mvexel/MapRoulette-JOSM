@@ -21,6 +21,16 @@ class MapRouletteAuthTest {
         assertFalse(MapRouletteAuth.isAvailable());
     }
 
+    /**
+     * The login notice shows once per session, not each time a task layer is added (#118)
+     */
+    @Test
+    void testUnavailableNoticeOncePerSession() {
+        MapRouletteAuth.resetUnavailableNotice();
+        assertTrue(MapRouletteAuth.tellUnavailableOnce(), "The first time");
+        assertFalse(MapRouletteAuth.tellUnavailableOnce(), "Again in the same session");
+    }
+
     @Test
     void testCachedApiKeysAreDeleted() {
         final var server = "https://maproulette.org/api/v2";

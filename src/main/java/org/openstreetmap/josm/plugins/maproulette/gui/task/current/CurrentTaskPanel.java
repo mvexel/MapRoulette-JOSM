@@ -797,12 +797,7 @@ enum Tone {
             return state;
         }
         return new State(Tone.WARNING, html(tr("Log in to set the status of task {0}.", Long.toString(task.id()))),
-                null, List.of(new Choice(tr("Log in…"), null, () -> {
-                    final var dialog = MapRouletteDialog.get();
-                    if (dialog != null) {
-                        dialog.login().logIn();
-                    }
-                })));
+                null, List.of(new Choice(tr("Log in…"), null, LoginControl::logInFromPanel)));
     }
 
     /**
