@@ -88,10 +88,24 @@ class TaskDataTest {
                 noted.add(taskId);
             }
         };
-        final var notFound = new CopyOnWriteArrayList<PrimitiveId>();
-        assertEquals(1, loadWithDownload(Server.NOT_FOUND, notFound));
+        final var gone = new CopyOnWriteArrayList<TaskData.Gone>();
+        assertEquals(1, loadWithDownload(Server.NOT_FOUND, gone));
         assertEquals(List.of(27L), noted, "The panel says the download brought nothing (#145)");
-        assertEquals(List.of(NODE), notFound, "The panel names the objects the server doesn't have (#116)");
+        assertEquals(List.of(new TaskData.Gone(List.of(NODE), List.of())), gone,
+                "The panel names the objects the server doesn't have (#116)");
+    }
+
+    /**
+     * If the task's objects are deleted on the OSM server, the caller is told, and they are not selected (#116)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testDeletedOnServer() throws Exception {
+        final var gone = new CopyOnWriteArrayList<TaskData.Gone>();
+        assertEquals(1, loadWithDownload(Server.DELETED, gone));
+        assertEquals(List.of(new TaskData.Gone(List.of(), List.of(NODE))), gone);
+        assertTrue(MainApplication.getLayerManager().getEditDataSet().getSelected().isEmpty());
     }
 
     /**
@@ -158,19 +172,21 @@ class TaskDataTest {
      * Load a task's node that is not in the edit layer yet
      *
      * @param server   What the OSM server answers
-     * @param notFound Gets the objects the server doesn't have, as the caller is told
+     * @param gone     Gets the objects the server doesn't have or has deleted, as the caller is told
      * @return How often the caller was told that nothing could be downloaded
      */
-    private static int loadWithDownload(Server server, List<PrimitiveId> notFound) throws Exception {
+    private static int loadWithDownload(Server server, List<TaskData.Gone> gone) throws Exception {
         final var dataSet = new DataSet();
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "loadWithDownload", null));
         new MockUp<TaskData.ObjectsDownload>() {
             @Mock
             void realRun(Invocation invocation) throws ReflectiveOperationException {
                 final TaskData.ObjectsDownload download = invocation.getInvokedInstance();
-                if (server == Server.FOUND) {
+                if (server == Server.FOUND || server == Server.DELETED) {
                     final var node = new Node(LatLon.ZERO);
-                    node.setOsmId(1, 1);
+                    node.setOsmId(1, 2);
+                    // The OSM API answers a deleted object with visible="false"
+                    node.setVisible(server == Server.FOUND);
                     final var tmpLayer = TaskData.ObjectsDownload.class.getDeclaredField("tmpLayer");
                     tmpLayer.setAccessible(true);
                     ((OsmDataLayer) tmpLayer.get(download)).data.addPrimitive(node);
@@ -183,9 +199,9 @@ class TaskDataTest {
             }
         };
         final var told = new AtomicInteger();
-        GuiHelper.runInEDTAndWait(() -> TaskData.load(task(null), List.of(NODE), ids -> {
+        GuiHelper.runInEDTAndWait(() -> TaskData.load(task(null), List.of(NODE), objects -> {
             told.incrementAndGet();
-            notFound.addAll(ids);
+            gone.add(objects);
         }));
         MainApplication.worker.submit(() -> {
             /* Sync worker */ }).get(10, TimeUnit.SECONDS);
@@ -214,6 +230,8 @@ class TaskDataTest {
         FOUND,
         /** 404 */
         NOT_FOUND,
+        /** It has the node, deleted */
+        DELETED,
         /** No answer: the download fails, and JOSM shows the error */
         UNREACHABLE
     }
