@@ -22,6 +22,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteLoginPreference;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -35,6 +36,10 @@ public final class LoginControl {
     private final boolean compact;
     private volatile String error;
     private boolean listening;
+    /**
+     * Whether the user's name was looked up for the current login, so a failed lookup is not repeated on each update
+     */
+    private boolean nameLookedUp;
 
     /**
      * Create a new login control
@@ -43,6 +48,8 @@ public final class LoginControl {
      */
     public LoginControl(boolean compact) {
         this.compact = compact;
+        // The user's name comes from the server
+        this.status.putClientProperty("html.disable", Boolean.TRUE);
         this.button.addActionListener(e -> buttonPressed());
     }
 
@@ -176,6 +183,25 @@ public final class LoginControl {
         return panel;
     }
 
+    /**
+     * Look up the user's name once per login, and show it when it arrives (#118)
+     */
+    private void lookUpName() {
+        if (this.nameLookedUp) {
+            return;
+        }
+        this.nameLookedUp = true;
+        Workers.execute(() -> {
+            MapRouletteAuth.lookUpUser();
+            GuiHelper.runInEDT(() -> {
+                final var provider = provider();
+                if (provider != null && provider.knownUserName().isPresent()) {
+                    update();
+                }
+            });
+        });
+    }
+
     private void startLogIn(OAuthAuthProvider provider) {
         this.error = null;
         // The login waits for the browser, so it gets its own thread instead of blocking JOSM's worker
@@ -228,7 +254,14 @@ public final class LoginControl {
             this.button.setText(tr("Cancel login"));
             this.button.setToolTipText(null);
         } else if (provider.isAvailable()) {
-            text = this.compact ? tr("Logged in") : tr("Logged in to {0}.", provider.server());
+            final var name = provider.knownUserName();
+            if (name.isPresent()) {
+                text = this.compact ? tr("Logged in as {0}", name.get())
+                        : tr("Logged in to {0} as {1}.", provider.server(), name.get());
+            } else {
+                text = this.compact ? tr("Logged in") : tr("Logged in to {0}.", provider.server());
+                lookUpName();
+            }
             this.button.setText(tr("Log out"));
             this.button.setToolTipText(null);
         } else {
@@ -236,6 +269,9 @@ public final class LoginControl {
                     : tr("Not logged in to {0}. Log in opens MapRoulette in your browser.", provider.server());
             this.button.setText(tr("Log in…"));
             this.button.setToolTipText(tr("Opens MapRoulette in your browser to log in"));
+        }
+        if (!provider.isAvailable()) {
+            this.nameLookedUp = false;
         }
         final var lastError = this.error;
         this.status.setText(lastError == null || this.compact ? text : text + ' ' + lastError);

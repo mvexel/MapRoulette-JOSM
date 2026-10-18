@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.maproulette.api.auth;
 
 import java.util.Collections;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -102,5 +103,15 @@ public interface AuthProvider {
      */
     default OptionalLong knownUserId() {
         return OptionalLong.empty();
+    }
+
+    /**
+     * Get the MapRoulette display name of the logged-in user if {@link #userId()} has looked it up already. This does
+     * no IO.
+     *
+     * @return The name, or empty if it is not known
+     */
+    default Optional<String> knownUserName() {
+        return Optional.empty();
     }
 }
