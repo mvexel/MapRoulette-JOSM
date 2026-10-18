@@ -24,7 +24,8 @@ public class ShowPanelAction extends JosmAction {
      * Create a new action
      */
     public ShowPanelAction() {
-        super(tr("Show MapRoulette panel"), "dialogs/user_no_image", tr("Show the MapRoulette task list and current task"),
+        super(tr("Show MapRoulette panel"), "dialogs/user_no_image",
+                tr("Show the MapRoulette task list and current task"),
                 Shortcut.registerShortcut("maproulette:show_panel", tr("MapRoulette: Show panel"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false);

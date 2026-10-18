@@ -19,8 +19,8 @@ public class LoadTasksInViewAction extends JosmAction {
      * Create a new action
      */
     public LoadTasksInViewAction() {
-        super(tr("Load tasks in current view"), "download", tr("Load the MapRoulette tasks in the current map view"),
-                Shortcut.registerShortcut("maproulette:load_tasks_in_view", tr("MapRoulette: Load tasks in current view"),
+        super(tr("Load tasks here"), "download", tr("Load the MapRoulette tasks in the current map view"),
+                Shortcut.registerShortcut("maproulette:load_tasks_in_view", tr("MapRoulette: Load tasks here"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
                 false, null, true);
     }
