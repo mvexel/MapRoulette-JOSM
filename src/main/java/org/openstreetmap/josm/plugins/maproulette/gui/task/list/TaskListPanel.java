@@ -8,6 +8,7 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Dimension;
 import java.awt.GridBagLayout;
+import java.awt.Point;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -216,7 +217,26 @@ public final class TaskListPanel extends JPanel
         super(new BorderLayout());
         model = new TaskTableModel();
         MainApplication.getLayerManager().addAndFireLayerChangeListener(model);
-        table = new JTable(model);
+        table = new JTable(model) {
+            @Serial
+            private static final long serialVersionUID = 4373424404913327402L;
+
+            /**
+             * The menu acts on the selected rows: a right-click on another row selects it first (#195). A right-click
+             * on a selected row keeps the selection, so the menu acts on all of them. Swing asks this just before it
+             * shows the menu, also when the menu takes the mouse press itself.
+             */
+            @Override
+            public Point getPopupLocation(MouseEvent event) {
+                if (event != null) {
+                    final var row = rowAtPoint(event.getPoint());
+                    if (row >= 0 && !isRowSelected(row)) {
+                        setRowSelectionInterval(row, row);
+                    }
+                }
+                return super.getPopupLocation(event);
+            }
+        };
         final var downloadAction = new DownloadDataAction();
         this.downloadAction = downloadAction;
         final var findAction = new FindChallengeAction();
