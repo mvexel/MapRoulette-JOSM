@@ -4,19 +4,22 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Cursor;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import java.awt.FlowLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-import javax.swing.JButton;
+import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.UserAPI;
@@ -24,9 +27,9 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.OpenBrowser;
+import org.openstreetmap.josm.tools.Utils;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -39,12 +42,15 @@ final class ChallengeOwnerPanel extends JPanel {
     /**
      * The OSM display names of challenge owners by OSM id, for this session. Empty if the lookup failed.
      */
+    private static final String SEPARATOR = " \u00b7 ";
     private static final Map<Long, Optional<String>> NAMES = new ConcurrentHashMap<>();
 
-    private final JLabel ownerLabel = new JLabel(tr("Owner:"));
-    private final JButton ownerLink = link();
-    private final JButton messageLink = link();
-    private final JButton discussionLink = link();
+    private final JLabel byLabel = new JLabel(tr("Challenge by"));
+    private final JLabel ownerLink = new JLabel();
+    private final JLabel messageSeparator = new JLabel(SEPARATOR);
+    private final JLabel messageLink = new JLabel(link(tr("Message through OSM")));
+    private final JLabel discussionSeparator = new JLabel(SEPARATOR);
+    private final JLabel discussionLink = new JLabel(link(tr("Discussion")));
     /**
      * The challenge shown, or {@code null}
      */
@@ -52,18 +58,23 @@ final class ChallengeOwnerPanel extends JPanel {
     private Challenge challenge;
 
     ChallengeOwnerPanel() {
-        super(new GridBagLayout());
-        this.ownerLink.setToolTipText(tr("Open the owner''s OpenStreetMap profile"));
-        this.discussionLink.setText(tr("Join Challenge Discussion"));
-        this.discussionLink.setToolTipText(tr("Open the challenge''s conversation on the MapRoulette website"));
-        this.ownerLink.addActionListener(e -> name().ifPresent(n -> OpenBrowser.displayUrl(profileUrl(n))));
-        this.messageLink.addActionListener(e -> name().ifPresent(n -> OpenBrowser.displayUrl(messageUrl(n))));
-        this.discussionLink.addActionListener(e -> Optional.ofNullable(this.challenge)
-                .flatMap(c -> discussionUrl(c.id())).ifPresent(OpenBrowser::displayUrl));
-        this.add(this.ownerLabel, GBC.std().insets(0, 0, 4, 0));
-        this.add(this.ownerLink, GBC.eol().fill(GBC.HORIZONTAL));
-        this.add(this.messageLink, GBC.eol().fill(GBC.HORIZONTAL));
-        this.add(this.discussionLink, GBC.eol().fill(GBC.HORIZONTAL));
+        // One small line under the header, so the instructions keep their room (#168)
+        super(new FlowLayout(FlowLayout.LEADING, 0, 0));
+        this.discussionLink.setToolTipText(tr("Join Challenge Discussion"));
+        onClick(this.ownerLink, () -> name().ifPresent(n -> OpenBrowser.displayUrl(profileUrl(n))));
+        onClick(this.messageLink, () -> name().ifPresent(n -> OpenBrowser.displayUrl(messageUrl(n))));
+        onClick(this.discussionLink, () -> Optional.ofNullable(this.challenge).flatMap(c -> discussionUrl(c.id()))
+                .ifPresent(OpenBrowser::displayUrl));
+        final var grey = UIManager.getColor("Label.disabledForeground");
+        for (var label : List.of(this.byLabel, this.ownerLink, this.messageSeparator, this.messageLink,
+                this.discussionSeparator, this.discussionLink)) {
+            label.setFont(label.getFont().deriveFont(label.getFont().getSize2D() * 0.9f));
+            if (grey != null && !label.getText().startsWith("<html>")) {
+                label.setForeground(grey);
+            }
+            this.add(label);
+        }
+        this.byLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4));
         this.setVisible(false);
     }
 
@@ -99,18 +110,19 @@ final class ChallengeOwnerPanel extends JPanel {
 
     private void show(Optional<String> name) {
         name.ifPresent(n -> {
-            this.ownerLink.setText(n);
-            this.messageLink.setText(tr("Message {0} through OSM", n));
+            this.ownerLink.setText(link(n));
+            this.ownerLink.setToolTipText(tr("Open the OpenStreetMap profile of {0}", n));
+            this.messageLink.setToolTipText(tr("Message {0} through OSM", n));
         });
-        this.discussionLink
-                .setVisible(this.challenge != null && discussionUrl(this.challenge.id()).isPresent());
+        final var discussion = this.challenge != null && discussionUrl(this.challenge.id()).isPresent();
+        this.discussionSeparator.setVisible(discussion);
+        this.discussionLink.setVisible(discussion);
         this.setVisible(name.isPresent());
     }
 
     private Optional<String> name() {
         final var current = this.challenge;
-        return current == null ? Optional.empty()
-                : NAMES.getOrDefault(current.general().owner(), Optional.empty());
+        return current == null ? Optional.empty() : NAMES.getOrDefault(current.general().owner(), Optional.empty());
     }
 
     /**
@@ -123,8 +135,8 @@ final class ChallengeOwnerPanel extends JPanel {
         try {
             final var user = UserAPI.publicUser(osmId);
             // MapRoulette falls back to its own user ids, which would name someone else
-            if (user.osmProfile() != null && user.osmProfile().id() == osmId
-                    && user.osmProfile().displayName() != null && !user.osmProfile().displayName().isBlank()) {
+            if (user.osmProfile() != null && user.osmProfile().id() == osmId && user.osmProfile().displayName() != null
+                    && !user.osmProfile().displayName().isBlank()) {
                 return Optional.of(user.osmProfile().displayName());
             }
         } catch (IOException | RuntimeException e) {
@@ -180,14 +192,25 @@ final class ChallengeOwnerPanel extends JPanel {
         NAMES.clear();
     }
 
-    private static JButton link() {
-        final var button = new JButton();
-        // A link-like button, as the task name in the header
-        button.setBorderPainted(false);
-        button.setContentAreaFilled(false);
-        button.setHorizontalAlignment(SwingConstants.LEADING);
-        button.setMargin(new Insets(0, 0, 0, 0));
-        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        return button;
+    /**
+     * Get the text of a link, in the blue underlined style of the panel's other links
+     *
+     * @param text The plain text
+     * @return The HTML text
+     */
+    static String link(String text) {
+        return "<html><a href=\"\">" + Utils.escapeReservedCharactersHTML(text) + "</a></html>";
+    }
+
+    private static void onClick(JLabel label, Runnable action) {
+        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    action.run();
+                }
+            }
+        });
     }
 }

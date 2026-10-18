@@ -39,8 +39,8 @@ class ChallengeOwnerPanelTest {
      */
     @Test
     void testLookUpOtherUser() throws Exception {
-        WireMocks.current().register(get(urlPathEqualTo("/api/v2/user/2/public")).willReturn(aResponse()
-                .withStatus(200).withBody(Files.readString(Path.of("src/test/resources/__files/api/v2/user/11353/public")))));
+        WireMocks.current().register(get(urlPathEqualTo("/api/v2/user/2/public")).willReturn(aResponse().withStatus(200)
+                .withBody(Files.readString(Path.of("src/test/resources/__files/api/v2/user/11353/public")))));
         assertEquals(Optional.empty(), ChallengeOwnerPanel.lookUp(2));
     }
 
@@ -49,8 +49,8 @@ class ChallengeOwnerPanelTest {
      */
     @Test
     void testLookUpFails() {
-        WireMocks.current().register(
-                get(urlPathEqualTo("/api/v2/user/918586/public")).willReturn(aResponse().withStatus(404)));
+        WireMocks.current()
+                .register(get(urlPathEqualTo("/api/v2/user/918586/public")).willReturn(aResponse().withStatus(404)));
         assertEquals(Optional.empty(), ChallengeOwnerPanel.lookUp(918586));
     }
 
@@ -70,5 +70,13 @@ class ChallengeOwnerPanelTest {
         Config.getPref().put("maproulette.website.url", "https://mr.example.org/");
         assertEquals(Optional.of("https://mr.example.org/browse/challenges/15318?tab=conversation"),
                 ChallengeOwnerPanel.discussionUrl(15318));
+    }
+
+    /**
+     * A display name is text, not markup
+     */
+    @Test
+    void testLink() {
+        assertEquals("<html><a href=\"\">a&lt;b&gt; &amp; c</a></html>", ChallengeOwnerPanel.link("a<b> & c"));
     }
 }

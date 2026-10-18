@@ -30,7 +30,7 @@ public final class PublicUserParser {
         try (final var reader = Json.createReader(body)) {
             final var structure = reader.read();
             if (structure.getValueType() == JsonValue.ValueType.OBJECT
-                    && structure.asJsonObject().get("osmProfile") instanceof JsonObject profile) {
+                    && structure.asJsonObject().get("osmProfile")instanceof JsonObject profile) {
                 final var obj = structure.asJsonObject();
                 return new PublicUser(obj.getJsonNumber("id").longValue(),
                         new PublicOSMUser(profile.getJsonNumber("id").longValue(), profile.getString("avatarURL", null),

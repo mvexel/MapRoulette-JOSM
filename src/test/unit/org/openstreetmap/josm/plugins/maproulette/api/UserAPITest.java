@@ -27,7 +27,7 @@ class UserAPITest {
         assertEquals("mvexelmrtest", user.name());
         assertEquals(11353, user.osmProfile().id());
         assertEquals("mvexelmrtest", user.osmProfile().displayName());
-        WireMocks.current().verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/user/11353/public"))
-                .withHeader("Authorization", absent()));
+        WireMocks.current().verifyThat(1,
+                getRequestedFor(urlPathEqualTo("/api/v2/user/11353/public")).withHeader("Authorization", absent()));
     }
 }
