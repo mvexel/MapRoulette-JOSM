@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="OpenStreetMap server" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+<node id="9494185766" visible="true" version="1" changeset="117224854" timestamp="2022-02-10T02:12:42Z" user="vorpalblade" uid="2078753" lat="39.0745811" lon="-108.5704318">
+  <tag k="building" v="window"/>
+  <tag k="width" v="2"/>
+</node>
+</osm>

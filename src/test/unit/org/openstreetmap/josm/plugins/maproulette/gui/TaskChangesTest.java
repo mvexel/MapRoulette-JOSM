@@ -1,12 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +31,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.testutils.annotations.TaggingPresets;
@@ -112,7 +117,8 @@ class TaskChangesTest {
     }
 
     /**
-     * An edit of the task's object made before Start is part of the baseline, so it is not shown as no change
+     * An edit of the task's object made before Start, such as one restored from an autosave, is compared with the
+     * downloaded version from the OSM server, so it shows as a change and counts for the instructions' tags (#180)
      *
      * @throws Exception if the test fails
      */
@@ -122,11 +128,32 @@ class TaskChangesTest {
         final var taskNode = taskNode(dataSet);
         UndoRedoHandler.getInstance().add(new ChangePropertyCommand(taskNode, "building", null));
         final var task = startTask();
-        assertEquals(List.of(TaskChanges.name(taskNode) + ": changed before you started, not uploaded yet"),
-                TaskChanges.of(task, dataSet).lines());
+        syncWorker();
+        final var summary = TaskChanges.of(task, dataSet);
+        assertEquals(List.of("Node 9494185766: \u2212 building=window"), summary.lines());
+        assertNull(summary.warning(), "The restored edit removed the building tag");
 
         UndoRedoHandler.getInstance().add(new MoveCommand(taskNode, 0.0001, 0));
-        assertEquals(List.of(TaskChanges.name(taskNode) + ": moved"), TaskChanges.of(task, dataSet).lines());
+        assertEquals(List.of("Node 9494185766: \u2212 building=window · moved"), TaskChanges.of(task, dataSet).lines());
+    }
+
+    /**
+     * When the OSM server can't say what was downloaded, an edit made before Start stays part of the baseline, and is
+     * said to be there
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testChangedBeforeStartWithoutServer() throws Exception {
+        WireMocks.current()
+                .register(get(urlPathEqualTo("/api/0.6/node/9494185766/1")).willReturn(aResponse().withStatus(503)));
+        final var dataSet = new DataSet();
+        final var taskNode = taskNode(dataSet);
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(taskNode, "building", null));
+        final var task = startTask();
+        syncWorker();
+        assertEquals(List.of(TaskChanges.name(taskNode) + ": changed before you started, not uploaded yet"),
+                TaskChanges.of(task, dataSet).lines());
     }
 
     /**
@@ -215,6 +242,12 @@ class TaskChangesTest {
         ModifiedObjects.addLockedTask(task);
         sync();
         return task;
+    }
+
+    private static void syncWorker() throws Exception {
+        MainApplication.worker.submit(() -> {
+            /* Sync worker */ }).get(10, TimeUnit.SECONDS);
+        sync();
     }
 
     private static void sync() {
