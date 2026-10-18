@@ -49,10 +49,20 @@ public final class TaskData {
      * @param task The task
      */
     public static void loadAndSelect(@Nonnull Task task) {
+        loadAndSelect(task, null);
+    }
+
+    /**
+     * Download the task's objects and select them, as {@link #loadAndSelect(Task)}
+     *
+     * @param task      The task
+     * @param onMissing Called on the EDT if none of the task's objects could be downloaded, or {@code null}
+     */
+    public static void loadAndSelect(@Nonnull Task task, @Nullable Runnable onMissing) {
         // Finding the objects may need the challenge from the server
         Workers.execute(() -> {
             final var ids = List.copyOf(TaskPrimitives.getPrimitiveIds(task));
-            GuiHelper.runInEDT(() -> load(task, ids));
+            GuiHelper.runInEDT(() -> load(task, ids, onMissing));
         });
     }
 
@@ -63,6 +73,17 @@ public final class TaskData {
      * @param ids  The task's objects
      */
     static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids) {
+        load(task, ids, null);
+    }
+
+    /**
+     * Download what is missing, then select. Call on the EDT.
+     *
+     * @param task      The task
+     * @param ids       The task's objects
+     * @param onMissing Called on the EDT if none of the task's objects could be downloaded, or {@code null}
+     */
+    static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids, @Nullable Runnable onMissing) {
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
         if (ids.isEmpty()) {
             loadArea(task, dataSet);
@@ -75,7 +96,14 @@ public final class TaskData {
         }
         // Merged into the edit layer, or a new layer if there is none; the worker runs the jobs in order
         MainApplication.worker.submit(new DownloadPrimitivesWithReferrersTask(false, missing, true, true, null, null));
-        MainApplication.worker.submit(() -> GuiHelper.runInEDT(() -> select(ids)));
+        MainApplication.worker.submit(() -> GuiHelper.runInEDT(() -> {
+            // Objects that don't exist on the server (404) stay missing, for example a task made for another server
+            if (onMissing != null
+                    && missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
+                onMissing.run();
+            }
+            select(ids);
+        }));
     }
 
     /**

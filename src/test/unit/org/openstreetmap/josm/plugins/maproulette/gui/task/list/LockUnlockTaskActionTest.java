@@ -38,6 +38,7 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
@@ -341,6 +342,10 @@ class LockUnlockTaskActionTest {
             @Mock
             int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
                     int messageType, Icon icon, Object[] options, Object initialValue) {
+                if (!String.valueOf(message).contains("still have")) {
+                    // Task 132279499's object is not on the test OSM server: keep the task started
+                    return 1;
+                }
                 asked.incrementAndGet();
                 return choice;
             }
@@ -423,6 +428,56 @@ class LockUnlockTaskActionTest {
                 ModifiedObjects.removeLockedTask(locked);
             }
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
+        }
+    }
+
+    /**
+     * Start on a task whose object doesn't exist on the OSM server offers to stop it, and Stop releases it (#143)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartWithMissingObjectOffersStop() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/132279499/release"))
+                .willReturn(aResponse().withBodyFile("api/v2/task/132279499/start")));
+        new MockUp<DownloadPrimitivesWithReferrersTask>() {
+            @Mock
+            void realRun() {
+                // The OSM server answers 404
+            }
+
+            @Mock
+            void finish() {
+                // The real one reports the objects it could not download
+            }
+        };
+        final var messages = new CopyOnWriteArrayList<String>();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                messages.add(String.valueOf(message));
+                return 0;
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            // Start, finding the task's objects, the download, then Stop
+            for (var i = 0; i < 4; i++) {
+                sync();
+            }
+            assertEquals(1, messages.size(), String.valueOf(messages));
+            assertTrue(messages.get(0).contains("132279499"), messages.get(0));
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/release")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
         }
     }
 
