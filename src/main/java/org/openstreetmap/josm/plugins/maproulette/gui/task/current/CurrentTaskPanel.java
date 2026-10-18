@@ -78,6 +78,7 @@ import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
@@ -266,7 +267,9 @@ public final class CurrentTaskPanel extends JPanel {
         this.nameLink.setHorizontalAlignment(SwingConstants.LEADING);
         this.nameLink.setMargin(new Insets(0, 0, 0, 0));
         this.nameLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        this.nameLink.setToolTipText(tr("Zoom to the task"));
+        this.nameLink.setToolTipText(tr("Zoom to task"));
+        // The zoom icon says the name is clickable, without link colours JOSM doesn't use
+        this.nameLink.setHorizontalTextPosition(SwingConstants.LEADING);
         this.nameLink.addActionListener(newActions[5]);
         header.add(this.challengeLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 0));
         header.add(this.nameLink, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
@@ -707,6 +710,7 @@ public final class CurrentTaskPanel extends JPanel {
             this.instructionPending = false;
             this.challengeLabel.setText(null);
             this.nameLink.setText(tr("No current task"));
+            this.nameLink.setIcon(null);
             this.nameLink.setEnabled(false);
             this.idLabel.setText(null);
             this.openButton.setVisible(false);
@@ -717,6 +721,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
                 .orElseGet(() -> tr("Challenge {0}", currentTask.parentId())));
         this.nameLink.setText(TaskRows.readableName(currentTask));
+        this.nameLink.setIcon(ImageProvider.get("dialogs/autoscale", "selection", ImageProvider.ImageSizes.SMALLICON));
         this.nameLink.setEnabled(true);
         this.openButton.setVisible(true);
         refreshDataState();
