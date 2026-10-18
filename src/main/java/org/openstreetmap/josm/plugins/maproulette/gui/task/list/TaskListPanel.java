@@ -632,7 +632,10 @@ public final class TaskListPanel extends JPanel
     public void layerAdded(LayerManager.LayerAddEvent e) {
         if (e.getAddedLayer()instanceof MapRouletteClusteredPointLayer layer) {
             layer.addSelectionListener(this);
-            LoginControl.showUnavailableNoticeOnce();
+            // With a login possible, the list's own "Log in to start tasks" line asks; one prompt is enough
+            if (!LoginControl.canLogIn()) {
+                LoginControl.showUnavailableNoticeOnce();
+            }
             updateTitle();
         }
     }
