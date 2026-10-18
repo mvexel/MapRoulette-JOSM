@@ -88,13 +88,38 @@ public final class LoginControl {
         } else if (provider.isAvailable()) {
             MainApplication.worker.execute(provider::logOut);
         } else {
-            this.error = null;
-            // The login waits for the browser, so it gets its own thread instead of blocking JOSM's worker
-            final var thread = new Thread(() -> logIn(provider), "MapRoulette login");
-            thread.setDaemon(true);
-            thread.start();
+            startLogIn(provider);
         }
         update();
+    }
+
+    /**
+     * Log in, as the Log in button does, unless the user is logged in or logging in already. A failed login shows here.
+     */
+    public void logIn() {
+        final var provider = provider();
+        if (provider != null && !provider.isLoggingIn() && !provider.isAvailable()) {
+            startLogIn(provider);
+            update();
+        }
+    }
+
+    private void startLogIn(OAuthAuthProvider provider) {
+        this.error = null;
+        // The login waits for the browser, so it gets its own thread instead of blocking JOSM's worker
+        final var thread = new Thread(() -> logIn(provider), "MapRoulette login");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    /**
+     * Check whether the user can log in from JOSM but isn't logged in or logging in
+     *
+     * @return {@code true} if a Log in button would help
+     */
+    public static boolean canLogIn() {
+        final var provider = provider();
+        return provider != null && !provider.isLoggingIn() && !provider.isAvailable();
     }
 
     private void logIn(OAuthAuthProvider provider) {

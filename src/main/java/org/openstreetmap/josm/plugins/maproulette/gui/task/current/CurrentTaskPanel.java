@@ -71,6 +71,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.gui.LoginControl;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
@@ -262,7 +263,11 @@ public final class CurrentTaskPanel extends JPanel {
     /**
      * Re-evaluates the actions when the MapRoulette login changes
      */
-    private final Runnable authListener = this::refreshActions;
+    private final Runnable authListener = () -> {
+        this.refreshActions();
+        // The state line says when a login is needed
+        this.refreshDataState();
+    };
     /**
      * Shows the instructions, and updates the actions, once the challenge of the task arrives in the background
      */
@@ -485,11 +490,13 @@ public final class CurrentTaskPanel extends JPanel {
             state = question != null && question.taskId() == currentTask.id()
                     && (!question.whileStarted() || showsLockedTask())
                             ? question.state()
-                            : state(currentTask, showsLockedTask(), TaskEdits.count(),
-                                    TaskResults.get(currentTask.id()),
-                                    ModifiedObjects.isFinishPending(currentTask.id()),
-                                    LateUploadHook.isUnfinished(currentTask.id()), missing,
-                                    this.notDownloaded == currentTask.id());
+                            : withLogin(currentTask,
+                                    state(currentTask, showsLockedTask(), TaskEdits.count(),
+                                            TaskResults.get(currentTask.id()),
+                                            ModifiedObjects.isFinishPending(currentTask.id()),
+                                            LateUploadHook.isUnfinished(currentTask.id()), missing,
+                                            this.notDownloaded == currentTask.id()),
+                                    LoginControl.canLogIn());
         }
         this.apply(state);
     }
@@ -696,6 +703,28 @@ enum Tone {
                     List.of());
         }
         return null;
+    }
+
+    /**
+     * Say why the status buttons of a started task are disabled, with a Log in button, when the user is logged out
+     * (#116)
+     *
+     * @param task     The task
+     * @param state    The state line otherwise
+     * @param canLogIn {@code true} if the user can log in from JOSM but isn't logged in
+     * @return The state line
+     */
+    static State withLogin(Task task, @Nullable State state, boolean canLogIn) {
+        if (!canLogIn || state == null || state.tone() != Tone.WORKING) {
+            return state;
+        }
+        return new State(Tone.WARNING, html(tr("Log in to set the status of task {0}.", Long.toString(task.id()))),
+                null, List.of(new Choice(tr("Log in…"), null, () -> {
+                    final var dialog = MapRouletteDialog.get();
+                    if (dialog != null) {
+                        dialog.login().logIn();
+                    }
+                })));
     }
 
     /**
@@ -1209,7 +1238,7 @@ private static final class OpenOnMapRouletteAction extends JosmAction {
         final var hasWebsite = MapRouletteServerPreference.getWebsiteUrl().isPresent();
         this.setEnabled(url().isPresent());
         this.setTooltip(hasWebsite ? tr("Open this task on the MapRoulette website")
-                : tr("Set the MapRoulette website URL in the MapRoulette server preferences to open tasks there"));
+                : tr("This server has no MapRoulette website"));
     }
 }
 

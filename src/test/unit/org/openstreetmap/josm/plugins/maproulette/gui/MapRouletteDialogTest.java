@@ -93,9 +93,12 @@ class MapRouletteDialogTest {
                 ancestor = ancestor.getParent();
             }
             assertNotSame(panel, ancestor, "The table should be hidden while no tasks are loaded");
-            assertFalse(TaskListPanelTest
-                    .find(panel, SideButton.class, b -> b.getAction() == TaskListPanelTest.getDownloadAction(panel))
-                    .getParent().getParent().isVisible(), "The empty state has its own buttons");
+            ancestor = TaskListPanelTest.find(panel, SideButton.class,
+                    b -> b.getAction() == TaskListPanelTest.getDownloadAction(panel));
+            while (ancestor != panel && ancestor.isVisible()) {
+                ancestor = ancestor.getParent();
+            }
+            assertNotSame(panel, ancestor, "The empty state has its own buttons");
         } finally {
             panel.destroy();
         }
