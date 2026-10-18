@@ -46,8 +46,10 @@ public final class MapRouletteMenu {
         MainMenu.add(menu, new OpenLinkAction());
         MainMenu.add(menu, new ShowPanelAction());
         menu.addSeparator();
-        MainMenu.add(menu, PreferencesAction.forPreferenceSubTab(tr("Log in to MapRoulette…"),
-                tr("Log in to MapRoulette in the MapRoulette preferences"), MapRouletteLoginPreference.class));
+        MainMenu.add(menu,
+                PreferencesAction.forPreferenceSubTab(tr("MapRoulette login…"),
+                        tr("Log in to or out of MapRoulette, in the MapRoulette preferences"),
+                        MapRouletteLoginPreference.class));
         MainMenu.add(menu, PreferencesAction.forPreferenceTab(tr("MapRoulette preferences…"),
                 tr("Open the MapRoulette preferences"), MapRoulettePreferences.class));
         menu.addSeparator();

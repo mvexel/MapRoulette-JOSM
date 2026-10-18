@@ -3,6 +3,9 @@ package org.openstreetmap.josm.plugins.maproulette.actions;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
@@ -32,6 +35,8 @@ class ShowPanelActionTest {
         assertEquals(1, layers.size());
         assertEquals(0, layers.get(0).getTasks().size());
         assertNotNull(MainApplication.getMap());
+        // Tasks loaded into this layer later must be clickable
+        assertTrue(Arrays.asList(MainApplication.getMap().mapView.getMouseListeners()).contains(layers.get(0)));
         // A second show doesn't add another layer
         GuiHelper.runInEDTAndWait(() -> new ShowPanelAction().actionPerformed(null));
         assertEquals(1, MainApplication.getLayerManager().getLayers().size());

@@ -43,7 +43,9 @@ public class ShowPanelAction extends JosmAction {
      */
     public static MapRouletteDialog show() {
         if (MainApplication.getMap() == null) {
-            MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(emptyMapBounds(), List.of()));
+            final var layer = new MapRouletteClusteredPointLayer(emptyMapBounds(), List.of());
+            MainApplication.getLayerManager().addLayer(layer);
+            MainApplication.getMap().mapView.addMouseListener(layer);
         }
         final var dialog = MapRouletteDialog.get();
         if (dialog != null) {

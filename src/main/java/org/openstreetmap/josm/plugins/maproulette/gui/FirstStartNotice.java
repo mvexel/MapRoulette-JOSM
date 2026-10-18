@@ -5,6 +5,8 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 import javax.swing.JButton;
 import javax.swing.JOptionPane;
@@ -12,6 +14,7 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
@@ -31,14 +34,35 @@ public final class FirstStartNotice {
     }
 
     /**
-     * Show the notice if it was never shown, and remember that it was
+     * Show the notice if it was never shown, once JOSM's window is visible
      */
     public static void showOnce() {
-        if (!takeTurn() || GraphicsEnvironment.isHeadless()) {
+        if (SHOWN.get() || GraphicsEnvironment.isHeadless()) {
             return;
         }
-        // JOSM loads plugins before it shows its window, and queues that on the EDT: show the notice after it
-        SwingUtilities.invokeLater(() -> SwingUtilities.invokeLater(() -> notification().show()));
+        final var frame = MainApplication.getMainFrame();
+        if (frame == null) {
+            return;
+        }
+        if (frame.isShowing()) {
+            // The plugin was loaded while JOSM was running
+            SwingUtilities.invokeLater(FirstStartNotice::show);
+            return;
+        }
+        // At startup JOSM loads plugins before it shows its window
+        frame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowOpened(WindowEvent e) {
+                frame.removeWindowListener(this);
+                show();
+            }
+        });
+    }
+
+    private static void show() {
+        if (takeTurn()) {
+            notification().show();
+        }
     }
 
     /**
