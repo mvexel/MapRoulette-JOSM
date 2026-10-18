@@ -175,7 +175,7 @@ public final class CurrentTaskPanel extends JPanel {
     /**
      * Opens the feedback fields
      */
-    private final JButton feedbackToggle = new JButton(tr("Add a comment or ask for a review…"));
+    private final JButton feedbackToggle = new JButton("\u25b8 " + tr("Add a comment or ask for a review…"));
     /**
      * {@code true} once the user opened the feedback fields for the current task
      */

@@ -206,7 +206,7 @@ class MapRouletteDialogTest {
                     new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
                             null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""));
             final var toggle = TaskListPanelTest.find(panel, JButton.class,
-                    b -> "Add a comment or ask for a review…".equals(b.getText()));
+                    b -> "\u25b8 Add a comment or ask for a review…".equals(b.getText()));
             final var comment = TaskListPanelTest.find(panel, JosmTextField.class, f -> true);
             assertTrue(toggle.isVisible());
             assertFalse(comment.getParent().isVisible(), "The fields start folded");
