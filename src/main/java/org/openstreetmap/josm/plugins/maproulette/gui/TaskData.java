@@ -125,8 +125,8 @@ public final class TaskData {
         }
         final var maxArea = Config.getPref().getDouble("osm-server.max-request-area", 0.25);
         if (bounds.getArea() > maxArea) {
-            new Notification(
-                    tr("Task {0} covers too large an area to download. Download the part you need.", task.id())).show();
+            new Notification(tr("Task {0} covers too large an area to download. Download the part you need.",
+                    Long.toString(task.id()))).show();
             return;
         }
         new DownloadOsmTask().download(new DownloadParams(), bounds, null);

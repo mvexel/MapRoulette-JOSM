@@ -104,7 +104,7 @@ public class MapRouletteDownloadChallengeTask extends AbstractDownloadTask<Colle
          * @param ids             The ids to download
          */
         DownloadTask(ProgressMonitor progressMonitor, long... ids) {
-            super(tr("Downloading MapRoulette Challenge {0}", ids[0]), progressMonitor, false);
+            super(tr("Downloading MapRoulette Challenge {0}", Long.toString(ids[0])), progressMonitor, false);
             this.challengeIds = ids;
         }
 

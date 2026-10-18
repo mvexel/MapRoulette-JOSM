@@ -446,7 +446,8 @@ public final class CurrentTaskPanel extends JPanel {
      *         when the task isn't open, such as "Task 27 · Done · Already fixed" (#146)
      */
     static String header(Task task, boolean started) {
-        final var header = started ? tr("Working on task {0}", task.id()) : tr("Task {0}", task.id());
+        final var id = Long.toString(task.id());
+        final var header = started ? tr("Working on task {0}", id) : tr("Task {0}", id);
         final var status = TaskRows.statusLine(TaskRows.status(task));
         return status == null ? header : header + " · " + status;
     }
@@ -627,8 +628,9 @@ public final class CurrentTaskPanel extends JPanel {
         final var edits = TaskEdits.count();
         this.editsLabel.setVisible(started);
         if (started) {
-            this.editsLabel.setText(edits == 0 ? tr("No edits yet for task {0}", currentTask.id())
-                    : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits, currentTask.id()));
+            this.editsLabel.setText(edits == 0 ? tr("No edits yet for task {0}", Long.toString(currentTask.id()))
+                    : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits,
+                            Long.toString(currentTask.id())));
         }
         final var summary = started && edits > 0
                 ? TaskChanges.of(currentTask, MainApplication.getLayerManager().getEditDataSet())
@@ -642,8 +644,8 @@ public final class CurrentTaskPanel extends JPanel {
         final var unfinished = currentTask != null && LateUploadHook.isUnfinished(currentTask.id());
         this.unfinishedPanel.setVisible(unfinished);
         if (unfinished) {
-            this.unfinishedLabel
-                    .setText(tr("Your edits are uploaded, but Fixed was not sent for task {0}.", currentTask.id()));
+            this.unfinishedLabel.setText(tr("Your edits are uploaded, but Fixed was not sent for task {0}.",
+                    Long.toString(currentTask.id())));
         }
         ((CardLayout) this.finishCards.getLayout()).show(this.finishCards,
                 currentTask != null && currentTask.cooperativeWork() != null && !currentTask.isChoiceTask()
@@ -741,7 +743,7 @@ public final class CurrentTaskPanel extends JPanel {
             return;
         }
         this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
-                .orElseGet(() -> tr("Challenge {0}", currentTask.parentId())));
+                .orElseGet(() -> tr("Challenge {0}", Long.toString(currentTask.parentId()))));
         this.nameLink.setText(TaskRows.readableName(currentTask));
         this.nameLink.setIcon(ImageProvider.get("dialogs/autoscale", "selection", ImageProvider.ImageSizes.SMALLICON));
         this.nameLink.setEnabled(true);

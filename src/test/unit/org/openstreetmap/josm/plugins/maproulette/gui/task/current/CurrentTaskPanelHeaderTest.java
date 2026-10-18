@@ -58,4 +58,15 @@ class CurrentTaskPanelHeaderTest {
         assertEquals("Bench \"sue\" selected",
                 CurrentTaskPanel.selection(List.of(bench.getPrimitiveId()), dataSet, "Bench \"sue\""));
     }
+
+    /**
+     * Task ids are shown as plain digits, not grouped like a quantity (#160)
+     */
+    @Test
+    void testIdNotGrouped() {
+        final var task = new Task(132_279_499, "Bench", null, null, 15318, null, null, new DataSet(), null, null, null,
+                null, null, null, 0, null, null, null, false, null, null);
+        assertEquals("Working on task 132279499", CurrentTaskPanel.header(task, true));
+        assertEquals("Task 132279499", CurrentTaskPanel.header(task, false));
+    }
 }

@@ -167,7 +167,7 @@ public class MapRouletteDownloadTask extends AbstractDownloadTask<Collection<Tas
          * @param task            The optional task to get tasks around
          */
         DownloadChallenge(ProgressMonitor progressMonitor, long id, long task) {
-            super(tr("Downloading MapRoulette Challenge {0}", id), progressMonitor, false);
+            super(tr("Downloading MapRoulette Challenge {0}", Long.toString(id)), progressMonitor, false);
             this.challengeId = id;
             this.task = task;
         }
@@ -203,7 +203,7 @@ public class MapRouletteDownloadTask extends AbstractDownloadTask<Collection<Tas
          * @param ids             The ids to download
          */
         DownloadTask(ProgressMonitor progressMonitor, long... ids) {
-            super(tr("Downloading MapRoulette Task {0}", ids[0]), progressMonitor, false);
+            super(tr("Downloading MapRoulette Task {0}", Long.toString(ids[0])), progressMonitor, false);
             this.taskIds = ids;
         }
 

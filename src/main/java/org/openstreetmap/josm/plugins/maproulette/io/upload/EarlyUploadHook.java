@@ -211,12 +211,14 @@ public final class EarlyUploadHook implements UploadHook {
                 final var descriptivePanel = GuiHelper
                         .runInEDTAndWaitAndReturn(() -> createDescriptivePanel(task, apiDataSet, primitiveIdMap));
                 Objects.requireNonNull(descriptivePanel);
-                final var didFix = GuiHelper.runInEDTAndWaitAndReturn(
-                        () -> ConditionalOptionPaneUtil.showConfirmationDialog(PREF_CHECK_IF_FINISHED,
-                                MRGuiHelper.dialogParent(), descriptivePanel,
-                                tr("Did you finish the following MapRoulette Task: {0}?", task.id()),
-                                JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
-                                JOptionPane.YES_OPTION));
+                final var didFix = GuiHelper
+                        .runInEDTAndWaitAndReturn(
+                                () -> ConditionalOptionPaneUtil.showConfirmationDialog(PREF_CHECK_IF_FINISHED,
+                                        MRGuiHelper.dialogParent(), descriptivePanel,
+                                        tr("Did you finish the following MapRoulette Task: {0}?",
+                                                Long.toString(task.id())),
+                                        JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE,
+                                        JOptionPane.YES_OPTION));
                 if (Boolean.TRUE.equals(didFix)) {
                     final var doc = (HTMLDocument) ((JMultilineLabel) descriptivePanel.getComponent(1)).getDocument();
                     final var modifiedTask = new ModifiedTask(task, TaskStatus.FIXED, null, null, null,
