@@ -14,6 +14,7 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.testutils.annotations.Main;
@@ -72,6 +73,30 @@ class CurrentTaskPanelPromptTest {
             GuiHelper.runInEDTAndWait(button::doClick);
             assertFalse(stateText(panel).contains("published"));
         } finally {
+            GuiHelper.runInEDTAndWait(panel::destroy);
+        }
+    }
+
+    /**
+     * A question about a task that wasn't started, such as why its start failed, goes once a retry starts it
+     */
+    @Test
+    void testPromptDroppedWhenTaskIsStarted() {
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(CurrentTaskPanel::new);
+        final var task = task(241);
+        try {
+            GuiHelper.runInEDTAndWait(() -> {
+                panel.refreshModel(task);
+                panel.askHere(new CurrentTaskPanel.Prompt(241, false, "Task 241 couldn't be started. Try again.", null,
+                        List.of()));
+            });
+            assertTrue(stateText(panel).contains("Try again"));
+            GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(task));
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            assertFalse(stateText(panel).contains("Try again"), "The started task's own state shows");
+        } finally {
+            GuiHelper.runInEDTAndWait(() -> ModifiedObjects.removeLockedTask(task));
             GuiHelper.runInEDTAndWait(panel::destroy);
         }
     }
