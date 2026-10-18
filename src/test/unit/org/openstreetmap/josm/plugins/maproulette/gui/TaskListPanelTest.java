@@ -167,8 +167,9 @@ public class TaskListPanelTest {
         points.add(point(1004, 19, "Missing sidewalks", null));
         points.add(point(1005, 18, "SLC benches", 99L));
         MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), points));
-        final var panel = new TaskListPanel();
-        // The model fills from the layer on the EDT; the challenge prefetch runs on the worker and redraws on the EDT
+        // Built on the EDT, as JOSM does: the model fills from the layer on the EDT, which would otherwise race the
+        // constructor installing the row sorter. The challenge prefetch runs on the worker and redraws on the EDT.
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(TaskListPanel::new);
         GuiHelper.runInEDTAndWait(() -> {
             /* Sync EDT */ });
         MainApplication.worker.submit(() -> {

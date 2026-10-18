@@ -43,6 +43,7 @@ import javax.swing.table.TableStringConverter;
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
 import org.openstreetmap.josm.data.coor.ILatLon;
+import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.NavigatableComponent;
 import org.openstreetmap.josm.gui.SideButton;
@@ -298,6 +299,7 @@ public final class TaskListPanel extends JPanel
                 task = null;
             }
             if (!l.getValueIsAdjusting()) {
+                showSelectedMarker();
                 if (task != null) {
                     CurrentTaskPanel.show(task, false);
                 } else {
@@ -524,6 +526,28 @@ public final class TaskListPanel extends JPanel
         ModifiedObjects.removeLockListener(this.lockListener);
         ChallengeCache.removeListener(this.challengeListener);
         NavigatableComponent.removeZoomChangeListener(this.zoomListener);
+    }
+
+    /**
+     * Highlight the markers of the selected rows, and pan to the marker of a single selected row that is off the map
+     * (#113)
+     */
+    private void showSelectedMarker() {
+        final var map = MainApplication.getMap();
+        if (map == null || map.mapView == null) {
+            return;
+        }
+        MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
+                .forEach(MapRouletteClusteredPointLayer::invalidate);
+        final var selected = this.getSelected();
+        if (selected.size() == 1) {
+            final var location = selected.iterator().next().location();
+            final var mapView = map.mapView;
+            if (location != null && mapView.getWidth() > 0
+                    && !mapView.getRealBounds().contains(new LatLon(location.lat(), location.lon()))) {
+                mapView.zoomTo(new LatLon(location.lat(), location.lon()));
+            }
+        }
     }
 
     /**

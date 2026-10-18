@@ -185,8 +185,13 @@ public final class TaskResults {
     }
 
     private static void put(Result result, boolean notify) {
-        RESULTS.put(result.taskId(), result);
-        fire();
+        // A link can finish after the task was started again, which cleared its result: the new start wins, but the user
+        // still hears how the link went
+        if (result.link() == Link.NONE || RESULTS.containsKey(result.taskId())
+                || ModifiedObjects.getLockedTask(result.taskId()) == null) {
+            RESULTS.put(result.taskId(), result);
+            fire();
+        }
         if (notify) {
             if (GraphicsEnvironment.isHeadless()) {
                 Logging.info(result.text());
