@@ -106,6 +106,80 @@ class TaskEditsTest {
         assertTrue(TaskEdits.touches(List.of(nodes.get(39))));
     }
 
+    /**
+     * Undoing or redoing an edit made before Start is not task work (#130)
+     */
+    @Test
+    void testUndoRedoOfEditBeforeStart() {
+        TaskEdits.start();
+        final var bench = new Node(LatLon.ZERO);
+        bench.setOsmId(3, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(bench);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testUndoRedoOfEditBeforeStart", null));
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(bench, "amenity", "bench"));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        assertEquals(0, TaskEdits.count());
+
+        UndoRedoHandler.getInstance().undo();
+        UndoRedoHandler.getInstance().redo();
+        assertEquals(0, TaskEdits.count(), "Redoing an edit made before Start");
+        assertFalse(TaskEdits.touches(List.of(bench)));
+
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(bench, "backrest", "yes"));
+        assertEquals(1, TaskEdits.count(), "A new edit of the same object counts");
+        assertTrue(TaskEdits.touches(List.of(bench)));
+    }
+
+    /**
+     * New objects that come in with a merged layer were not drawn for the task; new objects an edit adds after Start,
+     * or brings back with an undo, were (#130)
+     */
+    @Test
+    void testNewObjectsFromMerge() {
+        TaskEdits.start();
+        final var dataSet = new DataSet();
+        final var layer = new OsmDataLayer(dataSet, "testNewObjectsFromMerge", null);
+        MainApplication.getLayerManager().addLayer(layer);
+        final var drawnBefore = new DataSet();
+        drawnBefore.addPrimitive(new Node(LatLon.NORTH_POLE));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+
+        GuiHelper.runInEDTAndWait(() -> layer.mergeFrom(drawnBefore));
+        assertEquals(1, dataSet.getNodes().size());
+        assertEquals(0, TaskEdits.count(), "Objects merged from another layer");
+
+        final var bench = new Node(LatLon.ZERO);
+        UndoRedoHandler.getInstance().add(new AddCommand(dataSet, bench));
+        assertEquals(1, TaskEdits.count());
+        UndoRedoHandler.getInstance().undo();
+        UndoRedoHandler.getInstance().redo();
+        assertTrue(TaskEdits.touches(List.of(bench)), "Redoing an edit made after Start");
+        assertEquals(1, TaskEdits.count());
+    }
+
+    /**
+     * A removed layer is no longer followed: edits in it don't count (#130)
+     */
+    @Test
+    void testRemovedLayerNotFollowed() {
+        TaskEdits.start();
+        final var bench = new Node(LatLon.ZERO);
+        bench.setOsmId(4, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(bench);
+        final var layer = new OsmDataLayer(dataSet, "testRemovedLayerNotFollowed", null);
+        MainApplication.getLayerManager().addLayer(layer);
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        MainApplication.getLayerManager().removeLayer(layer);
+        bench.put("amenity", "bench");
+        assertEquals(0, TaskEdits.count(), "An edit in a removed layer");
+        assertFalse(TaskEdits.touches(List.of(bench)));
+    }
+
     private static void sync() {
         GuiHelper.runInEDTAndWait(() -> {
             /* Sync EDT */ });
