@@ -795,8 +795,7 @@ enum Tone {
             return state;
         }
         return new State(state.tone(), state.html(),
-                tr("Uploading asks once more, for your OpenStreetMap account. MapRoulette and OpenStreetMap are "
-                        + "separate logins."),
+                tr("Uploading also needs your OpenStreetMap login. It''s separate from the MapRoulette login."),
                 List.of(new Choice(tr("Log in to OpenStreetMap…"), tr("Opens JOSM''s OpenStreetMap login"),
                         () -> OsmLogin.logIn(CurrentTaskPanel::refreshData))));
     }

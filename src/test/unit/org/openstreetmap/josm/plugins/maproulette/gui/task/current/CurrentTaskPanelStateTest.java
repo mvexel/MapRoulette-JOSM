@@ -124,8 +124,8 @@ class CurrentTaskPanelStateTest {
         final var osm = CurrentTaskPanel.withOsmLogin(working, true);
         assertEquals(Tone.WORKING, osm.tone());
         assertEquals(working.html(), osm.html());
-        assertEquals("Uploading asks once more, for your OpenStreetMap account. MapRoulette and OpenStreetMap are "
-                + "separate logins.", osm.hint());
+        assertEquals("Uploading also needs your OpenStreetMap login. It's separate from the MapRoulette login.",
+                osm.hint());
         assertEquals(List.of("Log in to OpenStreetMap…"), labels(osm));
         assertEquals(working, CurrentTaskPanel.withOsmLogin(working, false), "JOSM has an OSM login");
         final var noEdits = state(true, 0, null);
