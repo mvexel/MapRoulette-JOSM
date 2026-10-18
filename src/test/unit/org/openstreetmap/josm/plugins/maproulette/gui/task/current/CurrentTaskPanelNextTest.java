@@ -9,16 +9,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javax.swing.JButton;
+import javax.swing.JTable;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskListPanelTest;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
+import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
@@ -119,6 +125,42 @@ class CurrentTaskPanelNextTest {
             assertEquals(List.of(Boolean.FALSE), offers.stream().distinct().toList());
         } finally {
             GuiHelper.runInEDTAndWait(panel::destroy);
+        }
+    }
+
+    /**
+     * The task just finished stays, with the next task offered, when the list reloads after the release (dry run 2)
+     */
+    @Test
+    void testFinishedTaskSurvivesListReload() {
+        mockOffers();
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testFinishedTask", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            MainApplication.getLayerManager()
+                    .addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
+                            List.of(TaskListPanelTest.point(241, 11, "SLC benches", null),
+                                    TaskListPanelTest.point(242, 11, "SLC benches", null))));
+            GuiHelper.runInEDTAndWait(() -> {
+                ModifiedObjects.addLockedTask(TASK);
+                CurrentTaskPanel.show(TASK, false);
+                ModifiedObjects.removeLockedTask(TASK);
+                TaskResults.sent(TASK, TaskStatus.FIXED);
+            });
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            assertTrue(dialog.currentTask().showsFinishedTask());
+
+            final var table = TaskListPanelTest.find(dialog.taskList(), JTable.class, t -> true);
+            GuiHelper.runInEDTAndWait(() -> {
+                table.setRowSelectionInterval(0, 0);
+                table.clearSelection();
+            });
+            assertTrue(dialog.currentTask().hasTask(), "The finished task stays");
+            assertTrue(dialog.currentTask().showsFinishedTask(), "And still offers the next one");
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
         }
     }
 

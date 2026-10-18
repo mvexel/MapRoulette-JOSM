@@ -57,7 +57,10 @@ class MapRouletteClientEdtTest {
     private AuthProvider originalAuth;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        // A job queued by an earlier test (a challenge fetch, say) must not count as a request of this one
+        MainApplication.worker.submit(() -> null).get(10, TimeUnit.SECONDS);
+        WireMocks.current().resetRequests();
         this.originalAuth = MapRouletteClient.getInstance().auth();
         this.auth = new ThreadRecordingAuthProvider();
         MapRouletteClient.getInstance().setAuthProvider(this.auth);

@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.LongPredicate;
 import java.util.regex.Pattern;
@@ -338,8 +339,10 @@ public final class TaskListPanel extends JPanel
                     CurrentTaskPanel.show(task, false);
                 } else {
                     final var currentTaskPanel = CurrentTaskPanel.get();
-                    // The window follows the user's locked task: filtering it out or selecting another row must not drop it
-                    if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()) {
+                    // The window follows the user's locked task: filtering it out or selecting another row must not drop it.
+                    // Nor the task just finished, which offers the next one; the list reloads after the release.
+                    if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()
+                            && !currentTaskPanel.showsFinishedTask()) {
                         currentTaskPanel.refreshModel(null);
                     }
                 }
@@ -362,12 +365,9 @@ public final class TaskListPanel extends JPanel
         this.cards.add(listAndFooter, TABLE_CARD);
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
         this.add(this.cards, BorderLayout.CENTER);
-        final var logIn = new JButton(tr("Log in…"));
-        logIn.setToolTipText(tr("Opens MapRoulette in your browser to log in"));
-        logIn.addActionListener(e -> LoginControl.logInFromPanel());
-        this.loginNotice.add(new JLabel(tr("Log in to start tasks:")), GBC.std().insets(4, 2, 4, 2));
-        this.loginNotice.add(logIn, GBC.std().insets(0, 2, 4, 2));
-        this.loginNotice.add(new JLabel(), GBC.eol().fill(GBC.HORIZONTAL));
+        // The panel header has the one Log in… button
+        this.loginNotice.add(new JLabel(tr("Log in at the top of the panel to start tasks.")),
+                GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         this.loginNotice.setVisible(LoginControl.canLogIn());
         this.buttons = new JPanel(new BorderLayout());
         this.buttons.add(this.loginNotice, BorderLayout.NORTH);
@@ -694,6 +694,9 @@ public final class TaskListPanel extends JPanel
                 LoginControl.showUnavailableNoticeOnce();
             }
             updateTitle();
+            // After the layer's map and panels exist
+            SwingUtilities.invokeLater(
+                    () -> Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::openForFirstTasks));
         }
     }
 
@@ -737,15 +740,15 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
-     * Get the size the list needs while a task is started: its title and the challenge filter. The rest may be squeezed
-     * out, since the user can drag the divider (#132).
+     * Get the size the list needs while a task is started: its title with the filters, and the buttons, which would
+     * otherwise be drawn over the filters and the current task. The rows may be squeezed out, since the user can drag the
+     * divider (#132).
      *
      * @return The size
      */
     public Dimension squeezedSize() {
-        final var challengeRow = this.filters.isVisible() ? this.challengeFilter.getPreferredSize().height + 4 : 0;
         return new Dimension(this.buttons.getPreferredSize().width,
-                this.title.getPreferredSize().height + 4 + challengeRow);
+                this.titleBar.getPreferredSize().height + this.buttons.getPreferredSize().height);
     }
 
     /**
