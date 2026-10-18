@@ -44,14 +44,18 @@ class CurrentTaskPanelHeaderTest {
         final var done = new Task(28, "Bench 28", null, null, 15318, null, null, new DataSet(), null,
                 TaskStatus.ALREADY_FIXED, null, null, null, null, 0, null, null, null, false, null, null);
         assertEquals("Task 28 · Done · Already fixed", CurrentTaskPanel.header(done, false), "#146");
-        assertNull(CurrentTaskPanel.selection(ids, dataSet));
-        assertNull(CurrentTaskPanel.selection(ids, null));
+        assertNull(CurrentTaskPanel.selection(ids, dataSet, "Bench"));
+        assertNull(CurrentTaskPanel.selection(ids, null, "Bench"));
 
         dataSet.setSelected(bench);
-        final var one = CurrentTaskPanel.selection(ids, dataSet);
+        final var one = CurrentTaskPanel.selection(ids, dataSet, "Bench");
         assertTrue(one != null && one.endsWith(" selected"), one);
 
         dataSet.setSelected(bench, other);
-        assertEquals("2 objects selected", CurrentTaskPanel.selection(ids, dataSet));
+        assertEquals("2 objects selected", CurrentTaskPanel.selection(ids, dataSet, "Bench"));
+
+        // A task with one object: the same name as the header and the list (#145)
+        assertEquals("Bench \"sue\" selected",
+                CurrentTaskPanel.selection(List.of(bench.getPrimitiveId()), dataSet, "Bench \"sue\""));
     }
 }

@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -102,6 +103,18 @@ public final class EarlyUploadHook implements UploadHook {
      * The primitives of the upload in progress, captured in {@link #checkUpload(APIDataSet)}
      */
     private volatile List<OsmPrimitive> uploading = List.of();
+    /**
+     * The user asked to finish the started tasks with the next upload, whatever it contains
+     */
+    private static final AtomicBoolean FINISH_REQUESTED = new AtomicBoolean();
+
+    /**
+     * Ask if the next upload finishes the started tasks, even if its edits are not near them (#149). The request is
+     * used up by the next upload check.
+     */
+    public static void requestFinish() {
+        FINISH_REQUESTED.set(true);
+    }
 
     /**
      * JOSM calls this on the worker, and {@link #modifyChangesetTags(Map)} afterwards on the EDT
@@ -146,8 +159,13 @@ public final class EarlyUploadHook implements UploadHook {
         if (!ModifiedObjects.getLockedTasks().isEmpty()) {
             // A started task is finished by the upload of its edits (#115); the old question is for uploads without one.
             // A started choice task, or one with a status picked already, is not finished by an upload either.
-            final var started = finishable();
-            if (!started.isEmpty() && TaskEdits.touches(apiDataSet.getPrimitives())) {
+            // Only the tasks the upload concerns, unless the user asked to finish with "Upload edits and finish" (#149)
+            final var uploaded = apiDataSet.getPrimitives();
+            final var finishRequested = FINISH_REQUESTED.getAndSet(false);
+            final var started = finishable().stream()
+                    .filter(task -> finishRequested ? TaskEdits.touches(uploaded) : TaskEdits.touches(uploaded, task))
+                    .toList();
+            if (!started.isEmpty()) {
                 final List<ModifiedTask> finishing = GuiHelper.runInEDTAndWaitAndReturn(() -> askFinishes(started));
                 ModifiedObjects.setFinishing(Objects.requireNonNull(finishing));
             }

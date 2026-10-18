@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -123,23 +124,31 @@ public final class TaskRows {
     }
 
     /**
-     * Get a readable name for a task: the {@code name} or {@code ref} of its object, else the JOSM preset name for its
-     * tags, else its OSM object, else MapRoulette's task name
+     * Get a readable name for a task: the JOSM preset name for its tags with the {@code name} or {@code ref} of its
+     * object, such as {@code Bench "sue"}, else either of them, else its OSM object, else MapRoulette's task name. The
+     * task list and the current task use it, so they always name a task the same way (#145).
      *
      * @param point The task
      * @return The name
      */
     @Nonnull
-    static String readableName(@Nonnull TaskClusteredPoint point) {
+    public static String readableName(@Nonnull TaskClusteredPoint point) {
         final var properties = properties(point);
+        String name = null;
         for (var key : new String[] { "name", "ref" }) {
             final var value = properties.get(key);
             if (value != null && !value.isBlank()) {
-                return value;
+                name = value.strip();
+                break;
             }
         }
         final var osmId = osmId(properties.getOrDefault("@id", taskName(point)));
         final var preset = presetName(properties, osmId == null ? null : osmId[0]);
+        if (name != null) {
+            // "Bench at Liberty Park" says what it is already
+            return preset == null || name.toLowerCase(Locale.ROOT).contains(preset.toLowerCase(Locale.ROOT)) ? name
+                    : tr("{0} \"{1}\"", preset, name);
+        }
         if (preset != null) {
             return preset;
         }
@@ -150,8 +159,8 @@ public final class TaskRows {
             default -> tr("Relation {0}", osmId[1]);
             };
         }
-        final var name = taskName(point);
-        return name.isBlank() ? tr("Task {0}", Long.toString(point.id())) : name;
+        final var taskName = taskName(point);
+        return taskName.isBlank() ? tr("Task {0}", Long.toString(point.id())) : taskName;
     }
 
     /**
