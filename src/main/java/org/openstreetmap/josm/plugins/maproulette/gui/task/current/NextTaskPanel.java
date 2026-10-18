@@ -129,6 +129,8 @@ final class NextTaskPanel extends JPanel {
         final var border = Optional.ofNullable(UIManager.getColor("Separator.foreground")).orElse(Color.GRAY);
         box.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(border),
                 BorderFactory.createEmptyBorder(4, 6, 4, 6)));
+        // Task names come from the challenge's data: never render them as HTML
+        this.candidateName.putClientProperty("html.disable", Boolean.TRUE);
         this.candidateDetail.setFont(font.deriveFont(font.getSize2D() * 0.9f));
         box.add(this.candidateName, GBC.eol().fill(GBC.HORIZONTAL));
         box.add(this.candidateDetail, GBC.eol().fill(GBC.HORIZONTAL));
@@ -366,6 +368,7 @@ final class NextTaskPanel extends JPanel {
             final var task = new JLabel(
                     tr("Task {0} · {1}", Long.toString(done.task().id()), TaskRows.readableName(done.task())));
             task.setFont(font);
+            task.putClientProperty("html.disable", Boolean.TRUE);
             final var outcome = new JMultilineLabel("<html>" + outcomeHtml(done.result()) + "</html>");
             outcome.setFont(font);
             outcome.addHyperlinkListener(e -> {
