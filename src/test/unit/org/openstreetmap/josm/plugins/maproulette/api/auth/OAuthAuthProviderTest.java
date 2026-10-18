@@ -33,6 +33,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -382,7 +383,9 @@ class OAuthAuthProviderTest {
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
                         .withBody("{\"id\":2,\"osmId\":11353,\"displayName\":\"tester\",\"scope\":\"tasks:read\"}")));
         assertEquals(OptionalLong.empty(), provider.knownUserId(), "Not looked up yet");
+        assertEquals(Optional.empty(), provider.knownUserName(), "Not looked up yet");
         assertEquals(OptionalLong.of(2), provider.userId());
+        assertEquals(Optional.of("tester"), provider.knownUserName(), "Looked up with the id (#118)");
         assertEquals(OptionalLong.of(2), provider.userId());
         assertEquals(OptionalLong.of(2), provider.knownUserId());
         this.wireMock.verifyThat(exactly(1), getRequestedFor(urlPathEqualTo("/oauth/mobile/me"))
@@ -390,6 +393,7 @@ class OAuthAuthProviderTest {
         this.wireMock.register(post(urlPathEqualTo(REVOKE)).willReturn(aResponse().withStatus(200)));
         provider.logOut();
         assertEquals(OptionalLong.empty(), provider.knownUserId());
+        assertEquals(Optional.empty(), provider.knownUserName());
         assertEquals(OptionalLong.empty(), provider.userId(), "Nobody is logged in");
     }
 

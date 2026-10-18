@@ -43,6 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
@@ -54,12 +55,14 @@ import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.AuthProvider;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.Difficulty;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.PublicUser;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
@@ -76,6 +79,7 @@ import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.Utils;
 
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
@@ -110,8 +114,19 @@ class LockUnlockTaskActionTest {
      * @return The layer
      */
     private static MapRouletteClusteredPointLayer layer(TaskStatus status) {
+        return layer(status, 0);
+    }
+
+    /**
+     * A layer with task 132279499
+     *
+     * @param status    The task's status
+     * @param challenge The task's challenge
+     * @return The layer
+     */
+    private static MapRouletteClusteredPointLayer layer(TaskStatus status, long challenge) {
         return new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
-                Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
+                Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", challenge, "parentName",
                         new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, status, null,
                         Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
                         new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
@@ -432,6 +447,32 @@ class LockUnlockTaskActionTest {
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
             assertNull(ModifiedObjects.getLockedTask(147197178L));
             assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * Starting the next task (#117) goes through the same start-blocked question while another task is started, and
+     * doesn't ask MapRoulette for the lock
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartNextBlocked() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            final var next = new Task(132279499L, "node/1", null, null, 0, null, null, new DataSet(), null, null, null,
+                    null, null, null, 0, null, null, null, false, null, null);
+            GuiHelper.runInEDTAndWaitWithException(() -> action.start(next, new int[0]));
+            sync();
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(stateText("Start task 132279499? Task 147197178 is still started."));
         } finally {
             Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
             cleanUp();
@@ -876,6 +917,106 @@ class LockUnlockTaskActionTest {
         } finally {
             cleanUp();
         }
+    }
+
+    /**
+     * A task of an unpublished challenge doesn't start: MapRoulette answers 404, and the plugin says which part is
+     * disabled, instead of "not found" (#116)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartUnpublishedChallenge() throws Exception {
+        final var told = new CopyOnWriteArrayList<String>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void notifyProblem(String text) {
+                told.add(text);
+            }
+
+            @Mock
+            void explainException(Exception exception) {
+                told.add(exception instanceof MapRouletteNotFoundException ? "not found" : exception.toString());
+            }
+        };
+        final var challengeOff = "Challenge \"Bench details pilot (dev OSM, guests)\" isn't published yet. Only its "
+                + "owner can publish it.";
+        assertEquals(List.of(challengeOff), startRefused(4, 404, told));
+        assertEquals(
+                List.of("Challenge \"SLC benches (A39 test, delete me)\" isn't published yet: its project \"Test "
+                        + "Mapper's Project\" is disabled. Only its owner can enable it."),
+                startRefused(9010, 404, told));
+        // A super-user gets challenge_draft instead
+        assertEquals(List.of(challengeOff), startRefused(4, 403, told));
+        // The challenge reads as published, or can't be read: the user is asked to try again
+        final var again = List.of("Task 132279499 couldn't be started. Try again.");
+        assertEquals(again, startRefused(9011, 404, told));
+        assertEquals(again, startRefused(999_999, 404, told));
+        // The controller's JSON NotFound: the task itself is gone, whatever the challenge
+        final var gone = List
+                .of("Task 132279499 no longer exists on MapRoulette. The challenge owner may have removed it.");
+        assertEquals(gone, startRefused(4, 404, true, told));
+        assertEquals(gone, startRefused(9011, 404, true, told));
+    }
+
+    private List<String> startRefused(long challenge, int status, List<String> told) throws Exception {
+        return startRefused(challenge, status, false, told);
+    }
+
+    /**
+     * Click Start on task 132279499 of a challenge, which MapRoulette refuses
+     *
+     * @param challenge The task's challenge
+     * @param status    The HTTP status of the refusal: 404, or 403 for {@code challenge_draft}
+     * @param gone      {@code true} for the controller's JSON NotFound, {@code false} for the draft gate's empty 404
+     * @param told      Gets what the user is told
+     * @return What the user was told this time
+     */
+    private List<String> startRefused(long challenge, int status, boolean gone, List<String> told) throws Exception {
+        told.clear();
+        MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
+                .forEach(MainApplication.getLayerManager()::removeLayer);
+        MainApplication.getLayerManager().addLayer(layer(TaskStatus.CREATED, challenge));
+        GuiHelper.runInEDTAndWait(() -> this.table.getSelectionModel().setSelectionInterval(0, 0));
+        final var start = get(urlPathEqualTo("/api/v2/task/132279499/start"));
+        // The draft refusals as MobileBearerFilter's draft gate writes them (an empty 404 with no-store, or
+        // challenge_draft for a super-user): not recorded, they need an app login's token
+        final ResponseDefinitionBuilder response;
+        if (gone) {
+            response = aResponse().withStatus(404).withHeader("Content-Type", "application/json")
+                    .withBodyFile("errors/404-not-found.json");
+        } else if (status == 404) {
+            response = aResponse().withStatus(404).withHeader("Cache-Control", "no-store");
+        } else {
+            response = aResponse().withStatus(403).withBody("{\"error\":\"challenge_draft\"}");
+        }
+        WireMocks.current().register(start.willReturn(response));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            sync();
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            return List.copyOf(told);
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Objects deleted on the OSM server are named as gone, not as missing (#116)
+     */
+    @Test
+    void testDeletedText() {
+        assertEquals("Task 155's object (node 1) no longer exists on OpenStreetMap.", LockUnlockTaskAction
+                .deletedText(155, List.of(new SimplePrimitiveId(1, OsmPrimitiveType.NODE)), "OpenStreetMap"));
+        assertEquals("Task 155's objects (node 1, way 2) no longer exist on OpenStreetMap.",
+                LockUnlockTaskAction.deletedText(155, List.of(new SimplePrimitiveId(1, OsmPrimitiveType.NODE),
+                        new SimplePrimitiveId(2, OsmPrimitiveType.WAY)), "OpenStreetMap"));
     }
 
     private static void cleanUp() {

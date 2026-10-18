@@ -81,6 +81,7 @@ class EarlyUploadHookTest {
         ModifiedObjects.getModifiedTasks().forEach(ModifiedObjects::removeModifiedTask);
         ModifiedObjects.getLockedTasks().forEach(ModifiedObjects::removeLockedTask);
         ModifiedObjects.setFinishing(List.of());
+        LateUploadHook.forgetUnfinished();
         GuiHelper.runInEDTAndWait(TaskEdits::clear);
     }
 
@@ -137,6 +138,24 @@ class EarlyUploadHookTest {
         assertTrue(hook.checkUpload(new APIDataSet(node.getDataSet())));
         assertTrue(ModifiedObjects.getFinishing().isEmpty());
         assertEquals(List.of(task), ModifiedObjects.getLockedTasks());
+    }
+
+    /**
+     * After an upload that did not go through, "Not finished yet" on the next one drops the Fixed kept from the first
+     * (#130)
+     */
+    @Test
+    @MapRouletteLogin
+    void testNotFinishedYetDropsCarriedFinish() {
+        TestUtils.assumeWorkingJMockit();
+        final var task = startedTask(false);
+        final var node = editedNode(true);
+        final var statuses = List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of()));
+        // As LateUploadHook.afterUpload does when the first upload stopped partway
+        LateUploadHook.carry(statuses);
+        new ExtendedDialogMocker(Map.of(EarlyUploadHook.finishMessage(statuses), "Not finished yet"));
+        assertTrue(hook.checkUpload(new APIDataSet(node.getDataSet())));
+        assertEquals(List.of(), LateUploadHook.withCarried(ModifiedObjects.getFinishing()));
     }
 
     /**

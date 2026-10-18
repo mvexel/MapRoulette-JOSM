@@ -21,12 +21,15 @@ import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -38,6 +41,8 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
@@ -71,11 +76,13 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.gui.LoginControl;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.OsmLogin;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskChanges;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
@@ -110,6 +117,8 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private static final int REJECTED = 2;
     private static final String COOPERATIVE_CARD = "cooperative";
+    private static final String INSTRUCTIONS_CARD = "instructions";
+    private static final String NEXT_CARD = "next";
     /**
      * The model for the task
      */
@@ -131,6 +140,26 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final OpenOnMapRouletteAction openAction = new OpenOnMapRouletteAction(() -> this.task);
     private final JButton openButton = new JButton(this.openAction);
+    /**
+     * Shows the instructions, or the next task once the shown task is finished (#117)
+     */
+    private final JPanel centerCards = new JPanel(new CardLayout());
+    /**
+     * The next task and the tasks done this session
+     */
+    private final NextTaskPanel nextPanel = new NextTaskPanel();
+    /**
+     * The finished tasks the next task was offered for, so the next task starts on its own only once per task
+     */
+    private final Set<Long> offered = new HashSet<>();
+    /**
+     * {@code true} while the panel shows a finished task, with the next task instead of the instructions
+     */
+    private boolean showsNext;
+    /**
+     * The lines of the finish strip, hidden once the task is finished
+     */
+    private final List<Component> finishStrip = new ArrayList<>();
     /**
      * The challenge owner and how to contact them (#120)
      */
@@ -236,12 +265,13 @@ public final class CurrentTaskPanel extends JPanel {
         this.refreshDataState();
     };
     /**
-     * Drops a question about a task once the task is no longer started, for example finished or stopped, so it doesn't
-     * hide the task's real state (#116), then updates like {@link #editsListener}
+     * Drops a question about a task once the task is started or stopped, for example finished, or started on a retry
+     * after a failed start, so it doesn't hide the task's real state (#116, #166), then updates like
+     * {@link #editsListener}
      */
     private final Runnable lockListener = () -> {
         final var question = this.prompt;
-        if (question != null && this.promptHeldLock && ModifiedObjects.getLockedTask(question.taskId()) == null) {
+        if (question != null && this.promptHeldLock != (ModifiedObjects.getLockedTask(question.taskId()) != null)) {
             this.prompt = null;
         }
         this.editsListener.run();
@@ -262,7 +292,11 @@ public final class CurrentTaskPanel extends JPanel {
     /**
      * Re-evaluates the actions when the MapRoulette login changes
      */
-    private final Runnable authListener = this::refreshActions;
+    private final Runnable authListener = () -> {
+        this.refreshActions();
+        // The state line says when a login is needed
+        this.refreshDataState();
+    };
     /**
      * Shows the instructions, and updates the actions, once the challenge of the task arrives in the background
      */
@@ -328,7 +362,12 @@ public final class CurrentTaskPanel extends JPanel {
         gbc.fill(GridBagConstraints.BOTH);
         this.panel.add(this.instructionPane, gbc);
         this.panel.add(this.cooperativeWork, gbc);
-        this.add(this.panel.getVerticalScrollPane(), BorderLayout.CENTER);
+        this.centerCards.add(this.panel.getVerticalScrollPane(), INSTRUCTIONS_CARD);
+        final var nextScroll = new JScrollPane(this.nextPanel);
+        nextScroll.setBorder(null);
+        nextScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        this.centerCards.add(nextScroll, NEXT_CARD);
+        this.add(this.centerCards, BorderLayout.CENTER);
         this.commentField.setHint(tr("Comment for MapRoulette (optional)"));
         this.commentField.setToolTipText(tr("Sent with the task''s status"));
         this.tagBox.setToolTipText(tr("Task tags for MapRoulette (optional)"));
@@ -385,6 +424,7 @@ public final class CurrentTaskPanel extends JPanel {
                         List.of(new SideButton(newActions[2]), new JPanel()),
                         List.of(new SideButton(newActions[3]), new SideButton(newActions[5]))));
         south.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
+        this.finishStrip.addAll(List.of(this.finishCards, uploadHint, noEdit, this.statusButtons));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -414,6 +454,7 @@ public final class CurrentTaskPanel extends JPanel {
         // The side buttons destroy their own actions, once
         GuiHelper.destroyComponents(this, false);
         this.openAction.destroy();
+        this.nextPanel.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
         TaskEdits.removeListener(this.editsListener);
         ModifiedObjects.removeLockListener(this.lockListener);
@@ -485,13 +526,40 @@ public final class CurrentTaskPanel extends JPanel {
             state = question != null && question.taskId() == currentTask.id()
                     && (!question.whileStarted() || showsLockedTask())
                             ? question.state()
-                            : state(currentTask, showsLockedTask(), TaskEdits.count(),
-                                    TaskResults.get(currentTask.id()),
-                                    ModifiedObjects.isFinishPending(currentTask.id()),
-                                    LateUploadHook.isUnfinished(currentTask.id()), missing,
-                                    this.notDownloaded == currentTask.id());
+                            : withLogin(currentTask,
+                                    withOsmLogin(
+                                            state(currentTask, showsLockedTask(), TaskEdits.count(),
+                                                    TaskResults.get(currentTask.id()),
+                                                    ModifiedObjects.isFinishPending(currentTask.id()),
+                                                    LateUploadHook.isUnfinished(currentTask.id()), missing,
+                                                    this.notDownloaded == currentTask.id()),
+                                            showsLockedTask(), TaskEdits.count(), OsmLogin.needed()),
+                                    LoginControl.canLogIn());
         }
         this.apply(state);
+        this.refreshNext();
+    }
+
+    /**
+     * Once the shown task is finished, show the next task in its challenge instead of the instructions and the finish
+     * strip (#117)
+     */
+    private void refreshNext() {
+        final var currentTask = this.task;
+        final var result = currentTask == null || showsLockedTask() ? null : TaskResults.get(currentTask.id());
+        final var next = result != null;
+        if (next) {
+            // The next task starts on its own only right after an upload finished the task, not when it is shown again
+            final var first = this.offered.add(currentTask.id());
+            this.nextPanel.show(currentTask,
+                    first && result.status() == TaskStatus.FIXED && NextTaskPanel.AUTO_START.get());
+        }
+        if (next != this.showsNext) {
+            this.showsNext = next;
+            ((CardLayout) this.centerCards.getLayout()).show(this.centerCards, next ? NEXT_CARD : INSTRUCTIONS_CARD);
+            this.finishStrip.forEach(component -> component.setVisible(!next));
+            this.refreshFeedbackFold();
+        }
     }
 
     /**
@@ -541,6 +609,16 @@ public final class CurrentTaskPanel extends JPanel {
     }
 
     /**
+     * Start the next task the panel offers after a finished one, as its Start button does. Call on the EDT.
+     *
+     * @return {@code false} if the panel offers no next task, for example while a task is still being worked on
+     */
+    public static boolean startNextTask() {
+        final var panel = get();
+        return panel != null && panel.showsNext && panel.nextPanel.start();
+    }
+
+    /**
      * Ask a question about a task in the state line, instead of a dialog (#116). It shows while the panel shows the
      * task, until the user answers it or another question replaces it. Call on the EDT.
      *
@@ -549,12 +627,22 @@ public final class CurrentTaskPanel extends JPanel {
      */
     public static boolean ask(Prompt prompt) {
         final var panel = get();
-        if (panel == null || panel.task == null || panel.task.id() != prompt.taskId()) {
+        return panel != null && panel.askHere(prompt);
+    }
+
+    /**
+     * Ask a question in this panel's state line, see {@link #ask(Prompt)}
+     *
+     * @param prompt The question
+     * @return {@code false} if the panel doesn't show the task
+     */
+    boolean askHere(Prompt prompt) {
+        if (this.task == null || this.task.id() != prompt.taskId()) {
             return false;
         }
-        panel.prompt = prompt;
-        panel.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
-        panel.refreshState();
+        this.prompt = prompt;
+        this.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
+        this.refreshState();
         return true;
     }
 
@@ -699,6 +787,45 @@ enum Tone {
     }
 
     /**
+     * Say before the first upload that it asks for the OpenStreetMap account too, and offer JOSM's OSM login, so the
+     * second login doesn't come as a surprise in the middle of the upload (#118)
+     *
+     * @param state      The state line otherwise
+     * @param started    {@code true} if the task is started
+     * @param edits      The number of edits made for the task
+     * @param osmMissing {@code true} if JOSM has no OpenStreetMap login
+     * @return The state line
+     */
+    @Nullable
+    static State withOsmLogin(@Nullable State state, boolean started, int edits, boolean osmMissing) {
+        if (!started || edits <= 0 || !osmMissing || state == null || state.tone() != Tone.WORKING
+                || state.hint() != null || !state.choices().isEmpty()) {
+            return state;
+        }
+        return new State(state.tone(), state.html(),
+                tr("Uploading also needs your OpenStreetMap login. It''s separate from the MapRoulette login."),
+                List.of(new Choice(tr("Log in to OpenStreetMap…"), tr("Opens JOSM''s OpenStreetMap login"),
+                        () -> OsmLogin.logIn(CurrentTaskPanel::refreshData))));
+    }
+
+    /**
+     * Say why the status buttons of a started task are disabled, with a Log in button, when the user is logged out
+     * (#116)
+     *
+     * @param task     The task
+     * @param state    The state line otherwise
+     * @param canLogIn {@code true} if the user can log in from JOSM but isn't logged in
+     * @return The state line
+     */
+    static State withLogin(Task task, @Nullable State state, boolean canLogIn) {
+        if (!canLogIn || state == null || state.tone() != Tone.WORKING) {
+            return state;
+        }
+        return new State(Tone.WARNING, html(tr("Log in to set the status of task {0}.", Long.toString(task.id()))),
+                null, List.of(new Choice(tr("Log in…"), null, LoginControl::logInFromPanel)));
+    }
+
+    /**
      * Explain why a started task has no edits, which is why Upload is disabled
      *
      * @return The explanation
@@ -807,6 +934,10 @@ enum Tone {
                 ModifiedObjects.addModifiedTask(newModifiedTask);
             }
         }
+        // A question about another task would come back stale when that task is shown again (#166)
+        if (this.prompt != null && (task == null || task.id() != this.prompt.taskId())) {
+            this.prompt = null;
+        }
         this.task = task;
         this.refreshPanel();
         // With no task, the panel gives the task list the room (#132)
@@ -866,6 +997,15 @@ enum Tone {
             south += this.feedbackToggle.getPreferredSize().height - this.feedbackPanel.getPreferredSize().height;
         }
         return new Dimension(width, this.header.getPreferredSize().height + instructions + south);
+    }
+
+    /**
+     * Check if the panel shows a task finished in this session, with the next task offered in its place (#117)
+     *
+     * @return {@code true} if the next task is offered
+     */
+    public boolean showsFinishedTask() {
+        return this.showsNext;
     }
 
     /**
@@ -982,7 +1122,8 @@ enum Tone {
      * Show the line that opens the feedback fields, or the fields once the user opened them
      */
     private void refreshFeedbackFold() {
-        final var any = this.commentField.isVisible() || this.tagBox.isVisible() || this.reviewBox.isVisible();
+        final var any = !this.showsNext
+                && (this.commentField.isVisible() || this.tagBox.isVisible() || this.reviewBox.isVisible());
         this.feedbackToggle.setVisible(any && !this.feedbackOpen);
         this.feedbackPanel.setVisible(any && this.feedbackOpen);
         this.revalidate();
@@ -1209,7 +1350,7 @@ private static final class OpenOnMapRouletteAction extends JosmAction {
         final var hasWebsite = MapRouletteServerPreference.getWebsiteUrl().isPresent();
         this.setEnabled(url().isPresent());
         this.setTooltip(hasWebsite ? tr("Open this task on the MapRoulette website")
-                : tr("Set the MapRoulette website URL in the MapRoulette server preferences to open tasks there"));
+                : tr("This server has no MapRoulette website"));
     }
 }
 

@@ -23,6 +23,8 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 
+import jakarta.annotation.Nullable;
+
 /**
  * A model for {@link Task} objects. This class implements many of the same semantics as {@link List}.
  */
@@ -102,6 +104,17 @@ final class TaskTableModel extends AbstractTableModel
         } else {
             GuiHelper.runInEDT(() -> accept(longClusteredPointMap));
         }
+    }
+
+    /**
+     * Find a task in the list
+     *
+     * @param id The task id
+     * @return The task, or {@code null} if it isn't in the list
+     */
+    @Nullable
+    public TaskClusteredPoint find(long id) {
+        return this.taskList.stream().filter(point -> point.id() == id).findFirst().orElse(null);
     }
 
     /**

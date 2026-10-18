@@ -39,6 +39,7 @@ import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.Logging;
@@ -116,6 +117,8 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
             return;
         }
         final var primitives = this.uploading;
+        // An upload can roll over into a second changeset: the tasks are linked to the one with their edits
+        final var edits = primitives.stream().filter(primitive -> TaskEdits.touches(List.of(primitive))).toList();
         final var server = MapRouletteConfig.getBaseUrl();
         final var closed = isChangesetClosedAfterUpload();
         // Until Fixed is sent, the user can't pick another status or stop the task: those jobs would queue behind the
@@ -126,7 +129,7 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
         // after the upload
         SwingUtilities.invokeLater(() -> MainApplication.worker.execute(() -> {
             try {
-                afterUpload(primitives, fixed, finishing, closed, server);
+                afterUpload(primitives, edits, fixed, finishing, closed, server);
             } finally {
                 ModifiedObjects.setFinishPending(finishingIds, false);
             }
@@ -138,15 +141,21 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
      * the worker.
      *
      * @param primitives The primitives of the upload
+     * @param edits      The edits made while a task was started, in the upload
      * @param fixed      The tasks marked Fixed before the upload
      * @param finishing  The statuses the upload finishes
      * @param closed     {@code true} if JOSM closes the changeset after the upload
      * @param server     The MapRoulette server of the tasks
      */
-    private static void afterUpload(List<OsmPrimitive> primitives, List<Task> fixed, List<ModifiedTask> finishing,
-            boolean closed, String server) {
-        final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
-                () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
+    private static void afterUpload(List<OsmPrimitive> primitives, List<OsmPrimitive> edits, List<Task> fixed,
+            List<ModifiedTask> finishing, boolean uploadClosed, String server) {
+        // The changeset with the task's edits, and the last one of the upload; -1 if the upload did not go through
+        final long[] changesets = GuiHelper.runInEDTAndWaitAndReturn(() -> isUploaded(primitives)
+                ? new long[] { uploadedChangeset(edits), Math.max(uploadedChangeset(primitives), 0) }
+                : new long[] { -1, -1 });
+        final long changesetId = changesets[0] > 0 ? changesets[0] : changesets[1];
+        // JOSM closes a full changeset before it opens the next one
+        final boolean closed = uploadClosed || changesetId > 0 && changesetId < changesets[1];
         if (changesetId < 0 || !server.equals(MapRouletteConfig.getBaseUrl())) {
             // Not uploaded: the next upload finishes the tasks, and the started task stays started meanwhile. Part of
             // a chunked upload may have gone up, the task's edits with it. Another server: the tasks were forgotten.

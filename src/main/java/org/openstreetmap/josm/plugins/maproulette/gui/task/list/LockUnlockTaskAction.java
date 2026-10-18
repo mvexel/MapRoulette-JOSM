@@ -12,6 +12,8 @@ import java.io.Serial;
 import java.time.ZoneId;
 import java.time.format.FormatStyle;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -32,6 +34,8 @@ import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFoundException;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -42,6 +46,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPa
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
+import org.openstreetmap.josm.plugins.maproulette.util.UnpublishedChallenge;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
@@ -133,6 +138,27 @@ final class LockUnlockTaskAction extends JosmAction {
             return;
         }
         lockTasks(idArray, rows, -1);
+    }
+
+    /**
+     * Start a task that is in the list, as Start does for a selected row, for example the next task (#117). Call on the
+     * EDT.
+     *
+     * @param task The task
+     * @param rows The table selection to restore, such as the task's row
+     */
+    void start(Task task, int[] rows) {
+        if (this.running) {
+            return;
+        }
+        final var ids = new long[] { task.id() };
+        final var other = ModifiedObjects.getLockedTasks().stream().filter(locked -> locked.id() != task.id())
+                .findFirst();
+        if (other.isPresent()) {
+            askStartBlocked(other.get(), true, ids, rows);
+        } else {
+            lockTasks(ids, rows, -1);
+        }
     }
 
     /**
@@ -269,6 +295,12 @@ final class LockUnlockTaskAction extends JosmAction {
         final var heldTask = new Task[1];
         final var refusal = new MapRouletteLockHeldException[1];
         final var notStarted = new ArrayList<Long>();
+        // The challenge of each task, read here on the EDT, and why tasks of an unpublished challenge didn't start
+        final var challenges = new HashMap<Long, Long>();
+        for (var i = 0; i < model.getRowCount(); i++) {
+            challenges.put(model.get(i).id(), model.get(i).parentId());
+        }
+        final var unpublished = new LinkedHashMap<Long, String>();
         setRunning(true);
         MainApplication.worker.execute(new PleaseWaitRunnable(tr("Starting MapRoulette tasks")) {
             @Override
@@ -312,6 +344,23 @@ final class LockUnlockTaskAction extends JosmAction {
                         }
                         // MapRoulette allows one lock per user, so the remaining rows would fail the same way
                         break;
+                    } catch (MapRouletteUnsupportedException e) {
+                        if (e.reason() != MapRouletteUnsupportedException.Reason.CHALLENGE_DRAFT
+                                || !explainUnpublished(ids[i], challenges, unpublished)) {
+                            ExceptionDialogUtil.explainException(e);
+                        }
+                    } catch (MapRouletteNotFoundException e) {
+                        final var id = Long.toString(ids[i]);
+                        if (e.recordMissing()) {
+                            // The task is gone, for example after the owner rebuilt the challenge
+                            unpublished.put(ids[i], tr("Task {0} no longer exists on MapRoulette. The challenge "
+                                    + "owner may have removed it.", id));
+                        } else if (!explainUnpublished(ids[i], challenges, unpublished)) {
+                            // A bare 404 hides the tasks of an unpublished challenge from all but its super-users.
+                            // If the challenge and project read as enabled, the owner may just have published them,
+                            // or the project read is cached.
+                            unpublished.put(ids[i], tr("Task {0} couldn''t be started. Try again.", id));
+                        }
                     } catch (IOException e) {
                         ExceptionDialogUtil.explainException(e);
                     }
@@ -337,12 +386,22 @@ final class LockUnlockTaskAction extends JosmAction {
                     CurrentTaskPanel.show(lockedTasks.get(0), true);
                     // Load the task's data and select its objects, so the user can edit right away (#114)
                     final var started = lockedTasks.get(0);
-                    TaskData.loadAndSelect(started, notFound -> {
+                    TaskData.loadAndSelect(started, gone -> {
                         if (ModifiedObjects.getLockedTask(started.id()) != null) {
-                            askStopMissing(started, notFound);
+                            askStopMissing(started, gone);
                         }
                     });
                 }
+                // In the panel, which shows the selected task; otherwise as a notification
+                unpublished.forEach((id, text) -> {
+                    // OK puts the task's own state back
+                    final var ok = new CurrentTaskPanel.Choice(tr("OK"), null, () -> {
+                        // Answering clears the question
+                    });
+                    if (!CurrentTaskPanel.ask(new CurrentTaskPanel.Prompt(id, false, text, null, List.of(ok)))) {
+                        ExceptionDialogUtil.notifyProblem(text);
+                    }
+                });
                 if (forgotten[0] >= 0) {
                     // Ask after this job, so the question is not tied to its progress dialog
                     final long held = forgotten[0];
@@ -362,6 +421,23 @@ final class LockUnlockTaskAction extends JosmAction {
                 setRunning(false);
             }
         });
+    }
+
+    /**
+     * Find out whether a task didn't start because its challenge isn't published. Call off the EDT.
+     *
+     * @param id          The task
+     * @param challenges  The challenge of each task in the list
+     * @param unpublished Gets the explanation for the task, if any
+     * @return {@code true} if the challenge isn't published
+     */
+    private static boolean explainUnpublished(long id, Map<Long, Long> challenges, Map<Long, String> unpublished) {
+        final var challenge = challenges.get(id);
+        final var text = challenge == null ? null : UnpublishedChallenge.explain(challenge);
+        if (text != null) {
+            unpublished.put(id, text);
+        }
+        return text != null;
     }
 
     /**
@@ -449,16 +525,20 @@ final class LockUnlockTaskAction extends JosmAction {
      * a panel, ask in a dialog. Call on the EDT.
      *
      * @param task     The started task
-     * @param notFound The task's objects the server doesn't have
+     * @param gone The task's objects the server doesn't have or has deleted
      */
-    private void askStopMissing(Task task, List<PrimitiveId> notFound) {
+    private void askStopMissing(Task task, TaskData.Gone gone) {
         final var stop = new CurrentTaskPanel.Choice(tr("Stop task"),
                 tr("Stop the task without a status, so other mappers can work on it"),
                 () -> stopTasks(List.of(task.id()), new int[0]));
         final var cantComplete = new CurrentTaskPanel.Choice(tr("Can''t Complete"),
                 tr("Tell MapRoulette the task can''t be done"), () -> CurrentTaskPanel.cantComplete(task.id()));
-        final var text = missingText(task.id(), notFound, TaskData.osmServerName());
-        final var hint = tr("It may have been deleted, or the task was made for another server.");
+        final var server = TaskData.osmServerName();
+        final var notFound = !gone.notFound().isEmpty();
+        final var text = notFound ? missingText(task.id(), gone.notFound(), server)
+                : deletedText(task.id(), gone.deleted(), server);
+        final var hint = notFound ? tr("It may have been deleted, or the task was made for another server.")
+                : tr("It was deleted after the task was made. If that fixed the task, use Already fixed.");
         if (!CurrentTaskPanel
                 .ask(new CurrentTaskPanel.Prompt(task.id(), true, text, hint, List.of(stop, cantComplete)))) {
             final var options = new String[] { stop.label(), tr("Keep it started") };
@@ -479,11 +559,27 @@ final class LockUnlockTaskAction extends JosmAction {
      * @return Such as "Task 155's object (node 13888671101) doesn't exist on OpenStreetMap."
      */
     static String missingText(long taskId, List<PrimitiveId> notFound, String server) {
-        final var names = notFound.stream().limit(3)
-                .map(id -> id.getType().getAPIName() + ' ' + Long.toString(id.getUniqueId()))
-                .collect(Collectors.joining(", ", "", notFound.size() > 3 ? ", …" : ""));
         return trn("Task {1}''s object ({2}) doesn''t exist on {3}.", "Task {1}''s objects ({2}) don''t exist on {3}.",
-                notFound.size(), notFound.size(), Long.toString(taskId), names, server);
+                notFound.size(), notFound.size(), Long.toString(taskId), names(notFound), server);
+    }
+
+    /**
+     * Say which of a task's objects the OSM server has deleted
+     *
+     * @param taskId  The task
+     * @param deleted The objects, at least one
+     * @param server  The OSM server's name
+     * @return Such as "Task 155's object (node 13888671101) no longer exists on OpenStreetMap."
+     */
+    static String deletedText(long taskId, List<PrimitiveId> deleted, String server) {
+        return trn("Task {1}''s object ({2}) no longer exists on {3}.",
+                "Task {1}''s objects ({2}) no longer exist on {3}.", deleted.size(), deleted.size(),
+                Long.toString(taskId), names(deleted), server);
+    }
+
+    private static String names(List<PrimitiveId> ids) {
+        return ids.stream().limit(3).map(id -> id.getType().getAPIName() + ' ' + Long.toString(id.getUniqueId()))
+                .collect(Collectors.joining(", ", "", ids.size() > 3 ? ", …" : ""));
     }
 
     /**

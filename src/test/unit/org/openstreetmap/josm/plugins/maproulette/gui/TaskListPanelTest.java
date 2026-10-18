@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongPredicate;
 import java.util.function.Predicate;
@@ -46,6 +47,7 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
+import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
@@ -234,6 +236,37 @@ public class TaskListPanelTest {
             assertEquals(4, table.getRowCount());
         } finally {
             panel.destroy();
+        }
+    }
+
+    /**
+     * Without a login, the list says why Start is disabled and offers to log in (#116)
+     */
+    @Test
+    void testLoginReason() {
+        final var loggedOut = new AtomicBoolean(true);
+        new MockUp<LoginControl>() {
+            @Mock
+            boolean canLogIn() {
+                return loggedOut.get();
+            }
+        };
+        MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
+                List.of(point(1006, 18, "SLC benches", null))));
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(TaskListPanel::new);
+        try {
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            final var reason = find(panel, JLabel.class, l -> "Log in to start tasks:".equals(l.getText()));
+            assertTrue(reason.getParent().isVisible());
+            assertTrue(find(reason.getParent(), JButton.class, b -> "Log in…".equals(b.getText())).isVisible());
+            loggedOut.set(false);
+            MapRouletteClient.getInstance().fireAuthChanged();
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            assertFalse(reason.getParent().isVisible(), "Logged in: no reason to show");
+        } finally {
+            GuiHelper.runInEDTAndWait(panel::destroy);
         }
     }
 

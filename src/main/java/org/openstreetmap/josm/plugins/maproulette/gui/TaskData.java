@@ -63,10 +63,10 @@ public final class TaskData {
      * Download the task's objects and select them, as {@link #loadAndSelect(Task)}
      *
      * @param task      The task
-     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for, if none of the task's
-     *                  objects could be loaded, or {@code null}
+     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for or has deleted, if none of
+     *                  the task's objects could be loaded, or {@code null}
      */
-    public static void loadAndSelect(@Nonnull Task task, @Nullable Consumer<List<PrimitiveId>> onMissing) {
+    public static void loadAndSelect(@Nonnull Task task, @Nullable Consumer<Gone> onMissing) {
         // Finding the objects may need the challenge from the server
         Workers.execute(() -> {
             final var ids = List.copyOf(TaskPrimitives.getPrimitiveIds(task));
@@ -89,11 +89,10 @@ public final class TaskData {
      *
      * @param task      The task
      * @param ids       The task's objects
-     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for, if none of the task's
-     *                  objects could be loaded, or {@code null}
+     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for or has deleted, if none of
+     *                  the task's objects could be loaded, or {@code null}
      */
-    static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids,
-            @Nullable Consumer<List<PrimitiveId>> onMissing) {
+    static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids, @Nullable Consumer<Gone> onMissing) {
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
         if (ids.isEmpty()) {
             loadArea(task, dataSet);
@@ -106,16 +105,32 @@ public final class TaskData {
         }
         // Merged into the edit layer, or a new layer if there is none
         MainApplication.worker.submit(new ObjectsDownload(missing, notFound -> {
-            // Objects that don't exist on the server (404) stay missing, for example a task made for another server
-            if (missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
-                CurrentTaskPanel.notDownloaded(task.id());
-                // Without a 404, the download failed and JOSM explained why: the objects may well exist
-                if (onMissing != null && !notFound.isEmpty()) {
-                    onMissing.accept(notFound);
+            final var editData = MainApplication.getLayerManager().getEditDataSet();
+            // Objects that don't exist on the server (404) stay missing, for example a task made for another server.
+            // Objects deleted on the server come back invisible.
+            final var deleted = ids.stream().filter(id -> Optional.ofNullable(editData)
+                    .map(data -> data.getPrimitiveById(id)).map(p -> !p.isVisible()).orElse(false)).toList();
+            if (missing(ids, editData).size() + deleted.size() >= ids.size()) {
+                if (deleted.isEmpty()) {
+                    CurrentTaskPanel.notDownloaded(task.id());
+                }
+                // Without a 404 or a deleted object, the download failed and JOSM explained why: the objects may well
+                // exist
+                if (onMissing != null && !(notFound.isEmpty() && deleted.isEmpty())) {
+                    onMissing.accept(new Gone(notFound, deleted));
                 }
             }
             select(ids);
         }));
+    }
+
+    /**
+     * The objects of a task that could not be loaded
+     *
+     * @param notFound The objects the OSM server answered 404 for
+     * @param deleted  The objects deleted on the OSM server
+     */
+    public record Gone(@Nonnull List<PrimitiveId> notFound, @Nonnull List<PrimitiveId> deleted) {
     }
 
     /**
@@ -279,8 +294,9 @@ public final class TaskData {
     private static void select(@Nonnull List<PrimitiveId> ids) {
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
         if (dataSet != null) {
-            final var present = ids.stream().map(dataSet::getPrimitiveById).filter(p -> p != null && !p.isDeleted())
-                    .toList();
+            // Not deleted in the data, nor on the server
+            final var present = ids.stream().map(dataSet::getPrimitiveById)
+                    .filter(p -> p != null && !p.isDeleted() && p.isVisible()).toList();
             if (!present.isEmpty()) {
                 dataSet.setSelected(present);
                 AutoScaleAction.autoScale(AutoScaleAction.AutoScaleMode.SELECTION);

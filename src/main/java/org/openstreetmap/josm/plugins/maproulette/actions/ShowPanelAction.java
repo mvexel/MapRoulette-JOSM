@@ -28,7 +28,7 @@ public class ShowPanelAction extends JosmAction {
                 tr("Show the MapRoulette task list and current task"),
                 Shortcut.registerShortcut("maproulette:show_panel", tr("MapRoulette: Show panel"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/show_panel", true);
     }
 
     @Override

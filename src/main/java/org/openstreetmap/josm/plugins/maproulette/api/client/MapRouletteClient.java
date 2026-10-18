@@ -292,7 +292,9 @@ public final class MapRouletteClient {
                             url.getPath())
                     : new MapRouletteForbiddenException("MapRoulette refused the request for " + url + message);
         }
-        case 404 -> new MapRouletteNotFoundException("Not found in MapRoulette: " + url + message);
+        case 404 -> new MapRouletteNotFoundException("Not found in MapRoulette: " + url + message,
+                jsonObject(safeBody) != null && jsonObject(safeBody).get("status")instanceof JsonString value
+                        && "NotFound".equals(value.getString()));
         case 409 -> new MapRouletteLockHeldException("MapRoulette conflict for " + url + message,
                 serverMessage(safeBody), lockedTaskId(safeBody), bundledTaskIds(safeBody));
         default -> new MapRouletteHttpException("MapRoulette answered HTTP " + status + " for " + url + message, status,

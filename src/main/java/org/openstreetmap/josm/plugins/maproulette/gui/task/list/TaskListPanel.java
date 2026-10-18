@@ -42,6 +42,7 @@ import javax.swing.table.TableStringConverter;
 
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
+import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -57,7 +58,6 @@ import org.openstreetmap.josm.plugins.maproulette.actions.GoToTaskLocation;
 import org.openstreetmap.josm.plugins.maproulette.actions.HowItWorksAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
-import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
@@ -66,6 +66,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.TaskCache;
 import org.openstreetmap.josm.plugins.maproulette.data.HiddenList;
+import org.openstreetmap.josm.plugins.maproulette.gui.LoginControl;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
@@ -96,6 +97,10 @@ public final class TaskListPanel extends JPanel
      * The underlying table
      */
     private final JTable table;
+    /**
+     * Starts the selected tasks, or stops them
+     */
+    private final LockUnlockTaskAction lockUnlockAction;
     /**
      * The underlying model
      */
@@ -132,6 +137,10 @@ public final class TaskListPanel extends JPanel
      * The buttons below the list, hidden with the empty state: it has its own buttons
      */
     private final JPanel buttons;
+    /**
+     * Says why Start is disabled without a login, with a Log in button (#116)
+     */
+    private final JPanel loginNotice = new JPanel(new GridBagLayout());
     /**
      * The text filter
      */
@@ -212,9 +221,11 @@ public final class TaskListPanel extends JPanel
         final var findAction = new FindChallengeAction();
         final var downloadButton = new SideButton(downloadAction);
         final var lockUnlockAction = new LockUnlockTaskAction(table);
+        this.lockUnlockAction = lockUnlockAction;
         final var lockUnlockButton = new SideButton(lockUnlockAction);
         this.authListener = () -> {
             lockUnlockAction.updateEnabledState();
+            this.loginNotice.setVisible(LoginControl.canLogIn());
             // Whose locks are the user's own depends on the login
             table.repaint();
         };
@@ -327,8 +338,10 @@ public final class TaskListPanel extends JPanel
                     CurrentTaskPanel.show(task, false);
                 } else {
                     final var currentTaskPanel = CurrentTaskPanel.get();
-                    // The window follows the user's locked task: filtering it out or selecting another row must not drop it
-                    if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()) {
+                    // The window follows the user's locked task: filtering it out or selecting another row must not drop it.
+                    // Nor the task just finished, which offers the next one; the list reloads after the release.
+                    if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()
+                            && !currentTaskPanel.showsFinishedTask()) {
                         currentTaskPanel.refreshModel(null);
                     }
                 }
@@ -351,7 +364,17 @@ public final class TaskListPanel extends JPanel
         this.cards.add(listAndFooter, TABLE_CARD);
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
         this.add(this.cards, BorderLayout.CENTER);
-        this.buttons = MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton)));
+        final var logIn = new JButton(tr("Log in…"));
+        logIn.setToolTipText(tr("Opens MapRoulette in your browser to log in"));
+        logIn.addActionListener(e -> LoginControl.logInFromPanel());
+        this.loginNotice.add(new JLabel(tr("Log in to start tasks:")), GBC.std().insets(4, 2, 4, 2));
+        this.loginNotice.add(logIn, GBC.std().insets(0, 2, 4, 2));
+        this.loginNotice.add(new JLabel(), GBC.eol().fill(GBC.HORIZONTAL));
+        this.loginNotice.setVisible(LoginControl.canLogIn());
+        this.buttons = new JPanel(new BorderLayout());
+        this.buttons.add(this.loginNotice, BorderLayout.NORTH);
+        this.buttons.add(MRGuiHelper.buttonRows(List.of(List.of(downloadButton, lockUnlockButton))),
+                BorderLayout.CENTER);
         this.add(this.buttons, BorderLayout.SOUTH);
         // The sorter hears of model changes after this listener; it updates the title once it has sorted. This relies on
         // TaskTableModel firing only fireTableDataChanged: with row-range events, applyFilters here would re-sort before
@@ -376,6 +399,31 @@ public final class TaskListPanel extends JPanel
     public static TaskListPanel get() {
         final var dialog = MapRouletteDialog.get();
         return dialog == null ? null : dialog.taskList();
+    }
+
+    /**
+     * Start a task, as Start does for its row, adding the task to the list if it isn't there, for example the next task
+     * (#117). Call on the EDT.
+     *
+     * @param task The task
+     */
+    public void start(Task task) {
+        final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
+        if (layers.isEmpty()) {
+            final var location = task.location();
+            final var layer = new MapRouletteClusteredPointLayer(
+                    new Bounds(location.lat(), location.lon(), location.lat(), location.lon()), List.of(task));
+            MainApplication.getLayerManager().addLayer(layer);
+            if (MainApplication.getMap() != null) {
+                MainApplication.getMap().mapView.addMouseListener(layer);
+            }
+        } else if (layers.stream().noneMatch(layer -> layer.getTasks().stream().anyMatch(t -> t.id() == task.id()))) {
+            layers.get(0).refreshTasks(Map.of(task.id(), task));
+        }
+        // The task's row, selected as if the user picked it; none if a filter hides it
+        final var index = this.model.indexOf(this.model.find(task.id()));
+        final var row = index < 0 ? -1 : this.table.getRowSorter().convertRowIndexToView(index);
+        this.lockUnlockAction.start(task, row < 0 ? new int[0] : new int[] { row });
     }
 
     /**
@@ -643,7 +691,10 @@ public final class TaskListPanel extends JPanel
     public void layerAdded(LayerManager.LayerAddEvent e) {
         if (e.getAddedLayer()instanceof MapRouletteClusteredPointLayer layer) {
             layer.addSelectionListener(this);
-            MapRouletteAuth.showUnavailableNoticeOnce();
+            // With a login possible, the list's own "Log in to start tasks" line asks; one prompt is enough
+            if (!LoginControl.canLogIn()) {
+                LoginControl.showUnavailableNoticeOnce();
+            }
             updateTitle();
         }
     }
@@ -757,7 +808,7 @@ public final class TaskListPanel extends JPanel
             this.setEnabled(hasWebsite && this.table != null && this.table.getSelectedRowCount() < 10
                     && this.table.getSelectedRowCount() > 0);
             this.putValue(SHORT_DESCRIPTION, hasWebsite ? tr("Open MapRoulette Tasks on the MapRoulette website")
-                    : tr("Set the MapRoulette website URL in the MapRoulette server preferences to open tasks there"));
+                    : tr("This server has no MapRoulette website"));
         }
     }
 

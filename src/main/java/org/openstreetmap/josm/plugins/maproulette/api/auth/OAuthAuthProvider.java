@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -110,6 +111,11 @@ public final class OAuthAuthProvider implements AuthProvider {
      */
     @Nullable
     private volatile Long userId;
+    /**
+     * The MapRoulette display name of the logged-in user, looked up with the id
+     */
+    @Nullable
+    private volatile String userName;
     /**
      * Counts logins and logouts, so a user id looked up for an earlier login is not kept
      */
@@ -244,13 +250,20 @@ public final class OAuthAuthProvider implements AuthProvider {
             return knownUserId();
         }
         final var generation = this.loginGeneration.get();
-        final var id = fetchUserId();
+        final var me = fetchUser();
         synchronized (this.tokenLock) {
             if (generation == this.loginGeneration.get() && this.tokens != null) {
-                this.userId = id;
+                this.userName = me.name();
+                this.userId = me.id();
             }
         }
-        return OptionalLong.of(id);
+        return OptionalLong.of(me.id());
+    }
+
+    @Override
+    public Optional<String> knownUserName() {
+        final var name = this.userName;
+        return this.userId == null || this.tokens == null ? Optional.empty() : Optional.ofNullable(name);
     }
 
     @Override
@@ -262,10 +275,10 @@ public final class OAuthAuthProvider implements AuthProvider {
     /**
      * Ask MapRoulette who is logged in
      *
-     * @return The user's MapRoulette id
+     * @return The user's MapRoulette id and display name
      * @throws MapRouletteException if MapRoulette could not be asked
      */
-    private long fetchUserId() throws MapRouletteException {
+    private Me fetchUser() throws MapRouletteException {
         final HttpClient client;
         try {
             client = HttpClient.create(URI.create(this.root + "/oauth/mobile/me").toURL())
@@ -282,7 +295,9 @@ public final class OAuthAuthProvider implements AuthProvider {
                         "MapRoulette did not say who is logged in: HTTP " + response.getResponseCode());
             }
             try (var reader = Json.createReader(new StringReader(Objects.requireNonNullElse(content, "")))) {
-                return reader.readObject().getJsonNumber("id").longValueExact();
+                final var me = reader.readObject();
+                final var name = me.getString("displayName", "");
+                return new Me(me.getJsonNumber("id").longValueExact(), name.isBlank() ? null : name);
             }
         } catch (IOException | JsonException | NullPointerException | ClassCastException | ArithmeticException e) {
             throw new MapRouletteException("Could not read who is logged in to MapRoulette", e);
@@ -357,6 +372,7 @@ public final class OAuthAuthProvider implements AuthProvider {
         synchronized (this.tokenLock) {
             this.loginGeneration.incrementAndGet();
             this.userId = null;
+            this.userName = null;
             store(received);
         }
         Logging.info("Logged in to MapRoulette at " + this.root);
@@ -378,6 +394,7 @@ public final class OAuthAuthProvider implements AuthProvider {
             current = this.tokens;
             this.loginGeneration.incrementAndGet();
             this.userId = null;
+            this.userName = null;
             store(null);
         }
         Logging.info("Logged out of MapRoulette at " + this.root);
@@ -573,5 +590,14 @@ public final class OAuthAuthProvider implements AuthProvider {
     private static String form(Map<String, String> parameters) {
         return parameters.entrySet().stream().map(entry -> URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)
                 + '=' + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8)).collect(Collectors.joining("&"));
+    }
+
+    /**
+     * Who is logged in, as MapRoulette says
+     *
+     * @param id   The MapRoulette user id
+     * @param name The display name, or {@code null} if MapRoulette sent none
+     */
+    private record Me(long id, @Nullable String name) {
     }
 }
