@@ -56,7 +56,7 @@ public final class TaskData {
      * Download the task's objects and select them, as {@link #loadAndSelect(Task)}
      *
      * @param task      The task
-     * @param onMissing Called on the EDT if none of the task's objects exist on the OSM server, or {@code null}
+     * @param onMissing Called on the EDT if none of the task's objects could be downloaded, or {@code null}
      */
     public static void loadAndSelect(@Nonnull Task task, @Nullable Runnable onMissing) {
         // Finding the objects may need the challenge from the server

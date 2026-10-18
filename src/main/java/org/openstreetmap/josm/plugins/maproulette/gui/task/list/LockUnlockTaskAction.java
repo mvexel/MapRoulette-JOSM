@@ -284,7 +284,7 @@ final class LockUnlockTaskAction extends JosmAction {
     }
 
     /**
-     * Ask whether to stop a task whose OSM objects don't exist on the OSM server (#143)
+     * Ask whether to stop a task whose OSM objects could not be downloaded (#143)
      *
      * @param task The started task
      * @return {@code true} if the user wants to stop it
@@ -292,12 +292,12 @@ final class LockUnlockTaskAction extends JosmAction {
     private static boolean confirmStopMissing(Task task) {
         final var options = new String[] { tr("Stop the task"), tr("Keep it started") };
         final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(),
-                tr("The OSM objects of MapRoulette task {0} don''t exist on {1}.\n"
-                        + "The task may be made for another OSM server, or the objects were deleted.\n"
-                        + "Stop the task so other mappers can work on it?", Long.toString(task.id()),
-                        OsmApi.getOsmApi().getServerUrl()),
-                tr("MapRoulette task objects not found"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, null,
-                options, options[0]);
+                tr("The OSM objects of MapRoulette task {0} could not be downloaded from {1}.\n"
+                        + "The server may be unreachable, the task may be made for another OSM server,"
+                        + " or the objects were deleted.\nStop the task so other mappers can work on it?",
+                        Long.toString(task.id()), OsmApi.getOsmApi().getServerUrl()),
+                tr("MapRoulette task objects not downloaded"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
+                null, options, options[0]);
         return choice == 0;
     }
 
