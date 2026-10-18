@@ -16,12 +16,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import java.awt.Component;
+import java.awt.Container;
+
 import javax.swing.JButton;
+import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
+import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -155,6 +162,57 @@ class NextTaskPanelTest {
             assertEquals(List.of(242L), starts, "Auto-start on: starts once the answer arrives");
         } finally {
             panel.destroy();
+        }
+    }
+
+    /**
+     * In the docked panel the card fits its width, also with a long task name: wider, it was cut off on both sides
+     * (dry run 2)
+     */
+    @Test
+    void testFitsDockedWidth() {
+        final var longName = new Task(244, "A bench with a very long name on the corner of Main Street and 4th Avenue",
+                null, null, 11, null, null, new DataSet(), null, null, null, null, null, null, 0, null, null, null,
+                false, null, null);
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(NextTaskPanel::new);
+        try {
+            GuiHelper.runInEDTAndWait(() -> {
+                TaskResults.sent(longName, TaskStatus.SKIPPED);
+                panel.refreshDone();
+            });
+            final var scroll = new JScrollPane(panel, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+            // The docked column, less the current task's own scroll bar
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH - 20, 400);
+            GuiHelper.runInEDTAndWait(() -> layOut(scroll));
+            final var width = scroll.getViewport().getWidth();
+            assertEquals(width, panel.getWidth(), "The card takes the panel's width");
+            assertInside(panel, panel, width);
+        } finally {
+            panel.destroy();
+        }
+    }
+
+    private static void assertInside(NextTaskPanel panel, Container container, int width) {
+        for (Component child : container.getComponents()) {
+            if (!child.isVisible() || child.getWidth() == 0) {
+                continue;
+            }
+            final var left = SwingUtilities.convertPoint(child, 0, 0, panel).x;
+            assertTrue(left >= 0 && left + child.getWidth() <= width, () -> child.getClass().getSimpleName() + " at "
+                    + left + ".." + (left + child.getWidth()) + " is inside 0.." + width);
+            if (child instanceof Container c) {
+                assertInside(panel, c, width);
+            }
+        }
+    }
+
+    private static void layOut(Container container) {
+        container.doLayout();
+        for (var child : container.getComponents()) {
+            if (child instanceof Container c) {
+                layOut(c);
+            }
         }
     }
 
