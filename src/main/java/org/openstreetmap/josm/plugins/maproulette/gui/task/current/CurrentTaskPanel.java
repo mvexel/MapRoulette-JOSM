@@ -237,12 +237,13 @@ public final class CurrentTaskPanel extends JPanel {
         this.refreshDataState();
     };
     /**
-     * Drops a question about a task once the task is no longer started, for example finished or stopped, so it doesn't
-     * hide the task's real state (#116), then updates like {@link #editsListener}
+     * Drops a question about a task once the task is started or stopped, for example finished, or started on a retry
+     * after a failed start, so it doesn't hide the task's real state (#116, #166), then updates like
+     * {@link #editsListener}
      */
     private final Runnable lockListener = () -> {
         final var question = this.prompt;
-        if (question != null && this.promptHeldLock && ModifiedObjects.getLockedTask(question.taskId()) == null) {
+        if (question != null && this.promptHeldLock != (ModifiedObjects.getLockedTask(question.taskId()) != null)) {
             this.prompt = null;
         }
         this.editsListener.run();
@@ -556,12 +557,22 @@ public final class CurrentTaskPanel extends JPanel {
      */
     public static boolean ask(Prompt prompt) {
         final var panel = get();
-        if (panel == null || panel.task == null || panel.task.id() != prompt.taskId()) {
+        return panel != null && panel.askHere(prompt);
+    }
+
+    /**
+     * Ask a question in this panel's state line, see {@link #ask(Prompt)}
+     *
+     * @param prompt The question
+     * @return {@code false} if the panel doesn't show the task
+     */
+    boolean askHere(Prompt prompt) {
+        if (this.task == null || this.task.id() != prompt.taskId()) {
             return false;
         }
-        panel.prompt = prompt;
-        panel.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
-        panel.refreshState();
+        this.prompt = prompt;
+        this.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
+        this.refreshState();
         return true;
     }
 
@@ -835,6 +846,10 @@ enum Tone {
                 }
                 ModifiedObjects.addModifiedTask(newModifiedTask);
             }
+        }
+        // A question about another task would come back stale when that task is shown again (#166)
+        if (this.prompt != null && (task == null || task.id() != this.prompt.taskId())) {
+            this.prompt = null;
         }
         this.task = task;
         this.refreshPanel();

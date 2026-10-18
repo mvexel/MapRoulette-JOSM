@@ -78,8 +78,9 @@ class TaskListDoubleClickTest {
                 started.incrementAndGet();
             }
         };
-        final var panel = new TaskListPanel();
-        // The model fills from the layer on the EDT
+        // Built on the EDT, as JOSM does: the model fills from the layer on the EDT, which would otherwise race the
+        // constructor installing the row sorter
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(TaskListPanel::new);
         GuiHelper.runInEDTAndWait(() -> {
             /* Sync EDT */ });
         try {

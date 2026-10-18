@@ -177,6 +177,15 @@ public final class ExceptionDialogUtil {
     }
 
     /**
+     * Show a problem as a notification. This may be called from any thread.
+     *
+     * @param text The plain text, which may hold text from the server
+     */
+    public static void notifyProblem(String text) {
+        GuiHelper.runInEDT(() -> showError(text, null));
+    }
+
+    /**
      * Show a problem as a notification
      *
      * @param text      The plain text, which may hold text from the server
