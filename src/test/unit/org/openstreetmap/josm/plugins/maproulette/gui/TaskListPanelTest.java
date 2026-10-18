@@ -183,11 +183,12 @@ public class TaskListPanelTest {
             assertEquals(List.of("All challenges in view (2)", "Missing sidewalks (1)", "SLC benches (4)"), IntStream
                     .range(0, challenges.getItemCount()).mapToObj(i -> challenges.getItemAt(i).toString()).toList());
             assertEquals(List.of(true, true, false, false, false), headers(table));
-            final var tooltip = ((JComponent) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0))
-                    .getToolTipText();
+            final var tooltip = GuiHelper.runInEDTAndWaitAndReturn(
+                    () -> ((JComponent) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0)).getToolTipText());
             assertTrue(tooltip.contains("Missing sidewalks"), "The row tooltip names the challenge: " + tooltip);
             final var labels = new ArrayList<JLabel>();
-            collectLabels((Container) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0), labels);
+            collectLabels(GuiHelper.runInEDTAndWaitAndReturn(
+                    () -> (Container) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0)), labels);
             assertFalse(labels.isEmpty());
             assertTrue(labels.stream().allMatch(l -> Boolean.TRUE.equals(l.getClientProperty("html.disable"))),
                     "Names from MapRoulette are never rendered as HTML");
@@ -272,11 +273,15 @@ public class TaskListPanelTest {
     }
 
     private static List<Boolean> headers(JTable table) {
+        // On the EDT: a challenge fetched in the background re-sorts the table there, and a read from another thread can
+        // see the rows in model order halfway through the sort
         final var headers = new ArrayList<Boolean>();
-        for (var row = 0; row < table.getRowCount(); row++) {
-            final var cell = (Container) table.prepareRenderer(table.getCellRenderer(row, 0), row, 0);
-            headers.add(cell.getComponent(0).isVisible());
-        }
+        GuiHelper.runInEDTAndWait(() -> {
+            for (var row = 0; row < table.getRowCount(); row++) {
+                final var cell = (Container) table.prepareRenderer(table.getCellRenderer(row, 0), row, 0);
+                headers.add(cell.getComponent(0).isVisible());
+            }
+        });
         return headers;
     }
 
