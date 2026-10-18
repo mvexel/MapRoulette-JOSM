@@ -59,9 +59,10 @@ public final class ExceptionDialogUtil {
             notify(MapRouletteAuth.unavailableMessage(), JOptionPane.INFORMATION_MESSAGE, null);
         } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
             if (lockHeld.heldTaskId().isPresent()) {
-                showError(tr("You already have MapRoulette task {0} started. MapRoulette allows one started task"
-                        + " at a time; stop that task first.", Long.toString(lockHeld.heldTaskId().getAsLong())),
-                        null);
+                showError(tr(
+                        "You already have MapRoulette task {0} started. MapRoulette allows one started task"
+                                + " at a time; stop that task first.",
+                        Long.toString(lockHeld.heldTaskId().getAsLong())), null);
             } else {
                 // MapRoulette also answers 409 for conflicts that are not about locks, such as OSM change conflicts
                 showError(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
@@ -83,8 +84,9 @@ public final class ExceptionDialogUtil {
             showError(tr("Could not connect to the server: {0}. Please check your internet connection.",
                     socketException.getMessage()), ht("/ErrorMessages#NestedSocketException"));
         } else if (exception instanceof UnknownHostException unknownHostException) {
-            showError(tr("Unknown server {0}. Please check your internet connection.",
-                    unknownHostException.getMessage()), ht("/ErrorMessages#UnknownHost"));
+            showError(
+                    tr("Unknown server {0}. Please check your internet connection.", unknownHostException.getMessage()),
+                    ht("/ErrorMessages#UnknownHost"));
         } else if (exception instanceof IOException) {
             // JOSM's explanation is HTML already
             notify(ExceptionUtil.explainException(exception), JOptionPane.WARNING_MESSAGE,
