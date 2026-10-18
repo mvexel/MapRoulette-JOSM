@@ -14,6 +14,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
+import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.MoveCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -126,6 +127,43 @@ class TaskChangesTest {
 
         UndoRedoHandler.getInstance().add(new MoveCommand(taskNode, 0.0001, 0));
         assertEquals(List.of(TaskChanges.name(taskNode) + ": moved"), TaskChanges.of(task, dataSet).lines());
+    }
+
+    /**
+     * The usual path: Start, then the task's objects are downloaded into the open layer. Their state on arrival is
+     * the baseline.
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testObjectsDownloadedAfterStart() throws Exception {
+        final var dataSet = new DataSet();
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "TaskChangesTest", null));
+        final var task = startTask();
+        final var taskNode = new Node(TASK_PLACE);
+        taskNode.setOsmId(9494185766L, 1);
+        taskNode.put("building", "window");
+        dataSet.addPrimitive(taskNode);
+        sync();
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(taskNode, "building", null));
+        assertEquals(List.of("Node 9494185766: \u2212 building=window"), TaskChanges.of(task, dataSet).lines());
+    }
+
+    /**
+     * Deleting the task's object changes all its tags, so the instructions' tag is not "unchanged"
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testDeletedTaskObject() throws Exception {
+        final var dataSet = new DataSet();
+        final var taskNode = taskNode(dataSet);
+        final var task = startTask();
+        final var name = TaskChanges.name(taskNode);
+        UndoRedoHandler.getInstance().add(new DeleteCommand(taskNode));
+        final var summary = TaskChanges.of(task, dataSet);
+        assertEquals(List.of(name + ": deleted"), summary.lines());
+        assertNull(summary.warning());
     }
 
     /**

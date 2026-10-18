@@ -68,7 +68,7 @@ public final class TaskChanges {
         /**
          * Nothing to show
          */
-        static final Summary NONE = new Summary(List.of(), null);
+        public static final Summary NONE = new Summary(List.of(), null);
     }
 
     private TaskChanges() {
@@ -109,8 +109,9 @@ public final class TaskChanges {
                 unchanged.add(primitive);
             }
         }
+        final var area = TaskArea.area(task);
         for (var created : TaskEdits.created()) {
-            if (created.getDataSet() == dataSet && created.hasKeys() && TaskArea.concerns(task, created)) {
+            if (created.getDataSet() == dataSet && created.hasKeys() && TaskArea.concerns(task, area, created)) {
                 changedKeys.addAll(created.keySet());
                 lines.add(tr("New: {0} ({1})", name(created), new TreeMap<>(created.getKeys()).entrySet().stream()
                         .map(tag -> tag.getKey() + '=' + tag.getValue()).collect(Collectors.joining(", "))));
@@ -147,6 +148,8 @@ public final class TaskChanges {
     static List<String> changes(PrimitiveData base, OsmPrimitive primitive, Set<String> changedKeys) {
         final var parts = new ArrayList<String>();
         if (primitive.isDeleted()) {
+            // Every tag goes with it
+            changedKeys.addAll(base.getKeys().keySet());
             parts.add(tr("deleted"));
             return parts;
         }

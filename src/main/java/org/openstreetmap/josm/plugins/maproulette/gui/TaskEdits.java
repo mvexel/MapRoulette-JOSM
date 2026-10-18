@@ -220,6 +220,8 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
                 for (var id : ids) {
                     final var primitive = layer.getDataSet().getPrimitiveById(id);
                     if (primitive != null && !primitive.isIncomplete()) {
+                        // Taken when the object first shows up for a started task. If the challenge is cached only
+                        // after Start, edits made in between count as made before Start.
                         this.baseline.computeIfAbsent(primitive, OsmPrimitive::save);
                     }
                     if (primitive != null && pending(primitive)) {

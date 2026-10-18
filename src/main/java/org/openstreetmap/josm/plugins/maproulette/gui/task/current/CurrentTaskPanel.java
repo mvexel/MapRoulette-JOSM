@@ -625,12 +625,15 @@ public final class CurrentTaskPanel extends JPanel {
             this.editsLabel.setText(edits == 0 ? tr("No edits yet for task {0}", currentTask.id())
                     : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits, currentTask.id()));
         }
-        final var changes = started && edits > 0
-                ? TaskChanges.of(currentTask, MainApplication.getLayerManager().getEditDataSet()).lines()
-                : List.<String> of();
-        this.changesLabel.setVisible(!changes.isEmpty());
-        this.changesLabel.setText(changes.stream().map(line -> "\u2022 " + Utils.escapeReservedCharactersHTML(line))
-                .collect(Collectors.joining("<br>", "<html>", "</html>")));
+        final var summary = started && edits > 0
+                ? TaskChanges.of(currentTask, MainApplication.getLayerManager().getEditDataSet())
+                : TaskChanges.Summary.NONE;
+        this.changesLabel.setVisible(!summary.lines().isEmpty());
+        // The warning in plain text under the lines; the finish question shows it in bold
+        this.changesLabel
+                .setText(summary.lines().stream().map(line -> "\u2022 " + Utils.escapeReservedCharactersHTML(line))
+                        .collect(Collectors.joining("<br>", "<html>", summary.warning() == null ? "</html>"
+                                : "<br>" + Utils.escapeReservedCharactersHTML(summary.warning()) + "</html>")));
         final var unfinished = currentTask != null && LateUploadHook.isUnfinished(currentTask.id());
         this.unfinishedPanel.setVisible(unfinished);
         if (unfinished) {
@@ -969,6 +972,8 @@ private static final class FinishAction extends InnerAction {
             // JOSM's own upload: the upload hook asks if it finishes the task, whatever the distance of the edits (#149)
             EarlyUploadHook.requestFinish();
             MainApplication.getMenu().upload.actionPerformed(e);
+            // Queued after the upload check: an upload that stops before it doesn't leave the request for the next one
+            MainApplication.worker.execute(EarlyUploadHook::clearFinishRequest);
         }
     }
 

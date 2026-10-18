@@ -118,6 +118,13 @@ public final class EarlyUploadHook implements UploadHook {
     }
 
     /**
+     * Drop a finish request that no upload check used
+     */
+    public static void clearFinishRequest() {
+        FINISH_REQUESTED.set(false);
+    }
+
+    /**
      * JOSM calls this on the worker, and {@link #modifyChangesetTags(Map)} afterwards on the EDT
      */
     @Override
