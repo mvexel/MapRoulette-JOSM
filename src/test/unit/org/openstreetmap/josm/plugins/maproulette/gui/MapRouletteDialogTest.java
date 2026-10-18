@@ -109,7 +109,8 @@ class MapRouletteDialogTest {
         try {
             final var panel = dialog.currentTask();
             assertNotNull(TaskListPanelTest.find(panel, JLabel.class, l -> "Task 27".equals(l.getText())));
-            assertNotNull(TaskListPanelTest.find(panel, JLabel.class, l -> "Bench 27".equals(l.getText())));
+            assertNotNull(TaskListPanelTest.find(panel, JButton.class, l -> "Bench 27".equals(l.getText())),
+                    "The task name is a link that zooms to the task (#145)");
             assertEquals("Challenge 1", ((JLabel) ((Container) panel.getComponent(0)).getComponent(0)).getText(),
                     "The challenge is not cached, so its id is shown");
         } finally {
