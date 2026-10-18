@@ -82,6 +82,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.OsmLogin;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskChanges;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
@@ -520,11 +521,13 @@ public final class CurrentTaskPanel extends JPanel {
                     && (!question.whileStarted() || showsLockedTask())
                             ? question.state()
                             : withLogin(currentTask,
-                                    state(currentTask, showsLockedTask(), TaskEdits.count(),
-                                            TaskResults.get(currentTask.id()),
-                                            ModifiedObjects.isFinishPending(currentTask.id()),
-                                            LateUploadHook.isUnfinished(currentTask.id()), missing,
-                                            this.notDownloaded == currentTask.id()),
+                                    withOsmLogin(
+                                            state(currentTask, showsLockedTask(), TaskEdits.count(),
+                                                    TaskResults.get(currentTask.id()),
+                                                    ModifiedObjects.isFinishPending(currentTask.id()),
+                                                    LateUploadHook.isUnfinished(currentTask.id()), missing,
+                                                    this.notDownloaded == currentTask.id()),
+                                            showsLockedTask() && TaskEdits.count() > 0 && OsmLogin.needed()),
                                     LoginControl.canLogIn());
         }
         this.apply(state);
@@ -765,6 +768,27 @@ enum Tone {
                     List.of());
         }
         return null;
+    }
+
+    /**
+     * Say before the first upload that it asks for the OpenStreetMap account too, and offer JOSM's OSM login, so the
+     * second login doesn't come as a surprise in the middle of the upload (#118)
+     *
+     * @param state  The state line otherwise
+     * @param needed {@code true} if the task has edits to upload and JOSM has no OpenStreetMap login
+     * @return The state line
+     */
+    @Nullable
+    static State withOsmLogin(@Nullable State state, boolean needed) {
+        if (!needed || state == null || state.tone() != Tone.WORKING || state.hint() != null
+                || !state.choices().isEmpty()) {
+            return state;
+        }
+        return new State(state.tone(), state.html(),
+                tr("Uploading asks once more, for your OpenStreetMap account. MapRoulette and OpenStreetMap are "
+                        + "separate logins."),
+                List.of(new Choice(tr("Log in to OpenStreetMap…"), tr("Opens JOSM''s OpenStreetMap login"),
+                        () -> OsmLogin.logIn(CurrentTaskPanel::refreshData))));
     }
 
     /**

@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,10 +12,12 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.OsmLogin;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults.Link;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel.State;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel.Tone;
+import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
@@ -109,5 +112,41 @@ class CurrentTaskPanelStateTest {
         final var uploading = CurrentTaskPanel.state(TASK, true, 2, null, true, false, false, false);
         assertEquals(uploading, CurrentTaskPanel.withLogin(TASK, uploading, true));
         assertNull(CurrentTaskPanel.withLogin(TASK, null, true));
+    }
+
+    /**
+     * A started task with edits says that the upload asks for the OpenStreetMap login, and offers it, while JOSM has
+     * none; other lines and hints win (#118)
+     */
+    @Test
+    void testOsmLogin() {
+        final var working = state(true, 2, null);
+        final var osm = CurrentTaskPanel.withOsmLogin(working, true);
+        assertEquals(Tone.WORKING, osm.tone());
+        assertEquals(working.html(), osm.html());
+        assertEquals("Uploading asks once more, for your OpenStreetMap account. MapRoulette and OpenStreetMap are "
+                + "separate logins.", osm.hint());
+        assertEquals(List.of("Log in to OpenStreetMap…"), labels(osm));
+        assertEquals(working, CurrentTaskPanel.withOsmLogin(working, false), "JOSM has an OSM login");
+        final var noEdits = state(true, 0, null);
+        assertEquals(noEdits, CurrentTaskPanel.withOsmLogin(noEdits, true), "Its own hint wins");
+        final var uploading = CurrentTaskPanel.state(TASK, true, 2, null, true, false, false, false);
+        assertEquals(uploading, CurrentTaskPanel.withOsmLogin(uploading, true));
+        assertNull(CurrentTaskPanel.withOsmLogin(null, true));
+    }
+
+    /**
+     * Only an OAuth 2 setup without a token counts as no OpenStreetMap login (#118)
+     */
+    @Test
+    void testOsmLoginNeeded() {
+        try {
+            Config.getPref().put("osm-server.auth-method", "oauth20");
+            assertTrue(OsmLogin.needed(), "No token in a fresh profile");
+            Config.getPref().put("osm-server.auth-method", "basic");
+            assertFalse(OsmLogin.needed(), "JOSM asks for the password as before");
+        } finally {
+            Config.getPref().put("osm-server.auth-method", null);
+        }
     }
 }
