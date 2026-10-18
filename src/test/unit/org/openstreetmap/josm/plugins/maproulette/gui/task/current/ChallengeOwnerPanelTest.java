@@ -5,6 +5,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +14,9 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.ChallengeAPI;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -25,6 +30,7 @@ class ChallengeOwnerPanelTest {
     void tearDown() {
         ChallengeOwnerPanel.clearNames();
         Config.getPref().put("maproulette.website.url", null);
+        Config.getPref().put("osm-server.url", null);
     }
 
     @Test
@@ -54,11 +60,47 @@ class ChallengeOwnerPanelTest {
         assertEquals(Optional.empty(), ChallengeOwnerPanel.lookUp(918586));
     }
 
+    /**
+     * The owner is a user of the OSM server JOSM edits on, not always openstreetmap.org: a dev server's names would
+     * message someone else there
+     */
     @Test
     void testOsmUrls() {
-        final var osm = Config.getUrls().getOSMWebsite().replaceAll("/+$", "");
-        assertEquals(osm + "/user/Mr%20Bench%2FSLC", ChallengeOwnerPanel.profileUrl("Mr Bench/SLC"));
-        assertEquals(osm + "/message/new/Mr%20Bench%2FSLC", ChallengeOwnerPanel.messageUrl("Mr Bench/SLC"));
+        Config.getPref().put("osm-server.url", "https://master.apis.dev.openstreetmap.org/api");
+        assertEquals("https://master.apis.dev.openstreetmap.org/user/Mr%20Bench%2FSLC",
+                ChallengeOwnerPanel.profileUrl("Mr Bench/SLC"));
+        assertEquals("https://master.apis.dev.openstreetmap.org/message/new/Mr%20Bench%2FSLC",
+                ChallengeOwnerPanel.messageUrl("Mr Bench/SLC"));
+        Config.getPref().put("osm-server.url", null);
+        assertEquals("https://www.openstreetmap.org/user/Mr%20Bench%2FSLC",
+                ChallengeOwnerPanel.profileUrl("Mr Bench/SLC"));
+    }
+
+    /**
+     * The line is hidden without a task, shown once the owner is known, and Discussion only with a website
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testVisibility() throws Exception {
+        WireMocks.current()
+                .register(get(urlPathEqualTo("/api/v2/user/918586/public")).willReturn(aResponse().withStatus(200)
+                        .withBody(Files.readString(Path.of("src/test/resources/__files/api/v2/user/11353/public"))
+                                .replace("11353", "918586"))));
+        final var challenge = ChallengeAPI.challenge(15318);
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(ChallengeOwnerPanel::new);
+        for (var website : new boolean[] { false, true }) {
+            Config.getPref().put("maproulette.website.url", website ? "https://mr.example.org" : null);
+            GuiHelper.runInEDTAndWait(() -> panel.setChallenge(challenge));
+            MainApplication.worker.submit(() -> {
+            }).get();
+            GuiHelper.runInEDTAndWait(() -> {
+            });
+            assertTrue(panel.isVisible());
+            assertEquals(website, panel.showsDiscussion());
+        }
+        GuiHelper.runInEDTAndWait(() -> panel.setChallenge(null));
+        assertFalse(panel.isVisible());
     }
 
     /**

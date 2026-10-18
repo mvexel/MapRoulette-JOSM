@@ -178,11 +178,22 @@ final class ChallengeOwnerPanel extends JPanel {
     }
 
     private static String osmWebsite() {
-        return Config.getUrls().getOSMWebsite().replaceAll("/+$", "");
+        // The owner's name belongs to the OSM server of the MapRoulette server, which the user also edits on: a dev
+        // server's names would message someone else on openstreetmap.org (#168)
+        return Config.getUrls().getOSMWebsiteDependingOnSelectedApi().replaceAll("/+$", "");
     }
 
     private static String encode(String name) {
         return URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /**
+     * Check if the discussion link is shown, for tests
+     *
+     * @return {@code true} if the link is visible
+     */
+    boolean showsDiscussion() {
+        return this.discussionLink.isVisible();
     }
 
     /**
