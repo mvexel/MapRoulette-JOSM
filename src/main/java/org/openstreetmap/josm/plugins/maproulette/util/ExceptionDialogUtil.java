@@ -7,6 +7,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.net.SocketException;
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.regex.Pattern;
 
@@ -24,6 +25,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFound
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
@@ -80,13 +82,11 @@ public final class ExceptionDialogUtil {
                     .orElseGet(() -> tr("MapRoulette did not accept this.")), null);
         } else if (exception instanceof MapRouletteParseException) {
             showError(tr("Could not read the MapRoulette response: {0}", exception.getMessage()), null);
-        } else if (exception instanceof SocketException socketException) {
-            showError(tr("Could not connect to the server: {0}. Please check your internet connection.",
-                    socketException.getMessage()), ht("/ErrorMessages#NestedSocketException"));
-        } else if (exception instanceof UnknownHostException unknownHostException) {
-            showError(
-                    tr("Unknown server {0}. Please check your internet connection.", unknownHostException.getMessage()),
-                    ht("/ErrorMessages#UnknownHost"));
+        } else if (exception instanceof SocketException || exception instanceof UnknownHostException) {
+            // JOSM also talks to OSM: say it is MapRoulette that can't be reached. The details go to the log.
+            Logging.warn(exception);
+            showError(unreachable(), ht(exception instanceof SocketException ? "/ErrorMessages#NestedSocketException"
+                    : "/ErrorMessages#UnknownHost"));
         } else if (exception instanceof IOException) {
             // JOSM's explanation is HTML already
             notify(ExceptionUtil.explainException(exception), JOptionPane.WARNING_MESSAGE,
@@ -94,6 +94,23 @@ public final class ExceptionDialogUtil {
         } else {
             org.openstreetmap.josm.gui.ExceptionDialogUtil.explainException(exception);
         }
+    }
+
+    /**
+     * Say that the MapRoulette server can't be reached
+     *
+     * @return Such as "Could not reach MapRoulette (mr-api.osm.lol). Check your internet connection."
+     */
+    static String unreachable() {
+        String host;
+        try {
+            host = URI.create(MapRouletteConfig.getBaseUrl()).getHost();
+        } catch (IllegalArgumentException e) {
+            Logging.trace(e);
+            host = null;
+        }
+        return host == null ? tr("Could not reach MapRoulette. Check your internet connection.")
+                : tr("Could not reach MapRoulette ({0}). Check your internet connection.", host);
     }
 
     /**
