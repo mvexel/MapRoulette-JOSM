@@ -17,8 +17,10 @@ import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRoule
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.FirstStartNotice;
 import org.openstreetmap.josm.plugins.maproulette.gui.LockRefresher;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteMenu;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
@@ -52,6 +54,8 @@ public class MapRoulette extends Plugin {
         OSMDownloadSource.addDownloadType(new MapRouletteDownloadSource());
         MainApplication.getMenu().openLocation.addDownloadTaskClass(MapRouletteDownloadTask.class);
         MainApplication.getMenu().openLocation.addDownloadTaskClass(MapRouletteDownloadChallengeTask.class);
+        MapRouletteMenu.add(MainApplication.getMenu());
+        FirstStartNotice.showOnce();
     }
 
     @Override
