@@ -57,6 +57,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskChanges;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
@@ -282,6 +283,17 @@ public final class EarlyUploadHook implements UploadHook {
                 .collect(Collectors.joining(", "));
         final var text = new StringBuilder("<html>")
                 .append(trn("This upload finishes task {0}.", "This upload finishes tasks {0}.", statuses.size(), ids));
+        // What changed on the task's objects, so the user can check it is the fix (#148)
+        final var dataSet = MainApplication.getLayerManager().getEditDataSet();
+        final var warnings = new ArrayList<String>();
+        for (var status : statuses) {
+            final var summary = TaskChanges.of(status.task(), dataSet);
+            summary.lines()
+                    .forEach(line -> text.append("<br>\u2022 ").append(Utils.escapeReservedCharactersHTML(line)));
+            if (summary.warning() != null) {
+                warnings.add(summary.warning());
+            }
+        }
         final var comment = statuses.isEmpty() ? null : statuses.get(0).comment();
         text.append("<br>").append(Utils.isStripEmpty(comment) ? tr("No comment for MapRoulette.")
                 : tr("Comment for MapRoulette: {0}", Utils.escapeReservedCharactersHTML(comment.strip())));
@@ -290,6 +302,9 @@ public final class EarlyUploadHook implements UploadHook {
         }
         text.append("<br>")
                 .append(tr("Choose Not finished yet if the task needs more edits. Your edits upload either way."));
+        // A hint, not a block: finishing stays the default
+        warnings.forEach(
+                warning -> text.append("<br><b>").append(Utils.escapeReservedCharactersHTML(warning)).append("</b>"));
         return text.append("</html>").toString();
     }
 

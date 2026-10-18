@@ -67,22 +67,8 @@ public final class MRGuiHelper {
         if (currentTask == null) {
             return "";
         }
-        final String instruction;
-        if (Utils.isStripEmpty(currentTask.instruction())) {
-            // Called on the EDT, so only use a cached challenge; a missing one is fetched in the background
-            final var challenge = ChallengeCache.cached(currentTask.parentId()).orElse(null);
-            if (challenge == null) {
-                instruction = tr("The instructions from the challenge are not loaded yet");
-            } else if (!Utils.isStripEmpty(challenge.general().instruction())) {
-                instruction = challenge.general().instruction();
-            } else if (!Utils.isStripEmpty(challenge.description())) {
-                instruction = challenge.description();
-            } else {
-                instruction = challenge.name();
-            }
-        } else {
-            instruction = currentTask.instruction();
-        }
+        final var raw = rawInstruction(currentTask);
+        final var instruction = raw != null ? raw : tr("The instructions from the challenge are not loaded yet");
         final var matcher = MUSTACHE_PATTERN.matcher(instruction);
         final var builder = new StringBuilder(instruction.length());
         while (matcher.find()) {
@@ -98,6 +84,30 @@ public final class MRGuiHelper {
         final var selectParser = Collections.singletonList(new SelectParser());
         final var node = Parser.builder().extensions(selectParser).build().parse(builder.toString());
         return "<html>" + HtmlRenderer.builder().extensions(selectParser).build().render(node) + "</html>";
+    }
+
+    /**
+     * Get the instruction of a task as the challenge author wrote it. This never blocks on the network.
+     *
+     * @param task The task
+     * @return The task's instruction, else the challenge's, its description or its name, or {@code null} while the
+     *         challenge is not loaded
+     */
+    @Nullable
+    public static String rawInstruction(@Nonnull Task task) {
+        if (!Utils.isStripEmpty(task.instruction())) {
+            return task.instruction();
+        }
+        // Only use a cached challenge; a missing one is fetched in the background
+        final var challenge = ChallengeCache.cached(task.parentId()).orElse(null);
+        if (challenge == null) {
+            return null;
+        } else if (!Utils.isStripEmpty(challenge.general().instruction())) {
+            return challenge.general().instruction();
+        } else if (!Utils.isStripEmpty(challenge.description())) {
+            return challenge.description();
+        }
+        return challenge.name();
     }
 
     /**
