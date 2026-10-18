@@ -4,22 +4,29 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Container;
+import java.awt.Dimension;
 import java.time.Instant;
 
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JSplitPane;
+import javax.swing.SwingUtilities;
 import javax.swing.JTable;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
@@ -189,6 +196,43 @@ class MapRouletteDialogTest {
     }
 
     /**
+     * The comment and the review request are folded behind one line, which each new task folds again (#132)
+     */
+    @Test
+    void testFeedbackFolded() {
+        final var panel = new CurrentTaskPanel();
+        try {
+            panel.refreshModel(
+                    new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""));
+            final var toggle = TaskListPanelTest.find(panel, JButton.class,
+                    b -> "\u25b8 Add a comment or ask for a review…".equals(b.getText()));
+            final var comment = TaskListPanelTest.find(panel, JosmTextField.class, f -> true);
+            assertTrue(toggle.isVisible());
+            assertFalse(comment.getParent().isVisible(), "The fields start folded");
+            final var folded = panel.neededSize();
+            toggle.doClick();
+            assertFalse(toggle.isVisible());
+            assertEquals(folded, panel.neededSize(), "Opening the fields doesn't change the minimum");
+            assertTrue(comment.getParent().isVisible());
+
+            panel.refreshModel(
+                    new Task(28, "Bench 28", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""));
+            assertTrue(toggle.isVisible(), "Another task starts folded");
+            assertFalse(comment.getParent().isVisible());
+
+            panel.refreshModel(new Task(29, "Bench 29", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                    new DataSet(), null, TaskStatus.FIXED, null, null, null,
+                    new TaskReviewFields(2, null, null, null, null, null, null, null, null, null), 0, null, null, null,
+                    false, null, ""));
+            assertTrue(comment.getParent().isVisible(), "A rejected task shows that it goes back for review");
+        } finally {
+            panel.destroy();
+        }
+    }
+
+    /**
      * A task whose review was rejected always goes back for review, as on the website (#115)
      */
     @Test
@@ -206,6 +250,66 @@ class MapRouletteDialogTest {
         assertNull(CurrentTaskPanel.reviewRequest(rejected, TaskStatus.SKIPPED, true), "A skip sets no status");
         assertNull(CurrentTaskPanel.reviewRequest(fresh, TaskStatus.FIXED, false));
         assertEquals(Boolean.TRUE, CurrentTaskPanel.reviewRequest(fresh, TaskStatus.FIXED, true));
+    }
+
+    /**
+     * With no current task, the list gets the panel with a one-line notice; a started task brings the split back
+     * (#132)
+     */
+    @Test
+    void testListGetsRoomWithoutTask() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testListGetsRoom", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            assertFalse(dialog.taskList().getParent() instanceof JSplitPane);
+            final var notice = TaskListPanelTest.find(dialog, JLabel.class,
+                    l -> "No current task. Select a task and press Start.".equals(l.getText()));
+            assertSame(dialog.taskList().getParent(), notice.getParent());
+            assertThrows(AssertionError.class, () -> TaskListPanelTest.find(dialog, JSplitPane.class, p -> true),
+                    "No split without a task");
+
+            final var task = new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                    new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null,
+                    "");
+            CurrentTaskPanel.show(task, false);
+            final var split = assertInstanceOf(JSplitPane.class, dialog.taskList().getParent());
+            assertTrue(SwingUtilities.isDescendingFrom(dialog.currentTask(), split.getBottomComponent()));
+            assertNull(notice.getParent(), "The notice goes with the split");
+
+            dialog.currentTask().refreshModel(null);
+            assertSame(notice.getParent(), dialog.taskList().getParent());
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * The panel fits JOSM's default sidebar width, and says so when it is too small to use (#132)
+     */
+    @Test
+    void testTooSmall() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testTooSmall", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            final var noTask = dialog.neededSize();
+            assertTrue(noTask.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, noTask::toString);
+            assertTrue(dialog.isTooSmall(new Dimension(noTask.width, noTask.height - 1)));
+            assertTrue(dialog.isTooSmall(new Dimension(noTask.width - 1, noTask.height)));
+            assertFalse(dialog.isTooSmall(noTask));
+
+            CurrentTaskPanel.show(
+                    new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""),
+                    false);
+            final var withTask = dialog.neededSize();
+            assertTrue(withTask.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, withTask::toString);
+            assertTrue(withTask.height > noTask.height, "A task needs more room than the list alone");
+            assertTrue(withTask.height <= 380, () -> "Fits a short docked panel: " + withTask);
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
     }
 
     /**

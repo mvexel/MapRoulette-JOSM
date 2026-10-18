@@ -8,6 +8,9 @@ import static org.openstreetmap.josm.tools.I18n.trn;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.Insets;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -29,6 +32,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 import javax.swing.UIManager;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
@@ -157,6 +161,30 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JPanel dataPanel = new JPanel(new GridBagLayout());
     /**
+     * The task name and id, above the instructions
+     */
+    private final JPanel header = new JPanel(new GridBagLayout());
+    /**
+     * The edit count, the feedback and the finish buttons, below the instructions
+     */
+    private final JPanel south = new JPanel(new GridBagLayout());
+    /**
+     * The comment, the task tags and the review request, folded until the user opens them (#132)
+     */
+    private final JPanel feedbackPanel = new JPanel(new GridBagLayout());
+    /**
+     * Opens the feedback fields
+     */
+    private final JButton feedbackToggle = new JButton("\u25b8 " + tr("Add a comment or ask for a review…"));
+    /**
+     * {@code true} once the user opened the feedback fields for the current task
+     */
+    private boolean feedbackOpen;
+    /**
+     * The buttons for the outcomes with no edit
+     */
+    private final JPanel statusButtons;
+    /**
      * Updates the header and the missing data notice when the selection changes
      */
     private final transient DataSelectionListener selectionListener = e -> this.refreshDataState();
@@ -220,7 +248,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.actions = newActions;
         this.instructionPane.enableClickableHyperlinks();
         // The header stays in place while the instructions scroll
-        final var header = new JPanel(new GridBagLayout());
+        final var header = this.header;
         // The task name is what people look for; the challenge above it is context
         final var font = this.nameLabel.getFont();
         this.challengeLabel.setFont(font.deriveFont(font.getSize2D() * 0.9f));
@@ -253,13 +281,26 @@ public final class CurrentTaskPanel extends JPanel {
         download.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
         download.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
         this.dataPanel.add(download, GBC.eol().anchor(GBC.LINE_END));
-        final var south = new JPanel(new GridBagLayout());
+        final var south = this.south;
         south.add(this.dataPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        south.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(this.tagBox, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(this.reviewBox, GBC.eol().anchor(GBC.LINE_START).insets(2, 0, 4, 0));
+        // A link-like line, so the fields take no room until they are wanted
+        this.feedbackToggle.setBorderPainted(false);
+        this.feedbackToggle.setContentAreaFilled(false);
+        this.feedbackToggle.setHorizontalAlignment(SwingConstants.LEADING);
+        this.feedbackToggle.setMargin(new Insets(0, 0, 0, 0));
+        this.feedbackToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        this.feedbackToggle.addActionListener(e -> {
+            this.feedbackOpen = true;
+            this.refreshFeedbackFold();
+            this.commentField.requestFocusInWindow();
+        });
+        south.add(this.feedbackToggle, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        this.feedbackPanel.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        this.feedbackPanel.add(this.tagBox, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        this.feedbackPanel.add(this.reviewBox, GBC.eol().anchor(GBC.LINE_START).insets(2, 0, 4, 0));
+        south.add(this.feedbackPanel, GBC.eol().fill(GBC.HORIZONTAL));
         // Uploading is the main way to finish; the outcomes with no edit come after it
         final var finishButton = new SideButton(newActions[6]);
         finishButton.setFont(finishButton.getFont().deriveFont(Font.BOLD));
@@ -276,11 +317,12 @@ public final class CurrentTaskPanel extends JPanel {
         final var noEdit = new JLabel(tr("Nothing to edit?"));
         noEdit.setFont(font.deriveFont(Font.BOLD));
         south.add(noEdit, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(MRGuiHelper.buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
-                // An empty cell keeps Can't Complete as wide as the others
-                List.of(new SideButton(newActions[2]), new JPanel()),
-                List.of(new SideButton(newActions[3]), new SideButton(newActions[5])))),
-                GBC.eol().fill(GBC.HORIZONTAL));
+        this.statusButtons = MRGuiHelper
+                .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
+                        // An empty cell keeps Can't Complete as wide as the others
+                        List.of(new SideButton(newActions[2]), new JPanel()),
+                        List.of(new SideButton(newActions[3]), new SideButton(newActions[5]))));
+        south.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -410,13 +452,9 @@ public final class CurrentTaskPanel extends JPanel {
             }
         }
         this.task = task;
-        if (task != null) {
-            final var dialog = MapRouletteDialog.get();
-            if (dialog != null) {
-                dialog.showTask();
-            }
-        }
         this.refreshPanel();
+        // With no task, the panel gives the task list the room (#132)
+        Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
     }
 
     /**
@@ -439,6 +477,39 @@ public final class CurrentTaskPanel extends JPanel {
         if (focus) {
             dialog.unfurlDialog();
         }
+    }
+
+    /**
+     * Check if the panel shows a task
+     *
+     * @return {@code true} if there is a current task
+     */
+    public boolean hasTask() {
+        return this.task != null;
+    }
+
+    /**
+     * Get the size the panel needs to be usable: its header, three lines of instructions and the buttons, which must
+     * not cut off their labels (#132)
+     *
+     * @return The size
+     */
+    public Dimension neededSize() {
+        final var lines = 3 * this.getFontMetrics(this.getFont()).getHeight();
+        final var instructions = this.panel.getComponent(0).getPreferredSize().height + lines;
+        final var width = Math.max(this.statusButtons.getPreferredSize().width, this.header.getMinimumSize().width);
+        // The notices and the opened feedback fields come and go; leave them out, so the minimum stays put
+        var south = this.south.getPreferredSize().height;
+        for (var notice : List.of(this.dataPanel, this.unfinishedPanel)) {
+            if (notice.isVisible()) {
+                south -= notice.getPreferredSize().height + 4;
+            }
+        }
+        if (this.feedbackPanel.isVisible()) {
+            // Count the folded line instead
+            south += this.feedbackToggle.getPreferredSize().height - this.feedbackPanel.getPreferredSize().height;
+        }
+        return new Dimension(width, this.header.getPreferredSize().height + instructions + south);
     }
 
     /**
@@ -532,6 +603,8 @@ public final class CurrentTaskPanel extends JPanel {
             return;
         }
         this.feedbackTask = id;
+        // Each task starts with the fields folded, except a rejected one, whose review request is always on
+        this.feedbackOpen = isInRevision(currentTask);
         this.commentField.setText("");
         this.reviewBox.setSelected(false);
         this.tagBox.getModel().removeAllElements();
@@ -548,6 +621,16 @@ public final class CurrentTaskPanel extends JPanel {
                     Arrays.stream(preferred.split(",")).map(String::strip).filter(tag -> !tag.isEmpty()).toList());
             this.tagBox.setEditable(!challenge.extra().limitTags());
         }
+    }
+
+    /**
+     * Show the line that opens the feedback fields, or the fields once the user opened them
+     */
+    private void refreshFeedbackFold() {
+        final var any = this.commentField.isVisible() || this.tagBox.isVisible() || this.reviewBox.isVisible();
+        this.feedbackToggle.setVisible(any && !this.feedbackOpen);
+        this.feedbackPanel.setVisible(any && this.feedbackOpen);
+        this.revalidate();
     }
 
     /**
@@ -581,6 +664,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.reviewBox.setToolTipText(revision ? tr("The reviewer rejected this task, so your fix goes back for review")
                 : tr("Ask a reviewer to check your work"));
         this.tagBox.setVisible(this.tagBox.isVisible() && hasTask);
+        refreshFeedbackFold();
         refreshFinish();
         if (currentTask == null) {
             this.dataPanel.setVisible(false);
