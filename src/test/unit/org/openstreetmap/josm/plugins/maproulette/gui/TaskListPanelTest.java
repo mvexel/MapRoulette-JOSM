@@ -44,6 +44,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.layer.LayerManager;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.widgets.FilterField;
+import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
@@ -180,8 +181,11 @@ public class TaskListPanelTest {
             assertEquals(5, table.getRowCount(), "Tasks locked by others are listed too");
             @SuppressWarnings("unchecked")
             final JComboBox<Object> challenges = find(panel, JComboBox.class, c -> true);
-            assertEquals(List.of("All challenges in view (2)", "Missing sidewalks (1)", "SLC benches (4)"), IntStream
-                    .range(0, challenges.getItemCount()).mapToObj(i -> challenges.getItemAt(i).toString()).toList());
+            assertEquals(
+                    List.of("All challenges in view (2)", "Missing sidewalks · #19 · 1 task",
+                            "SLC benches · #18 · 4 tasks", "Find a challenge…"),
+                    IntStream.range(0, challenges.getItemCount()).mapToObj(i -> challenges.getItemAt(i).toString())
+                            .toList());
             assertEquals(List.of(true, true, false, false, false), headers(table));
             final var tooltip = ((JComponent) table.prepareRenderer(table.getCellRenderer(0, 0), 0, 0))
                     .getToolTipText();
@@ -209,6 +213,23 @@ public class TaskListPanelTest {
 
             getFilterField(panel).setText("sidewalks");
             assertEquals(1, table.getRowCount(), "The text filter searches the challenge name");
+
+            // Find a challenge… finds one, and keeps the filter as it was (#110)
+            final var finds = new AtomicInteger();
+            new MockUp<FindChallengeAction>() {
+                @Mock
+                void actionPerformed(ActionEvent e) {
+                    finds.incrementAndGet();
+                }
+            };
+            getFilterField(panel).setText("");
+            challenges.setSelectedIndex(2);
+            challenges.setSelectedIndex(challenges.getItemCount() - 1);
+            GuiHelper.runInEDTAndWait(() -> {
+                /* Sync EDT */ });
+            assertEquals(1, finds.get());
+            assertEquals(2, challenges.getSelectedIndex());
+            assertEquals(4, table.getRowCount());
         } finally {
             panel.destroy();
         }

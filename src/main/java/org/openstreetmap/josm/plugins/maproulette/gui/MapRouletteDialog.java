@@ -27,6 +27,7 @@ import org.openstreetmap.josm.data.preferences.DoubleProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.dialogs.DialogsPanel;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
+import org.openstreetmap.josm.plugins.maproulette.actions.HowItWorksAction;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
@@ -123,7 +124,8 @@ public final class MapRouletteDialog extends ToggleDialog {
 
         this.header.add(this.server, GBC.std().insets(4, 2, 4, 2));
         this.header.add(this.login.status(), GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        this.header.add(this.login.button(), GBC.eol().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
+        this.header.add(this.login.button(), GBC.std().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
+        this.header.add(HowItWorksAction.link(), GBC.eol().anchor(GBC.LINE_END).insets(4, 2, 4, 2));
 
         // The list collapses with the arrows
         this.split.setOneTouchExpandable(true);
