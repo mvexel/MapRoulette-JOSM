@@ -173,6 +173,11 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private transient Prompt prompt;
     /**
+     * {@code true} if the question's task was started when it was asked, so the question goes once the task is
+     * finished or stopped
+     */
+    private boolean promptHeldLock;
+    /**
      * What changed on the task's objects, so it can be checked before the upload (#148)
      */
     private final JMultilineLabel changesLabel = new JMultilineLabel("");
@@ -226,6 +231,17 @@ public final class CurrentTaskPanel extends JPanel {
     private final Runnable editsListener = () -> {
         this.refreshFinish();
         this.refreshDataState();
+    };
+    /**
+     * Drops a question about a task once the task is no longer started, for example finished or stopped, so it doesn't
+     * hide the task's real state (#116), then updates like {@link #editsListener}
+     */
+    private final Runnable lockListener = () -> {
+        final var question = this.prompt;
+        if (question != null && this.promptHeldLock && ModifiedObjects.getLockedTask(question.taskId()) == null) {
+            this.prompt = null;
+        }
+        this.editsListener.run();
     };
     /**
      * Shows a task whose Fixed could not be sent, and updates the actions once a status is sent
@@ -372,7 +388,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
-        ModifiedObjects.addLockListener(this.editsListener);
+        ModifiedObjects.addLockListener(this.lockListener);
         TaskStatusSender.addListener(this.sentListener);
         TaskResults.addListener(this.editsListener);
         ChallengeCache.addListener(this.challengeListener);
@@ -400,7 +416,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.openAction.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
         TaskEdits.removeListener(this.editsListener);
-        ModifiedObjects.removeLockListener(this.editsListener);
+        ModifiedObjects.removeLockListener(this.lockListener);
         TaskStatusSender.removeListener(this.sentListener);
         TaskResults.removeListener(this.editsListener);
         ChallengeCache.removeListener(this.challengeListener);
@@ -539,6 +555,7 @@ public final class CurrentTaskPanel extends JPanel {
             return false;
         }
         panel.prompt = prompt;
+        panel.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
         panel.refreshState();
         return true;
     }
@@ -711,8 +728,8 @@ enum Tone {
      * @return The explanation
      */
     static String noEditsReason() {
-        return tr("Edits from before Start or from before a restart aren''t counted. Already uploaded them? Use "
-                + "Already fixed.");
+        return tr("Edits from before Start count only if they change the task''s objects and aren''t uploaded yet. "
+                + "Already uploaded them? Use Already fixed.");
     }
 
     private static String html(String text) {
