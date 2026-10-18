@@ -523,6 +523,95 @@ class MapRouletteDialogTest {
         }
     }
 
+    /**
+     * The outcome buttons stay in view under a started task, however short the panel and wherever the task is
+     * scrolled (dry run 2)
+     */
+    @Test
+    void testOutcomesPinnedUnderTask() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testOutcomesPinned", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        final var task = new Task(29, "Bench 29", Instant.EPOCH, Instant.EPOCH, 1,
+                "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, false));
+            assertFalse(dialog.currentTask().actionBar().isVisible(), "Not started: no outcomes");
+            ModifiedObjects.addLockedTask(task);
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, false));
+            assertTrue(dialog.currentTask().actionBar().isVisible(), "Started");
+            // The too-small notice keeps room for a few of the task's lines above the bar
+            final var line = dialog.getFontMetrics(dialog.getFont()).getHeight();
+            final var forTask = dialog.neededSize().height - dialog.taskList().squeezedSize().height;
+            assertTrue(forTask - dialog.currentTask().barHeight() >= 6 * line,
+                    () -> forTask + " for the task with a bar of " + dialog.currentTask().barHeight());
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            final var card = scroll.getParent();
+            // The task part of the docked panel at 1600x1000
+            card.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 300);
+            GuiHelper.runInEDTAndWait(() -> layOut(card));
+            assertFalse(((javax.swing.Scrollable) scroll.getViewport().getView()).getScrollableTracksViewportHeight(),
+                    "The task scrolls");
+            scroll.getViewport().setViewPosition(new java.awt.Point(0, 0));
+            for (var label : List.of("Upload edits and finish…", "Already fixed", "Not an Issue", "Can't Complete",
+                    "Skip")) {
+                final var button = TaskListPanelTest.find(card, javax.swing.AbstractButton.class,
+                        b -> label.equals(b.getText()));
+                assertNull(SwingUtilities.getAncestorOfClass(JScrollPane.class, button), label + " doesn't scroll");
+                final var bottom = SwingUtilities.convertPoint(button, 0, button.getHeight(), card).y;
+                assertTrue(button.isShowing() || button.isVisible(), label);
+                assertTrue(bottom <= card.getHeight(), () -> label + " ends at " + bottom + " in " + card.getHeight());
+            }
+            assertTrue(scroll.getHeight() >= 300 / 2, () -> "The task keeps room: " + scroll.getHeight());
+        } finally {
+            ModifiedObjects.removeLockedTask(task);
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * Long instructions open at their first line, not scrolled to their end by the text's caret (goal 3 of the sitting)
+     */
+    @Test
+    void testLongInstructionsStartAtTop() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testLongInstructions", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        final var text = String.join("\n\n",
+                java.util.Collections.nCopies(12, "Check the bench and add backrest=yes or backrest=no."));
+        final var task = new Task(30, "Bench 30", Instant.EPOCH, Instant.EPOCH, 1, text, null, new DataSet(), null,
+                TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        final var before = new Task(31, "Bench 31", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            final var card = scroll.getParent();
+            card.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 300);
+            // Another task first, as after a finished one
+            for (var shown : List.of(before, task)) {
+                ModifiedObjects.addLockedTask(shown);
+                GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(shown, false));
+                for (int i = 0; i < 3; i++) {
+                    GuiHelper.runInEDTAndWait(() -> layOut(card));
+                }
+                ModifiedObjects.removeLockedTask(shown);
+            }
+            ModifiedObjects.addLockedTask(task);
+            final var label = TaskListPanelTest.find(dialog.currentTask(), JLabel.class,
+                    l -> "Instructions: ".equals(l.getText()));
+            final var inner = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, label);
+            assertTrue(inner.getViewport().getViewSize().height > inner.getViewport().getHeight(),
+                    "The instructions scroll");
+            assertEquals(0, inner.getViewport().getViewPosition().y, "The instructions open at their first line");
+        } finally {
+            ModifiedObjects.removeLockedTask(task);
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
     private static void layOut(Container container) {
         container.doLayout();
         for (var child : container.getComponents()) {

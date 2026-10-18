@@ -82,7 +82,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
      */
     TaskStatusAction(TaskStatus status, Supplier<Task> currentTaskProvider,
             Supplier<HTMLDocument> currentDocumentProvider) {
-        super(label(status), getIconName(status), label(status),
+        super(label(status), getIconName(status), tooltip(status),
                 Shortcut.registerShortcut(/* NO-SHORTCUT */ "maproulette:" + status.name().toLowerCase(Locale.ENGLISH),
                         tr("MapRoulette: Mark Task as {0}", status.description()), KeyEvent.CHAR_UNDEFINED,
                         Shortcut.NONE),
@@ -100,6 +100,22 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
      */
     static String label(TaskStatus status) {
         return MRGuiHelper.statusLabel(status);
+    }
+
+    /**
+     * Get the tooltip for a status button. The outcomes with no edit say so, since the panel has no heading for them
+     * any more.
+     *
+     * @param status The status
+     * @return The tooltip
+     */
+    static String tooltip(TaskStatus status) {
+        return switch (status) {
+        case ALREADY_FIXED -> tr("Nothing to edit: someone already fixed this");
+        case FALSE_POSITIVE -> tr("Nothing to edit: the task is wrong, there is nothing to fix");
+        case TOO_HARD -> tr("Nothing to edit: you can''t fix this one, for example it can''t be seen on the imagery");
+        default -> label(status);
+        };
     }
 
     /**
@@ -361,7 +377,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
                 }
                 if (task.cooperativeWork() == null || task.isChoiceTask()) {
                     this.putValue(NAME, label(this.status));
-                    this.setTooltip(label(this.status));
+                    this.setTooltip(tooltip(this.status));
                 } else if (task.isCooperativeWorkOsmChange()) {
                     switch (this.status) {
                     case FALSE_POSITIVE -> {

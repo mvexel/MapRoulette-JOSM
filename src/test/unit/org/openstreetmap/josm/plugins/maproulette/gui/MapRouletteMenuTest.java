@@ -44,8 +44,8 @@ class MapRouletteMenuTest {
             final List<String> items = Arrays.stream(menu.getMenuComponents()).filter(JMenuItem.class::isInstance)
                     .map(c -> ((JMenuItem) c).getText()).toList();
             assertEquals(List.of("Find a challenge…", "Load tasks here", "Open challenge or task link…",
-                    "Show MapRoulette panel", "Next task", "MapRoulette login…", "MapRoulette preferences…",
-                    "How MapRoulette in JOSM works"), items);
+                    "Show MapRoulette panel", "Next task", "Zoom to task", "MapRoulette login…",
+                    "MapRoulette preferences…", "How MapRoulette in JOSM works"), items);
             assertTrue(Arrays.asList(mainMenu.getComponents()).contains(menu), "The menu is in the main menu");
             final Component load = menu.getMenuComponent(1);
             assertFalse(load.isEnabled(), "Without a map there is no view to load tasks from");
@@ -65,7 +65,7 @@ class MapRouletteMenuTest {
         try {
             final Set<Object> ours = new HashSet<>();
             collectToolbarIds(menu, ours);
-            assertEquals(8, ours.size(), "Every item has its own toolbar id: " + ours);
+            assertEquals(9, ours.size(), "Every item has its own toolbar id: " + ours);
             for (Object id : ours) {
                 assertTrue(id.toString().startsWith("maproulette/") || id.toString().startsWith("preference_"),
                         "Toolbar id " + id + " is the plugin's own");

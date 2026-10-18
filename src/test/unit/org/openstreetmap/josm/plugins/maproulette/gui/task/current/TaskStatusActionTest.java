@@ -90,6 +90,11 @@ class TaskStatusActionTest {
         assertEquals("Not an Issue", TaskStatusAction.label(TaskStatus.FALSE_POSITIVE));
         assertEquals("Can't Complete", TaskStatusAction.label(TaskStatus.TOO_HARD));
         assertEquals("Already fixed", TaskStatusAction.label(TaskStatus.ALREADY_FIXED));
+        // The panel has no "Nothing to edit?" heading any more; the tooltips carry it
+        for (var status : List.of(TaskStatus.ALREADY_FIXED, TaskStatus.FALSE_POSITIVE, TaskStatus.TOO_HARD)) {
+            assertTrue(TaskStatusAction.tooltip(status).startsWith("Nothing to edit: "), status.name());
+        }
+        assertEquals("Skip", TaskStatusAction.tooltip(TaskStatus.SKIPPED));
         assertEquals("Skip", TaskStatusAction.label(TaskStatus.SKIPPED));
     }
 

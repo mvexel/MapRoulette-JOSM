@@ -43,12 +43,14 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JViewport;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
+import javax.swing.text.DefaultCaret;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
 import javax.swing.text.StyleConstants;
@@ -237,9 +239,14 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JPanel header = new JPanel(new GridBagLayout());
     /**
-     * The edit count, the feedback and the finish buttons, below the instructions
+     * The state line, the feedback and the notes, below the instructions
      */
     private final JPanel south = new JPanel(new GridBagLayout());
+    /**
+     * Upload and the outcomes. The MapRoulette panel pins it under the task, outside the part that scrolls, so the
+     * buttons never need scrolling (dry run 2)
+     */
+    private final JPanel actionBar = new JPanel(new GridBagLayout());
     /**
      * The comment, the task tags and the review request, folded until the user opens them (#132)
      */
@@ -337,6 +344,10 @@ public final class CurrentTaskPanel extends JPanel {
                 new FinishAction(this) };
         this.actions = newActions;
         this.instructionPane.enableClickableHyperlinks();
+        // New text must not move the caret to its end, which scrolls the instructions to their last line
+        if (this.instructionPane.getEditorPane().getCaret()instanceof DefaultCaret caret) {
+            caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+        }
         // The header stays in place while the instructions scroll
         final var header = this.header;
         // The task name is what people look for; the challenge above it is context
@@ -354,6 +365,8 @@ public final class CurrentTaskPanel extends JPanel {
         // The zoom icon says the name is clickable, without link colours JOSM doesn't use
         this.nameLink.setHorizontalTextPosition(SwingConstants.LEADING);
         this.nameLink.addActionListener(newActions[5]);
+        // Focus inside the task would let the refresh after the zoom scroll the task away from its name
+        this.nameLink.setFocusable(false);
         header.add(this.challengeLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 0));
         header.add(this.nameLink, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
@@ -410,7 +423,14 @@ public final class CurrentTaskPanel extends JPanel {
         finishButton.setFont(finishButton.getFont().deriveFont(Font.BOLD));
         this.finishCards.add(finishButton, FINISH_CARD);
         this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
-        south.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
+        this.actionBar.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
+        // Finishing with an edit and without one are two choices
+        this.actionBar.add(new JSeparator(), GBC.eol().fill(GBC.HORIZONTAL).insets(4, 3, 4, 3));
+        // Two rows, so the bar stays low; the task's name in the header zooms to the task
+        this.statusButtons = MRGuiHelper
+                .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
+                        List.of(new SideButton(newActions[2]), new SideButton(newActions[3]))));
+        this.actionBar.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
         // Wraps in a narrow panel. It renders HTML, which ignores setForeground, so the grey goes into the text.
         final var hintColor = Optional.ofNullable(UIManager.getColor("Label.disabledForeground")).orElse(Color.GRAY);
         final var uploadHint = new JMultilineLabel(String.format("<html><span style=\"color:#%06x\">%s</span></html>",
@@ -418,16 +438,7 @@ public final class CurrentTaskPanel extends JPanel {
                         tr("Edited the map? Upload here or with File > Upload data, and the task is finished."))));
         uploadHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
         south.add(uploadHint, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 4));
-        final var noEdit = new JLabel(tr("Nothing to edit?"));
-        noEdit.setFont(font.deriveFont(Font.BOLD));
-        south.add(noEdit, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        this.statusButtons = MRGuiHelper
-                .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
-                        // An empty cell keeps Can't Complete as wide as the others
-                        List.of(new SideButton(newActions[2]), new JPanel()),
-                        List.of(new SideButton(newActions[3]), new SideButton(newActions[5]))));
-        south.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
-        this.finishStrip.addAll(List.of(this.finishCards, uploadHint, noEdit, this.statusButtons));
+        this.finishStrip.add(uploadHint);
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -454,8 +465,11 @@ public final class CurrentTaskPanel extends JPanel {
      * Remove the listeners and actions of the section. The MapRoulette panel calls this when it is destroyed.
      */
     public void destroy() {
-        // The side buttons destroy their own actions, once
+        // The side buttons destroy their own actions, once. The action bar sits in the MapRoulette panel, not here.
         GuiHelper.destroyComponents(this, false);
+        GuiHelper.destroyComponents(this.actionBar, false);
+        // Zoom to task has no side button, only the task's name
+        this.actions[5].destroy();
         this.openAction.destroy();
         this.nextPanel.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
@@ -557,6 +571,8 @@ public final class CurrentTaskPanel extends JPanel {
             this.nextPanel.show(currentTask,
                     first && result.status() == TaskStatus.FIXED && NextTaskPanel.AUTO_START.get());
         }
+        // Only a started task has outcomes; otherwise the list gets the height
+        this.actionBar.setVisible(!next && showsLockedTask());
         if (next != this.showsNext) {
             this.showsNext = next;
             ((CardLayout) this.centerCards.getLayout()).show(this.centerCards, next ? NEXT_CARD : INSTRUCTIONS_CARD);
@@ -609,6 +625,20 @@ public final class CurrentTaskPanel extends JPanel {
             choice.action().run();
         });
         return button;
+    }
+
+    /**
+     * Select the shown task's objects and zoom to them, as clicking the task's name does. Call on the EDT.
+     *
+     * @return {@code false} if the panel shows no task
+     */
+    public static boolean zoomToTask() {
+        final var panel = get();
+        if (panel == null || panel.task == null) {
+            return false;
+        }
+        TaskData.loadAndSelect(panel.task);
+        return true;
     }
 
     /**
@@ -947,10 +977,14 @@ enum Tone {
         // With no task, the panel gives the task list the room (#132)
         Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
         if (otherTask) {
-            // A new task starts at its name, where the panel scrolls as a whole; after the layout has settled
-            SwingUtilities.invokeLater(
-                    () -> Optional.ofNullable((JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this))
-                            .ifPresent(viewport -> viewport.setViewPosition(new Point(0, 0))));
+            // A new task starts at its name, where the panel scrolls as a whole, and at the first line of its
+            // instructions; after the layout has settled
+            SwingUtilities.invokeLater(() -> {
+                for (var inside : List.of(this.panel, this)) {
+                    Optional.ofNullable((JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, inside))
+                            .ifPresent(viewport -> viewport.setViewPosition(new Point(0, 0)));
+                }
+            });
         }
     }
 
@@ -986,8 +1020,18 @@ enum Tone {
     }
 
     /**
+     * Get the bar with Upload and the outcome buttons. The MapRoulette panel shows it under this panel, outside the
+     * part that scrolls.
+     *
+     * @return The bar
+     */
+    public JPanel actionBar() {
+        return this.actionBar;
+    }
+
+    /**
      * Get the size the panel needs to be usable: its header, three lines of instructions and the buttons, which must
-     * not cut off their labels (#132)
+     * not cut off their labels (#132). It counts the {@link #actionBar()} too.
      *
      * @return The size
      */
@@ -1006,12 +1050,22 @@ enum Tone {
             // Count the folded line instead
             south += this.feedbackToggle.getPreferredSize().height - this.feedbackPanel.getPreferredSize().height;
         }
-        return new Dimension(width, this.header.getPreferredSize().height + instructions + south);
+        return new Dimension(width, this.header.getPreferredSize().height + instructions + south + barHeight());
+    }
+
+    /**
+     * Get the height of the {@link #actionBar()}
+     *
+     * @return The height, 0 when the bar is hidden
+     */
+    public int barHeight() {
+        return this.actionBar.isVisible() ? this.actionBar.getPreferredSize().height : 0;
     }
 
     /**
      * Get the height the panel takes when its view scrolls: the header and the lower part as they are now, with up to six
-     * lines of instructions (at least three), so the instructions never collapse
+     * lines of instructions (at least three), so the instructions never collapse. The {@link #actionBar()} doesn't
+     * scroll, so it isn't counted.
      *
      * @return The height
      */
@@ -1020,7 +1074,7 @@ enum Tone {
         final var label = this.panel.getComponent(0).getPreferredSize().height;
         final var center = Math.max(label + 3 * line,
                 Math.min(this.centerCards.getPreferredSize().height, label + 6 * line));
-        return Math.max(neededSize().height,
+        return Math.max(neededSize().height - barHeight(),
                 this.header.getPreferredSize().height + center + this.south.getPreferredSize().height);
     }
 
