@@ -27,6 +27,8 @@ import org.openstreetmap.josm.data.preferences.DoubleProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.dialogs.DialogsPanel;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
+import org.openstreetmap.josm.gui.widgets.UrlLabel;
+import org.openstreetmap.josm.plugins.maproulette.actions.HowItWorksAction;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
@@ -122,6 +124,7 @@ public final class MapRouletteDialog extends ToggleDialog {
         this.lower.add(this.currentTask, TASK_CARD);
 
         this.header.add(this.server, GBC.std().insets(4, 2, 4, 2));
+        this.header.add(new UrlLabel(HowItWorksAction.HELP_URL, tr("How it works"), 2), GBC.std().insets(4, 2, 4, 2));
         this.header.add(this.login.status(), GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         this.header.add(this.login.button(), GBC.eol().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
 

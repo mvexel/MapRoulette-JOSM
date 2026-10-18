@@ -12,13 +12,16 @@ import org.openstreetmap.josm.gui.download.OSMDownloadSource;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.plugins.Plugin;
 import org.openstreetmap.josm.plugins.PluginInformation;
+import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadChallengeTask;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTask;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.gui.FirstStartNotice;
 import org.openstreetmap.josm.plugins.maproulette.gui.LockRefresher;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
+import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteMenu;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.download.MapRouletteDownloadSource;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRoulettePreferences;
@@ -52,6 +55,9 @@ public class MapRoulette extends Plugin {
         OSMDownloadSource.addDownloadType(new MapRouletteDownloadSource());
         MainApplication.getMenu().openLocation.addDownloadTaskClass(MapRouletteDownloadTask.class);
         MainApplication.getMenu().openLocation.addDownloadTaskClass(MapRouletteDownloadChallengeTask.class);
+        final var findChallenge = new FindChallengeAction();
+        MapRouletteMenu.install(findChallenge);
+        FirstStartNotice.showOnce(findChallenge);
     }
 
     @Override
