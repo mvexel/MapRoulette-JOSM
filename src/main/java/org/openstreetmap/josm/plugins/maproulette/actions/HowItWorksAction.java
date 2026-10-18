@@ -3,11 +3,16 @@ package org.openstreetmap.josm.plugins.maproulette.actions;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.Cursor;
+import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 
+import javax.swing.JButton;
+
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.gui.widgets.UrlLabel;
+import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
 
@@ -42,5 +47,22 @@ public class HowItWorksAction extends JosmAction {
      */
     public static UrlLabel link() {
         return new UrlLabel(HELP_URL, tr("How it works"), 2);
+    }
+
+    /**
+     * Get a small help button that opens the help page, for the one-line panel header
+     *
+     * @return The button
+     */
+    public static JButton button() {
+        final var button = new JButton(ImageProvider.get("help", ImageProvider.ImageSizes.SMALLICON));
+        button.setToolTipText(tr("How it works: open the MapRoulette help page in your browser"));
+        button.getAccessibleContext().setAccessibleName(tr("How it works"));
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(false);
+        button.setMargin(new Insets(0, 0, 0, 0));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.addActionListener(e -> OpenBrowser.displayUrl(HELP_URL));
+        return button;
     }
 }

@@ -377,6 +377,27 @@ class MapRouletteDialogTest {
     }
 
     /**
+     * The header is one line that fits JOSM's default sidebar width, with the help as an icon (dry run 2)
+     */
+    @Test
+    void testHeaderOneLine() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testHeaderOneLine", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            final var header = dialog.login().status().getParent();
+            final var help = TaskListPanelTest.find(dialog, JButton.class,
+                    b -> "How it works".equals(b.getAccessibleContext().getAccessibleName()));
+            assertSame(header, help.getParent());
+            final var size = header.getPreferredSize();
+            assertTrue(size.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, size::toString);
+            assertTrue(size.height < 2 * header.getFontMetrics(header.getFont()).getHeight(), size::toString);
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
      * The panel asks for a fair share of the column, at least what it asked before
      */
     @Test
