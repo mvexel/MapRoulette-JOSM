@@ -79,7 +79,7 @@ public final class MapRouletteDialog extends ToggleDialog {
     /**
      * The server and the login, shown in every view
      */
-    private final JPanel header = new JPanel(new GridBagLayout());
+    private final JPanel header = new JPanel(new BorderLayout());
     /**
      * Shows the server name again when the login changes, which also happens when the server changes
      */
@@ -142,13 +142,17 @@ public final class MapRouletteDialog extends ToggleDialog {
         taskScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         this.lower.add(taskScroll, TASK_CARD);
 
-        this.header.add(this.server, GBC.std().insets(4, 2, 4, 2));
-        // The header stays one line; in a narrow panel the login text gets cut short
+        this.server.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        this.header.add(this.server, BorderLayout.WEST);
+        // The header stays one line: the login text takes the room that is left, and is cut short with "…" in a narrow
+        // panel
         final var status = this.login.status();
-        status.setMinimumSize(new Dimension(0, status.getMinimumSize().height));
-        this.header.add(status, GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        this.header.add(this.login.button(), GBC.std().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
-        this.header.add(HowItWorksAction.headerLink(), GBC.eol().anchor(GBC.LINE_END).insets(4, 2, 4, 2));
+        status.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        this.header.add(status, BorderLayout.CENTER);
+        final var end = new JPanel(new GridBagLayout());
+        end.add(this.login.button(), GBC.std().insets(0, 2, 2, 2));
+        end.add(HowItWorksAction.headerLink(), GBC.eol().insets(4, 2, 4, 2));
+        this.header.add(end, BorderLayout.EAST);
 
         // The list collapses with the arrows
         this.split.setOneTouchExpandable(true);
@@ -225,7 +229,7 @@ public final class MapRouletteDialog extends ToggleDialog {
         if (OPENED_FOR_TASKS.getAndSet(true)) {
             return;
         }
-        if (isDialogInDefaultView() && this.isDocked && this.dialogsPanel != null) {
+        if (isDialogInDefaultView() && this.isDocked && this.dialogsPanel != null && this.dialogsPanel.initialized) {
             // Already open, maybe squeezed by the panels above: lay the column out again with this panel as the one
             // that asks for room
             this.dialogsPanel.reconstruct(DialogsPanel.Action.COLLAPSED_TO_DEFAULT, this);
@@ -437,7 +441,7 @@ public final class MapRouletteDialog extends ToggleDialog {
 
         @Override
         public Dimension getPreferredSize() {
-            return new Dimension(super.getPreferredSize().width, this.task.neededSize().height);
+            return new Dimension(super.getPreferredSize().width, this.task.scrolledHeight());
         }
 
         @Override
@@ -462,8 +466,7 @@ public final class MapRouletteDialog extends ToggleDialog {
 
         @Override
         public boolean getScrollableTracksViewportHeight() {
-            return this.getParent()instanceof JViewport viewport
-                    && viewport.getHeight() >= this.task.neededSize().height;
+            return this.getParent()instanceof JViewport viewport && viewport.getHeight() >= this.task.scrolledHeight();
         }
     }
 

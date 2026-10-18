@@ -21,6 +21,7 @@ import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
@@ -389,12 +390,96 @@ class MapRouletteDialogTest {
             final var header = dialog.login().status().getParent();
             final var help = TaskListPanelTest.find(dialog, UrlLabel.class, l -> l.getText().contains(">Help<"));
             assertTrue(help.getToolTipText().startsWith("How it works"), help::getToolTipText);
-            assertSame(header, help.getParent());
+            assertTrue(SwingUtilities.isDescendingFrom(help, header), "The help link is in the header");
             final var size = header.getPreferredSize();
             assertTrue(size.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, size::toString);
             assertTrue(size.height < 2 * header.getFontMetrics(header.getFont()).getHeight(), size::toString);
         } finally {
             MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * In a narrow header the login text is cut short, never dropped (dry run 2, #173)
+     */
+    @Test
+    void testHeaderKeepsLoginText() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testHeaderKeepsLogin", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            final var status = dialog.login().status();
+            status.setText("Logged in as mvexelmrtest");
+            final var header = status.getParent();
+            // Narrower than the header wants, as in a docked panel with a long name
+            final var preferred = header.getPreferredSize();
+            header.setSize(preferred.width - 40, preferred.height);
+            layOut(header);
+            assertTrue(status.getWidth() >= 40, () -> "The login text keeps room: " + status.getBounds());
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    /**
+     * In a short panel the current task scrolls as a whole and keeps a few lines of instructions; the list's buttons
+     * stay below its challenge filter (dry run 2)
+     */
+    @Test
+    void testShortPanelKeepsInstructions() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testShortPanel", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            CurrentTaskPanel.show(new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1,
+                    "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.",
+                    null, new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false,
+                    null, ""), false);
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            final var view = (javax.swing.Scrollable) scroll.getViewport().getView();
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 150);
+            layOut(scroll);
+            assertFalse(view.getScrollableTracksViewportHeight(), "Short: the task scrolls");
+            final var line = dialog.getFontMetrics(dialog.getFont()).getHeight();
+            final var instructions = TaskListPanelTest.find(dialog.currentTask(), JLabel.class,
+                    l -> "Instructions: ".equals(l.getText()));
+            final var inner = SwingUtilities.getAncestorOfClass(JScrollPane.class, instructions);
+            assertTrue(inner.getHeight() >= instructions.getHeight() + 3 * line,
+                    () -> "The instructions keep three lines: " + inner.getBounds());
+
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 2000);
+            layOut(scroll);
+            assertTrue(view.getScrollableTracksViewportHeight(), "Tall: the task fills the view");
+
+            final var list = dialog.taskList();
+            MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
+                    List.of(TaskListPanelTest.point(1006, 18, "SLC benches", null))));
+            GuiHelper.runInEDTAndWait(() -> {
+                // The list fills in
+            });
+            assertTrue(
+                    SwingUtilities.getAncestorOfClass(JPanel.class,
+                            TaskListPanelTest.find(list, javax.swing.JComboBox.class, c -> true)).isVisible(),
+                    "The filters show");
+            list.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, list.squeezedSize().height);
+            layOut(list);
+            final var filter = TaskListPanelTest.find(list, javax.swing.JComboBox.class, c -> true);
+            final var button = TaskListPanelTest.find(list, SideButton.class, b -> true);
+            final var filterBottom = SwingUtilities.convertPoint(filter, 0, filter.getHeight(), list).y;
+            final var buttonTop = SwingUtilities.convertPoint(button, 0, 0, list).y;
+            assertTrue(buttonTop >= filterBottom, () -> "Buttons " + buttonTop + " below the filter " + filterBottom);
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
+    private static void layOut(Container container) {
+        container.doLayout();
+        for (var child : container.getComponents()) {
+            if (child instanceof Container c) {
+                layOut(c);
+            }
         }
     }
 

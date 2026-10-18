@@ -1000,6 +1000,21 @@ enum Tone {
     }
 
     /**
+     * Get the height the panel takes when its view scrolls: the header and the lower part as they are now, with up to six
+     * lines of instructions (at least three), so the instructions never collapse
+     *
+     * @return The height
+     */
+    public int scrolledHeight() {
+        final var line = this.getFontMetrics(this.getFont()).getHeight();
+        final var label = this.panel.getComponent(0).getPreferredSize().height;
+        final var center = Math.max(label + 3 * line,
+                Math.min(this.centerCards.getPreferredSize().height, label + 6 * line));
+        return Math.max(neededSize().height,
+                this.header.getPreferredSize().height + center + this.south.getPreferredSize().height);
+    }
+
+    /**
      * Check if the panel shows a task the user still has locked
      *
      * @return {@code true} if the shown task is still locked
