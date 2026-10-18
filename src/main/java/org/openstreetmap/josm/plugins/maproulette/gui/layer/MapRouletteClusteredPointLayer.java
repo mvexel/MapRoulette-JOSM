@@ -130,6 +130,8 @@ public class MapRouletteClusteredPointLayer extends Layer implements MouseListen
      */
     public MapRouletteClusteredPointLayer(Bounds bounds, Collection<TaskClusteredPoint> points) {
         super(tr("MapRoulette Task Layer"));
+        // The server's statuses are newer than the ones sent before this load
+        ModifiedObjects.clearSentStatuses(points.stream().map(Identifier::id).toList());
         this.pointBucket.addAll(points);
         this.bounds = bounds;
         this.taskUpdated = tasks -> {

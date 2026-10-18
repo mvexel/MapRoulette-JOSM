@@ -12,11 +12,13 @@ import java.util.regex.Pattern;
 import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
+import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 
 import jakarta.annotation.Nonnull;
@@ -25,7 +27,7 @@ import jakarta.annotation.Nullable;
 /**
  * The text of the task list rows: a readable name, a details line and a status chip (#112)
  */
-final class TaskRows {
+public final class TaskRows {
     /**
      * An OSM object id, as MapRoulette task names ({@code n123}) and GeoJSON {@code @id} properties ({@code node/123})
      * write it
@@ -294,8 +296,49 @@ final class TaskRows {
         if (ModifiedObjects.isLockedByOther(point)) {
             return Chip.LOCKED;
         }
+        return chip(status(point));
+    }
+
+    /**
+     * Get the status of a task as this user knows it: a status being sent, then a status sent since the last load, then
+     * the status the server gave
+     *
+     * @param point The task
+     * @return The status, or {@code null} if the server gave none
+     */
+    @Nullable
+    public static TaskStatus status(@Nonnull TaskClusteredPoint point) {
         final var modified = ModifiedObjects.getModifiedTask(point.id());
-        final var status = modified != null ? modified.status() : point.status();
+        if (modified != null) {
+            return modified.status();
+        }
+        final var sent = ModifiedObjects.getSentStatus(point.id());
+        return sent != null ? sent : point.status();
+    }
+
+    /**
+     * Describe a status for the current task's header
+     *
+     * @param status The status
+     * @return Such as "Done · Already fixed", or {@code null} for an open task
+     */
+    @Nullable
+    public static String statusLine(@Nullable TaskStatus status) {
+        final var statusChip = chip(status);
+        return switch (statusChip) {
+        case OPEN, STARTED, LOCKED -> null;
+        case DONE, UNAVAILABLE -> statusChip.label() + " · " + MRGuiHelper.statusLabel(status);
+        case SKIPPED, CANT_COMPLETE -> statusChip.label();
+        };
+    }
+
+    /**
+     * Get the chip of a status
+     *
+     * @param status The status
+     * @return The chip
+     */
+    private static Chip chip(@Nullable TaskStatus status) {
         if (status == null) {
             return Chip.OPEN;
         }

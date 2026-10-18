@@ -99,6 +99,7 @@ public final class TaskStatusSender {
                 if (!server.equals(MapRouletteConfig.getBaseUrl())) {
                     continue;
                 }
+                ModifiedObjects.setSentStatus(entry.task().id(), entry.status());
                 // A skip has already released the lock
                 updatedTasks.put(entry.task().id(),
                         entry.status() == TaskStatus.SKIPPED ? TaskAPI.get(entry.task().id())

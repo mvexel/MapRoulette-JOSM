@@ -12,6 +12,7 @@ import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
@@ -40,6 +41,9 @@ class CurrentTaskPanelHeaderTest {
 
         assertEquals("Task 27", CurrentTaskPanel.header(TASK, false));
         assertEquals("Working on task 27", CurrentTaskPanel.header(TASK, true));
+        final var done = new Task(28, "Bench 28", null, null, 15318, null, null, new DataSet(), null,
+                TaskStatus.ALREADY_FIXED, null, null, null, null, 0, null, null, null, false, null, null);
+        assertEquals("Task 28 · Done · Already fixed", CurrentTaskPanel.header(done, false), "#146");
         assertNull(CurrentTaskPanel.selection(ids, dataSet));
         assertNull(CurrentTaskPanel.selection(ids, null));
 
