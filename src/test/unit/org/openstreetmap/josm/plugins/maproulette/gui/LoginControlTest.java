@@ -47,6 +47,15 @@ class LoginControlTest {
         assertTrue(LoginControl.canLogIn(), "Not logged in");
     }
 
+    /**
+     * The status shows the user's name from the server, so it must not render HTML (#118)
+     */
+    @Test
+    void testStatusIgnoresHtml() {
+        final var status = new LoginControl(true).status();
+        assertEquals(Boolean.TRUE, status.getClientProperty("html.disable"));
+    }
+
     @Test
     void testNoticeHasLogIn() {
         final var notice = LoginControl.notice("Log in to MapRoulette.", true);
