@@ -365,6 +365,8 @@ public final class CurrentTaskPanel extends JPanel {
         // The zoom icon says the name is clickable, without link colours JOSM doesn't use
         this.nameLink.setHorizontalTextPosition(SwingConstants.LEADING);
         this.nameLink.addActionListener(newActions[5]);
+        // Focus inside the task would let the refresh after the zoom scroll the task away from its name
+        this.nameLink.setFocusable(false);
         header.add(this.challengeLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 0));
         header.add(this.nameLink, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
@@ -463,8 +465,11 @@ public final class CurrentTaskPanel extends JPanel {
      * Remove the listeners and actions of the section. The MapRoulette panel calls this when it is destroyed.
      */
     public void destroy() {
-        // The side buttons destroy their own actions, once
+        // The side buttons destroy their own actions, once. The action bar sits in the MapRoulette panel, not here.
         GuiHelper.destroyComponents(this, false);
+        GuiHelper.destroyComponents(this.actionBar, false);
+        // Zoom to task has no side button, only the task's name
+        this.actions[5].destroy();
         this.openAction.destroy();
         this.nextPanel.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
