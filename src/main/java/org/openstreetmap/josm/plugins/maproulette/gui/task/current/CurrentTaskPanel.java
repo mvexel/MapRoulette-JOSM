@@ -17,7 +17,7 @@ import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.Rectangle;
+import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -43,6 +43,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JViewport;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -947,7 +948,9 @@ enum Tone {
         Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
         if (otherTask) {
             // A new task starts at its name, where the panel scrolls as a whole; after the layout has settled
-            SwingUtilities.invokeLater(() -> this.scrollRectToVisible(new Rectangle(0, 0, 1, 1)));
+            SwingUtilities.invokeLater(
+                    () -> Optional.ofNullable((JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this))
+                            .ifPresent(viewport -> viewport.setViewPosition(new Point(0, 0))));
         }
     }
 

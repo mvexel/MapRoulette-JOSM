@@ -487,6 +487,42 @@ class MapRouletteDialogTest {
         }
     }
 
+    /**
+     * A started task opens at its name: its text fields set their text, and their carets ask to be scrolled into view
+     * afterwards (dry run 2)
+     */
+    @Test
+    void testStartedTaskShowsItsName() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testStartedTask", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        final var task = new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1,
+                "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            scroll.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 150);
+            layOut(scroll);
+            ModifiedObjects.addLockedTask(task);
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, true));
+            for (int i = 0; i < 5; i++) {
+                GuiHelper.runInEDTAndWait(() -> layOut(scroll));
+            }
+            // The task's data arrives
+            MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testStartedTaskData", null));
+            for (int i = 0; i < 5; i++) {
+                GuiHelper.runInEDTAndWait(() -> layOut(scroll));
+            }
+            assertFalse(((javax.swing.Scrollable) scroll.getViewport().getView()).getScrollableTracksViewportHeight(),
+                    "Short: the task scrolls");
+            assertEquals(0, scroll.getViewport().getViewPosition().y, "The started task shows its name");
+        } finally {
+            ModifiedObjects.removeLockedTask(task);
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
     private static void layOut(Container container) {
         container.doLayout();
         for (var child : container.getComponents()) {

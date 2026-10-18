@@ -10,6 +10,7 @@ import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.KeyboardFocusManager;
 import java.awt.Rectangle;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
@@ -467,6 +468,19 @@ public final class MapRouletteDialog extends ToggleDialog {
         @Override
         public boolean getScrollableTracksViewportHeight() {
             return this.getParent()instanceof JViewport viewport && viewport.getHeight() >= this.task.scrolledHeight();
+        }
+
+        /**
+         * Text fields ask to be scrolled into view whenever their text is set, for example when the task's data
+         * arrives. Only follow them while the user works in the task, so a refresh doesn't scroll the task away from
+         * its name.
+         */
+        @Override
+        public void scrollRectToVisible(Rectangle rect) {
+            final var focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+            if (focus != null && SwingUtilities.isDescendingFrom(focus, this)) {
+                super.scrollRectToVisible(rect);
+            }
         }
     }
 
