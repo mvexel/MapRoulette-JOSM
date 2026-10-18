@@ -329,9 +329,16 @@ final class LockUnlockTaskAction extends JosmAction {
                             ExceptionDialogUtil.explainException(e);
                         }
                     } catch (MapRouletteNotFoundException e) {
-                        // MapRoulette hides the tasks of an unpublished challenge from all but its super-users
-                        if (!explainUnpublished(ids[i], challenges, unpublished)) {
-                            ExceptionDialogUtil.explainException(e);
+                        final var id = Long.toString(ids[i]);
+                        if (e.recordMissing()) {
+                            // The task is gone, for example after the owner rebuilt the challenge
+                            unpublished.put(ids[i], tr("Task {0} no longer exists on MapRoulette. The challenge "
+                                    + "owner may have removed it.", id));
+                        } else if (!explainUnpublished(ids[i], challenges, unpublished)) {
+                            // A bare 404 hides the tasks of an unpublished challenge from all but its super-users.
+                            // If the challenge and project read as enabled, the owner may just have published them,
+                            // or the project read is cached.
+                            unpublished.put(ids[i], tr("Task {0} couldn''t be started. Try again.", id));
                         }
                     } catch (IOException e) {
                         ExceptionDialogUtil.explainException(e);

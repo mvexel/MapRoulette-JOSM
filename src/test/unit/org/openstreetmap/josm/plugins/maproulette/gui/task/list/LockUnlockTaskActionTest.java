@@ -77,6 +77,7 @@ import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.Utils;
 
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
@@ -920,9 +921,19 @@ class LockUnlockTaskActionTest {
                 startRefused(9010, 404, told));
         // A super-user gets challenge_draft instead
         assertEquals(List.of(challengeOff), startRefused(4, 403, told));
-        // The challenge is published, or unknown too: the refusal is explained as before
-        assertEquals(List.of("not found"), startRefused(9011, 404, told));
-        assertEquals(List.of("not found"), startRefused(999_999, 404, told));
+        // The challenge reads as published, or can't be read: the user is asked to try again
+        final var again = List.of("Task 132279499 couldn't be started. Try again.");
+        assertEquals(again, startRefused(9011, 404, told));
+        assertEquals(again, startRefused(999_999, 404, told));
+        // The controller's JSON NotFound: the task itself is gone, whatever the challenge
+        final var gone = List
+                .of("Task 132279499 no longer exists on MapRoulette. The challenge owner may have removed it.");
+        assertEquals(gone, startRefused(4, 404, true, told));
+        assertEquals(gone, startRefused(9011, 404, true, told));
+    }
+
+    private List<String> startRefused(long challenge, int status, List<String> told) throws Exception {
+        return startRefused(challenge, status, false, told);
     }
 
     /**
@@ -930,22 +941,29 @@ class LockUnlockTaskActionTest {
      *
      * @param challenge The task's challenge
      * @param status    The HTTP status of the refusal: 404, or 403 for {@code challenge_draft}
+     * @param gone      {@code true} for the controller's JSON NotFound, {@code false} for the draft gate's empty 404
      * @param told      Gets what the user is told
      * @return What the user was told this time
      */
-    private List<String> startRefused(long challenge, int status, List<String> told) throws Exception {
+    private List<String> startRefused(long challenge, int status, boolean gone, List<String> told) throws Exception {
         told.clear();
         MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
                 .forEach(MainApplication.getLayerManager()::removeLayer);
         MainApplication.getLayerManager().addLayer(layer(TaskStatus.CREATED, challenge));
         GuiHelper.runInEDTAndWait(() -> this.table.getSelectionModel().setSelectionInterval(0, 0));
         final var start = get(urlPathEqualTo("/api/v2/task/132279499/start"));
-        // The draft refusal's body as MobileBearerFilter.denied writes it: not recorded, it needs a super-user's token
-        WireMocks.current()
-                .register(status == 404
-                        ? start.willReturn(aResponse().withStatus(404).withHeader("Content-Type", "application/json")
-                                .withBodyFile("errors/404-not-found.json"))
-                        : start.willReturn(aResponse().withStatus(403).withBody("{\"error\":\"challenge_draft\"}")));
+        // The draft refusals as MobileBearerFilter's draft gate writes them (an empty 404 with no-store, or
+        // challenge_draft for a super-user): not recorded, they need an app login's token
+        final ResponseDefinitionBuilder response;
+        if (gone) {
+            response = aResponse().withStatus(404).withHeader("Content-Type", "application/json")
+                    .withBodyFile("errors/404-not-found.json");
+        } else if (status == 404) {
+            response = aResponse().withStatus(404).withHeader("Cache-Control", "no-store");
+        } else {
+            response = aResponse().withStatus(403).withBody("{\"error\":\"challenge_draft\"}");
+        }
+        WireMocks.current().register(start.willReturn(response));
         try {
             final var action = new LockUnlockTaskAction(this.table);
             GuiHelper.runInEDTAndWaitWithException(() -> {
