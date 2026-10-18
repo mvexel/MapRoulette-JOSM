@@ -143,12 +143,12 @@ public final class MapRouletteDialog extends ToggleDialog {
         this.lower.add(taskScroll, TASK_CARD);
 
         this.header.add(this.server, GBC.std().insets(4, 2, 4, 2));
-        // The header stays one line, so the help is an icon; in a narrow panel the login text gets cut short
+        // The header stays one line; in a narrow panel the login text gets cut short
         final var status = this.login.status();
         status.setMinimumSize(new Dimension(0, status.getMinimumSize().height));
         this.header.add(status, GBC.std().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         this.header.add(this.login.button(), GBC.std().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
-        this.header.add(HowItWorksAction.button(), GBC.eol().anchor(GBC.LINE_END).insets(0, 2, 2, 2));
+        this.header.add(HowItWorksAction.headerLink(), GBC.eol().anchor(GBC.LINE_END).insets(4, 2, 4, 2));
 
         // The list collapses with the arrows
         this.split.setOneTouchExpandable(true);

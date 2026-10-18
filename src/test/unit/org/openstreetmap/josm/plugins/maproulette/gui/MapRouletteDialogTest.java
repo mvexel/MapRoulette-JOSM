@@ -35,6 +35,7 @@ import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.gui.widgets.UrlLabel;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
@@ -386,8 +387,8 @@ class MapRouletteDialogTest {
         MainApplication.getMap().addToggleDialog(dialog);
         try {
             final var header = dialog.login().status().getParent();
-            final var help = TaskListPanelTest.find(dialog, JButton.class,
-                    b -> "How it works".equals(b.getAccessibleContext().getAccessibleName()));
+            final var help = TaskListPanelTest.find(dialog, UrlLabel.class, l -> l.getText().contains(">Help<"));
+            assertTrue(help.getToolTipText().startsWith("How it works"), help::getToolTipText);
             assertSame(header, help.getParent());
             final var size = header.getPreferredSize();
             assertTrue(size.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, size::toString);

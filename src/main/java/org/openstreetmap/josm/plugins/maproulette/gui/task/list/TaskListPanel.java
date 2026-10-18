@@ -363,12 +363,9 @@ public final class TaskListPanel extends JPanel
         this.cards.add(listAndFooter, TABLE_CARD);
         this.cards.add(emptyState(findAction, downloadAction), EMPTY_CARD);
         this.add(this.cards, BorderLayout.CENTER);
-        final var logIn = new JButton(tr("Log in…"));
-        logIn.setToolTipText(tr("Opens MapRoulette in your browser to log in"));
-        logIn.addActionListener(e -> LoginControl.logInFromPanel());
-        this.loginNotice.add(new JLabel(tr("Log in to start tasks:")), GBC.std().insets(4, 2, 4, 2));
-        this.loginNotice.add(logIn, GBC.std().insets(0, 2, 4, 2));
-        this.loginNotice.add(new JLabel(), GBC.eol().fill(GBC.HORIZONTAL));
+        // The panel header has the one Log in… button
+        this.loginNotice.add(new JLabel(tr("Log in at the top of the panel to start tasks.")),
+                GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         this.loginNotice.setVisible(LoginControl.canLogIn());
         this.buttons = new JPanel(new BorderLayout());
         this.buttons.add(this.loginNotice, BorderLayout.NORTH);
