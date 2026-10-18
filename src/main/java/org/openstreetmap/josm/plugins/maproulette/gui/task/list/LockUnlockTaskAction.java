@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import javax.swing.JOptionPane;
 import javax.swing.JTable;
@@ -23,9 +25,9 @@ import javax.swing.SwingUtilities;
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.PleaseWaitRunnable;
-import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
@@ -41,6 +43,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.date.DateUtils;
 
@@ -120,8 +123,63 @@ final class LockUnlockTaskAction extends JosmAction {
         if (ids.isEmpty() || !done.isEmpty() && !confirmStartDone(done)) {
             return;
         }
-        lockTasks(ids.stream().mapToLong(Long::longValue).toArray(),
-                selected.stream().mapToInt(Integer::intValue).toArray(), -1);
+        final var idArray = ids.stream().mapToLong(Long::longValue).toArray();
+        final var rows = selected.stream().mapToInt(Integer::intValue).toArray();
+        // MapRoulette allows one started task: ask in the panel first, instead of a refusal from the server (#116)
+        final var other = ModifiedObjects.getLockedTasks().stream().filter(task -> !ids.contains(task.id()))
+                .findFirst();
+        if (other.isPresent()) {
+            askStartBlocked(other.get(), true, idArray, rows);
+            return;
+        }
+        lockTasks(idArray, rows, -1);
+    }
+
+    /**
+     * Ask in the panel whether to put the started task back and start the selected one (#116). Without a panel, ask in
+     * a dialog. Call on the EDT.
+     *
+     * @param heldTask The started task. The panel shows it with the question.
+     * @param known    {@code true} if this JOSM started it; {@code false} for one from an earlier session
+     * @param ids      The tasks to start
+     * @param rows     The table selection to restore
+     */
+    private void askStartBlocked(Task heldTask, boolean known, long[] ids, int[] rows) {
+        final var held = heldTask.id();
+        final var heldId = Long.toString(held);
+        final var startId = Long.toString(ids[0]);
+        final var start = new CurrentTaskPanel.Choice(tr("Stop task {0} and start {1}", heldId, startId),
+                tr("Stop task {0} without a status, so other mappers can work on it, and start task {1}", heldId,
+                        startId),
+                // A task this JOSM started is stopped as Stop does; one from an earlier session is released first
+                () -> {
+                    if (known) {
+                        stopTasks(List.of(held), new int[0], () -> lockTasks(ids, rows, -1));
+                    } else {
+                        lockTasks(ids, rows, held);
+                    }
+                });
+        final var other = known
+                ? new CurrentTaskPanel.Choice(tr("Finish task {0} first", heldId), null,
+                        () -> Optional.ofNullable(ModifiedObjects.getLockedTask(held))
+                                .ifPresent(task -> CurrentTaskPanel.show(task, true)))
+                : new CurrentTaskPanel.Choice(tr("Cancel"), null, () -> {
+                    // Nothing to do
+                });
+        final var text = known ? tr("Start task {0}? Task {1} is still started.", startId, heldId)
+                : tr("Start task {0}? Task {1} is still started, probably from an earlier JOSM session.", startId,
+                        heldId);
+        CurrentTaskPanel.show(heldTask, true);
+        final var prompt = new CurrentTaskPanel.Prompt(held, false, text,
+                tr("MapRoulette allows one started task at a time."),
+                known ? List.of(other, start) : List.of(start, other));
+        if (!CurrentTaskPanel.ask(prompt)) {
+            final var options = new String[] { start.label(), other.label() };
+            final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(), text + "\n" + prompt.hint(),
+                    tr("MapRoulette task already started"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE,
+                    null, options, options[0]);
+            (choice == 0 ? start : other).action().run();
+        }
     }
 
     /**
@@ -208,6 +266,8 @@ final class LockUnlockTaskAction extends JosmAction {
         // A lock MapRoulette still has for the user, but this JOSM does not know (from an earlier session), and the
         // tasks that could not be started because of it
         final var forgotten = new long[] { -1 };
+        final var heldTask = new Task[1];
+        final var refusal = new MapRouletteLockHeldException[1];
         final var notStarted = new ArrayList<Long>();
         setRunning(true);
         MainApplication.worker.execute(new PleaseWaitRunnable(tr("Starting MapRoulette tasks")) {
@@ -238,10 +298,12 @@ final class LockUnlockTaskAction extends JosmAction {
                             }
                             continue;
                         }
-                        if (releaseFirst < 0 && held.isPresent()
-                                && ModifiedObjects.getLockedTask(held.getAsLong()) == null) {
-                            // JOSM can't stop it from the task list, so ask in finish()
+                        if (releaseFirst < 0 && held.isPresent()) {
+                            // Ask in finish(), in the panel, which shows the started task (#116)
                             forgotten[0] = held.getAsLong();
+                            refusal[0] = e;
+                            heldTask[0] = Optional.ofNullable(ModifiedObjects.getLockedTask(forgotten[0]))
+                                    .orElseGet(() -> getQuietly(forgotten[0]));
                             for (var j = i; j < ids.length; j++) {
                                 notStarted.add(ids[j]);
                             }
@@ -275,9 +337,9 @@ final class LockUnlockTaskAction extends JosmAction {
                     CurrentTaskPanel.show(lockedTasks.get(0), true);
                     // Load the task's data and select its objects, so the user can edit right away (#114)
                     final var started = lockedTasks.get(0);
-                    TaskData.loadAndSelect(started, () -> {
-                        if (ModifiedObjects.getLockedTask(started.id()) != null && confirmStopMissing(started)) {
-                            stopTasks(List.of(started.id()), new int[0]);
+                    TaskData.loadAndSelect(started, notFound -> {
+                        if (ModifiedObjects.getLockedTask(started.id()) != null) {
+                            askStopMissing(started, notFound);
                         }
                     });
                 }
@@ -285,11 +347,13 @@ final class LockUnlockTaskAction extends JosmAction {
                     // Ask after this job, so the question is not tied to its progress dialog
                     final long held = forgotten[0];
                     final var remaining = notStarted.stream().mapToLong(Long::longValue).toArray();
-                    SwingUtilities.invokeLater(() -> {
-                        if (confirmStopForgotten(held)) {
-                            lockTasks(remaining, selected, held);
-                        }
-                    });
+                    final var known = ModifiedObjects.getLockedTask(held) != null;
+                    if (heldTask[0] == null) {
+                        // Not readable: the refusal says what to do
+                        ExceptionDialogUtil.explainException(refusal[0]);
+                    } else {
+                        SwingUtilities.invokeLater(() -> askStartBlocked(heldTask[0], known, remaining, selected));
+                    }
                 }
             }
 
@@ -298,6 +362,21 @@ final class LockUnlockTaskAction extends JosmAction {
                 setRunning(false);
             }
         });
+    }
+
+    /**
+     * Read a task, or nothing if it can't be read
+     *
+     * @param id The task id
+     * @return The task, or {@code null}
+     */
+    private static Task getQuietly(long id) {
+        try {
+            return TaskAPI.get(id);
+        } catch (IOException e) {
+            Logging.debug(e);
+            return null;
+        }
     }
 
     /**
@@ -325,23 +404,6 @@ final class LockUnlockTaskAction extends JosmAction {
     private void setRunning(boolean running) {
         this.running = running;
         updateEnabledState();
-    }
-
-    /**
-     * Ask whether to stop a task the user started in an earlier session, which JOSM no longer knows about
-     *
-     * @param held The task the user has started
-     * @return {@code true} to stop it and start the selected tasks
-     */
-    private static boolean confirmStopForgotten(long held) {
-        final var options = new String[] { tr("Stop it and start this task"), tr("Cancel") };
-        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(),
-                tr("You still have MapRoulette task {0} started, probably from an earlier JOSM session.\n"
-                        + "MapRoulette allows one started task at a time. Stop task {0} and start this task?",
-                        Long.toString(held)),
-                tr("MapRoulette task already started"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null,
-                options, options[0]);
-        return choice == 0;
     }
 
     /**
@@ -383,21 +445,45 @@ final class LockUnlockTaskAction extends JosmAction {
     }
 
     /**
-     * Ask whether to stop a task whose OSM objects could not be downloaded (#143)
+     * Ask in the panel what to do with a started task whose OSM objects the server doesn't have (#143, #116). Without
+     * a panel, ask in a dialog. Call on the EDT.
      *
-     * @param task The started task
-     * @return {@code true} if the user wants to stop it
+     * @param task     The started task
+     * @param notFound The task's objects the server doesn't have
      */
-    private static boolean confirmStopMissing(Task task) {
-        final var options = new String[] { tr("Stop the task"), tr("Keep it started") };
-        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(),
-                tr("The OSM objects of MapRoulette task {0} could not be downloaded from {1}.\n"
-                        + "The server may be unreachable, the task may be made for another OSM server,"
-                        + " or the objects were deleted.\nStop the task so other mappers can work on it?",
-                        Long.toString(task.id()), OsmApi.getOsmApi().getServerUrl()),
-                tr("MapRoulette task objects not downloaded"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
-                null, options, options[0]);
-        return choice == 0;
+    private void askStopMissing(Task task, List<PrimitiveId> notFound) {
+        final var stop = new CurrentTaskPanel.Choice(tr("Stop task"),
+                tr("Stop the task without a status, so other mappers can work on it"),
+                () -> stopTasks(List.of(task.id()), new int[0]));
+        final var cantComplete = new CurrentTaskPanel.Choice(tr("Can''t Complete"),
+                tr("Tell MapRoulette the task can''t be done"), () -> CurrentTaskPanel.cantComplete(task.id()));
+        final var text = missingText(task.id(), notFound, TaskData.osmServerName());
+        final var hint = tr("It may have been deleted, or the task was made for another server.");
+        if (!CurrentTaskPanel
+                .ask(new CurrentTaskPanel.Prompt(task.id(), true, text, hint, List.of(stop, cantComplete)))) {
+            final var options = new String[] { stop.label(), tr("Keep it started") };
+            if (JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(), text + "\n" + hint,
+                    tr("MapRoulette task objects not downloaded"), JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE, null, options, options[0]) == 0) {
+                stop.action().run();
+            }
+        }
+    }
+
+    /**
+     * Say which of a task's objects the OSM server doesn't have
+     *
+     * @param taskId   The task
+     * @param notFound The objects, at least one
+     * @param server   The OSM server's name
+     * @return Such as "Task 155's object (node 13888671101) doesn't exist on OpenStreetMap."
+     */
+    static String missingText(long taskId, List<PrimitiveId> notFound, String server) {
+        final var names = notFound.stream().limit(3)
+                .map(id -> id.getType().getAPIName() + ' ' + Long.toString(id.getUniqueId()))
+                .collect(Collectors.joining(", ", "", notFound.size() > 3 ? ", …" : ""));
+        return trn("Task {1}''s object ({2}) doesn''t exist on {3}.", "Task {1}''s objects ({2}) don''t exist on {3}.",
+                notFound.size(), notFound.size(), Long.toString(taskId), names, server);
     }
 
     /**
@@ -407,6 +493,17 @@ final class LockUnlockTaskAction extends JosmAction {
      * @param selected The table selection to restore
      */
     private void stopTasks(List<Long> ids, int[] selected) {
+        stopTasks(ids, selected, null);
+    }
+
+    /**
+     * Stop tasks, then do something once all of them are stopped
+     *
+     * @param ids      The tasks to stop
+     * @param selected The table selection to restore
+     * @param then     Run on the EDT once all the tasks are released, or {@code null}
+     */
+    private void stopTasks(List<Long> ids, int[] selected, Runnable then) {
         final var data = (TaskTableModel) this.table.getModel();
         if (ids.isEmpty()) {
             return;
@@ -464,6 +561,10 @@ final class LockUnlockTaskAction extends JosmAction {
             @Override
             protected void afterFinish() {
                 setRunning(false);
+                if (then != null && results.size() == stops.size()
+                        && results.stream().allMatch(result -> result.released() || result.stop().locked() == null)) {
+                    then.run();
+                }
             }
         });
     }

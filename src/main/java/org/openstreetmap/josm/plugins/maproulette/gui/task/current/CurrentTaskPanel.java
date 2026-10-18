@@ -132,6 +132,10 @@ public final class CurrentTaskPanel extends JPanel {
     private final OpenOnMapRouletteAction openAction = new OpenOnMapRouletteAction(() -> this.task);
     private final JButton openButton = new JButton(this.openAction);
     /**
+     * The challenge owner and how to contact them (#120)
+     */
+    private final ChallengeOwnerPanel ownerPanel = new ChallengeOwnerPanel();
+    /**
      * The panel for instructions
      */
     private final HtmlPanel instructionPane = new HtmlPanel();
@@ -164,13 +168,18 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JMultilineLabel stateHint = new JMultilineLabel("");
     /**
-     * Sends Fixed again after the upload succeeded but Fixed could not be sent
+     * The buttons that answer or fix the state, under it
      */
-    private final JButton retryButton = new JButton(tr("Send again"));
+    private final JPanel choicesPanel = new JPanel(new BorderLayout());
     /**
-     * Downloads the task's objects when they are not in the edit layer (#114)
+     * A question about the shown task, which comes before its state until it is answered (#116)
      */
-    private final JButton downloadButton = new JButton(tr("Download"));
+    private transient Prompt prompt;
+    /**
+     * {@code true} if the question's task was started when it was asked, so the question goes once the task is
+     * finished or stopped
+     */
+    private boolean promptHeldLock;
     /**
      * What changed on the task's objects, so it can be checked before the upload (#148)
      */
@@ -225,6 +234,17 @@ public final class CurrentTaskPanel extends JPanel {
     private final Runnable editsListener = () -> {
         this.refreshFinish();
         this.refreshDataState();
+    };
+    /**
+     * Drops a question about a task once the task is no longer started, for example finished or stopped, so it doesn't
+     * hide the task's real state (#116), then updates like {@link #editsListener}
+     */
+    private final Runnable lockListener = () -> {
+        final var question = this.prompt;
+        if (question != null && this.promptHeldLock && ModifiedObjects.getLockedTask(question.taskId()) == null) {
+            this.prompt = null;
+        }
+        this.editsListener.run();
     };
     /**
      * Shows a task whose Fixed could not be sent, and updates the actions once a status is sent
@@ -301,6 +321,7 @@ public final class CurrentTaskPanel extends JPanel {
         header.add(this.nameLink, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
         header.add(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
+        header.add(this.ownerPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
         this.add(header, BorderLayout.NORTH);
         final var gbc = GBC.eol();
         this.panel.add(new JLabel(tr("Instructions: ")), gbc);
@@ -311,10 +332,6 @@ public final class CurrentTaskPanel extends JPanel {
         this.commentField.setHint(tr("Comment for MapRoulette (optional)"));
         this.commentField.setToolTipText(tr("Sent with the task''s status"));
         this.tagBox.setToolTipText(tr("Task tags for MapRoulette (optional)"));
-        this.retryButton.addActionListener(
-                e -> Optional.ofNullable(this.task).map(Task::id).ifPresent(LateUploadHook::retryFinish));
-        this.downloadButton.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
-        this.downloadButton.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
         // The text wraps beside the dot; a fix for the state sits at the end of the line
         this.stateText.addHyperlinkListener(e -> {
             if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
@@ -322,12 +339,11 @@ public final class CurrentTaskPanel extends JPanel {
             }
         });
         this.stateHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
-        // Fixed cells, since the buttons come and go
+        // Fixed cells, since the hint and the buttons come and go
         this.statePanel.add(this.stateDot, GBC.std(0, 0).anchor(GBC.FIRST_LINE_START).insets(0, 5, 4, 0));
         this.statePanel.add(this.stateText, GBC.std(1, 0).fill(GBC.HORIZONTAL));
-        this.statePanel.add(this.retryButton, GBC.std(2, 0).anchor(GBC.FIRST_LINE_END).insets(4, 0, 0, 0));
-        this.statePanel.add(this.downloadButton, GBC.std(3, 0).anchor(GBC.FIRST_LINE_END).insets(4, 0, 0, 0));
-        this.statePanel.add(this.stateHint, GBC.std(1, 1).span(3).fill(GBC.HORIZONTAL));
+        this.statePanel.add(this.stateHint, GBC.std(1, 1).fill(GBC.HORIZONTAL));
+        this.statePanel.add(this.choicesPanel, GBC.std(1, 2).fill(GBC.HORIZONTAL).insets(0, 2, 0, 0));
         final var south = this.south;
         south.add(this.statePanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.changesLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
@@ -372,7 +388,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
-        ModifiedObjects.addLockListener(this.editsListener);
+        ModifiedObjects.addLockListener(this.lockListener);
         TaskStatusSender.addListener(this.sentListener);
         TaskResults.addListener(this.editsListener);
         ChallengeCache.addListener(this.challengeListener);
@@ -400,7 +416,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.openAction.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
         TaskEdits.removeListener(this.editsListener);
-        ModifiedObjects.removeLockListener(this.editsListener);
+        ModifiedObjects.removeLockListener(this.lockListener);
         TaskStatusSender.removeListener(this.sentListener);
         TaskResults.removeListener(this.editsListener);
         ChallengeCache.removeListener(this.challengeListener);
@@ -465,9 +481,15 @@ public final class CurrentTaskPanel extends JPanel {
             final List<PrimitiveId> ids = TaskPrimitives.cachedPrimitiveIds(currentTask).map(List::copyOf)
                     .orElse(List.of());
             final var missing = !TaskData.missing(ids, MainApplication.getLayerManager().getEditDataSet()).isEmpty();
-            state = state(currentTask, showsLockedTask(), TaskEdits.count(), TaskResults.get(currentTask.id()),
-                    ModifiedObjects.isFinishPending(currentTask.id()), LateUploadHook.isUnfinished(currentTask.id()),
-                    missing, this.notDownloaded == currentTask.id());
+            final var question = this.prompt;
+            state = question != null && question.taskId() == currentTask.id()
+                    && (!question.whileStarted() || showsLockedTask())
+                            ? question.state()
+                            : state(currentTask, showsLockedTask(), TaskEdits.count(),
+                                    TaskResults.get(currentTask.id()),
+                                    ModifiedObjects.isFinishPending(currentTask.id()),
+                                    LateUploadHook.isUnfinished(currentTask.id()), missing,
+                                    this.notDownloaded == currentTask.id());
         }
         this.apply(state);
     }
@@ -490,45 +512,130 @@ public final class CurrentTaskPanel extends JPanel {
         this.stateHint.setText(state.hint() == null ? ""
                 : String.format("<html><span style=\"color:#%06x\">%s</span></html>", grey.getRGB() & 0xFFFFFF,
                         Utils.escapeReservedCharactersHTML(state.hint())));
-        this.retryButton.setVisible(state.fix() == Fix.SEND_AGAIN);
-        this.downloadButton.setVisible(state.fix() == Fix.DOWNLOAD);
+        this.choicesPanel.removeAll();
+        this.choicesPanel.setVisible(!state.choices().isEmpty());
+        if (!state.choices().isEmpty()) {
+            final var buttons = state.choices().stream().map(this::button).toList();
+            // Short labels share a row; long ones, such as "Stop task 27 and start 151", get one each
+            final var shared = state.choices().stream().allMatch(choice -> choice.label().length() <= 20);
+            this.choicesPanel.add(
+                    MRGuiHelper.buttonRows(shared ? List.of(buttons) : buttons.stream().map(List::of).toList()),
+                    BorderLayout.CENTER);
+        }
         this.statePanel.revalidate();
+        this.statePanel.repaint();
+    }
+
+    private JButton button(Choice choice) {
+        final var button = new JButton(choice.label());
+        button.setToolTipText(choice.tooltip());
+        button.addActionListener(e -> {
+            // Answered: the state shows again
+            if (this.prompt != null && this.prompt.state().choices().contains(choice)) {
+                this.prompt = null;
+                this.refreshState();
+            }
+            choice.action().run();
+        });
+        return button;
     }
 
     /**
-     * The colour of a state
+     * Ask a question about a task in the state line, instead of a dialog (#116). It shows while the panel shows the
+     * task, until the user answers it or another question replaces it. Call on the EDT.
+     *
+     * @param prompt The question
+     * @return {@code false} if the panel doesn't show the task, so the caller asks in a dialog
      */
-    enum Tone {
-        /** The task is started */
-        WORKING(new Color(0x2e7d32)),
-        /** MapRoulette recorded the result */
-        DONE(new Color(0x1f5fad)),
-        /** Something needs the user */
-        WARNING(new Color(0xd08a00)),
-        /** Waiting for something */
-        WAITING(Color.GRAY);
-
-        private final Color color;
-
-        Tone(Color color) {
-            this.color = color;
+    public static boolean ask(Prompt prompt) {
+        final var panel = get();
+        if (panel == null || panel.task == null || panel.task.id() != prompt.taskId()) {
+            return false;
         }
+        panel.prompt = prompt;
+        panel.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
+        panel.refreshState();
+        return true;
+    }
 
-        Color color() {
-            return this.color;
+    /**
+     * Drop the question about a task, for example once the task is stopped. Call on the EDT.
+     *
+     * @param taskId The task
+     */
+    public static void dropPrompt(long taskId) {
+        final var panel = get();
+        if (panel != null && panel.prompt != null && panel.prompt.taskId() == taskId) {
+            panel.prompt = null;
+            panel.refreshState();
         }
     }
 
     /**
-     * The button that fixes a state
+     * Mark the shown task Can't Complete, as its button does. Call on the EDT.
+     *
+     * @param taskId The task, which the panel must show
      */
-    enum Fix {
-        /** None */
-        NONE,
-        /** Send Fixed again */
-        SEND_AGAIN,
-        /** Download the task's objects */
-        DOWNLOAD
+    public static void cantComplete(long taskId) {
+        final var panel = get();
+        if (panel != null && panel.task != null && panel.task.id() == taskId) {
+            final var action = panel.actions[2];
+            if (action.isEnabled()) {
+                action.actionPerformed(new ActionEvent(panel, ActionEvent.ACTION_PERFORMED, null));
+            }
+        }
+    }
+
+    /**
+     * A button in the state line
+     *
+     * @param label   The label
+     * @param tooltip The tooltip, or {@code null}
+     * @param action  What it does
+     */
+    public record Choice(String label, @Nullable String tooltip, Runnable action) {
+    }
+
+    /**
+     * A question about a task, shown in the state line
+     *
+     * @param taskId       The task it is about
+     * @param whileStarted {@code true} if it only matters while the task is started
+     * @param text         The question, as plain text
+     * @param hint         More about it, or {@code null}
+     * @param choices      The answers
+     */
+    public record Prompt(long taskId, boolean whileStarted, String text, @Nullable String hint,
+            List<Choice> choices) {
+
+    State state() {
+        return new State(Tone.WARNING, html(this.text), this.hint, this.choices);
+    }
+}
+
+/**
+ * The colour of a state
+ */
+enum Tone {
+    /** The task is started */
+    WORKING(new Color(0x2e7d32)),
+    /** MapRoulette recorded the result */
+    DONE(new Color(0x1f5fad)),
+    /** Something needs the user */
+    WARNING(new Color(0xd08a00)),
+    /** Waiting for something */
+    WAITING(Color.GRAY);
+
+    private final Color color;
+
+    Tone(Color color) {
+        this.color = color;
+    }
+
+    Color color() {
+        return this.color;
+    }
+
     }
 
     /**
@@ -537,9 +644,9 @@ public final class CurrentTaskPanel extends JPanel {
      * @param tone The colour
      * @param html The state, as HTML without the html element
      * @param hint More about it, as plain text, or {@code null}
-     * @param fix  The button that fixes it
+     * @param choices The buttons that fix or answer it
      */
-    record State(Tone tone, String html, @Nullable String hint, Fix fix) {
+    record State(Tone tone, String html, @Nullable String hint, List<Choice> choices) {
     }
 
     /**
@@ -562,28 +669,31 @@ public final class CurrentTaskPanel extends JPanel {
         final var id = Long.toString(task.id());
         if (finishPending) {
             return new State(Tone.WAITING,
-                    html(tr("Uploading. Task {0} is marked Fixed once the upload succeeds.", id)), null, Fix.NONE);
+                    html(tr("Uploading. Task {0} is marked Fixed once the upload succeeds.", id)), null, List.of());
         } else if (unfinished) {
             return new State(Tone.WARNING,
                     html(tr("Your edits are uploaded, but Fixed was not sent for task {0}.", id)), null,
-                    Fix.SEND_AGAIN);
+                    List.of(new Choice(tr("Send again"), null, () -> LateUploadHook.retryFinish(task.id()))));
         } else if (missing && (started || result == null)) {
             // A download that brought nothing: the server may be unreachable, or the objects deleted on OSM (#145)
             return new State(Tone.WARNING,
                     html(notDownloaded ? tr("Task {0}''s objects could not be downloaded. They may no longer exist on "
                             + "OpenStreetMap.", id) : tr("The task''s objects are not in the data.")),
-                    null, Fix.DOWNLOAD);
+                    null,
+                    List.of(new Choice(tr("Download"),
+                            tr("Download the task''s objects from OpenStreetMap and select them"),
+                            () -> TaskData.loadAndSelect(task))));
         } else if (started && task.isChoiceTask()) {
-            return new State(Tone.WORKING, html(tr("Working on task {0}", id)), null, Fix.NONE);
+            return new State(Tone.WORKING, html(tr("Working on task {0}", id)), null, List.of());
         } else if (started) {
             return edits == 0
                     ? new State(Tone.WORKING, html(tr("Working on task {0} · no edits since it was started", id)),
-                            noEditsReason(), Fix.NONE)
+                            noEditsReason(), List.of())
                     : new State(Tone.WORKING, html(trn("Working on task {1} · {0} edit so far",
-                            "Working on task {1} · {0} edits so far", edits, edits, id)), null, Fix.NONE);
+                            "Working on task {1} · {0} edits so far", edits, edits, id)), null, List.of());
         } else if (result != null) {
             return new State(result.link() == TaskResults.Link.FAILED ? Tone.WARNING : Tone.DONE, result.html(), null,
-                    Fix.NONE);
+                    List.of());
         }
         return null;
     }
@@ -594,8 +704,8 @@ public final class CurrentTaskPanel extends JPanel {
      * @return The explanation
      */
     static String noEditsReason() {
-        return tr("Edits from before Start or from before a restart aren''t counted. Already uploaded them? Use "
-                + "Already fixed.");
+        return tr("Edits from before Start count only if they change the task''s objects and aren''t uploaded yet. "
+                + "Already uploaded them? Use Already fixed.");
     }
 
     private static String html(String text) {
@@ -920,12 +1030,14 @@ public final class CurrentTaskPanel extends JPanel {
             this.nameLink.setEnabled(false);
             this.idLabel.setText(null);
             this.openButton.setVisible(false);
+            this.ownerPanel.setChallenge(null);
             this.instructionPane.setText(tr("Start a task from the list to work on it here."));
             this.cooperativeWork.setVisible(false);
             return;
         }
         this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
                 .orElseGet(() -> tr("Challenge {0}", Long.toString(currentTask.parentId()))));
+        this.ownerPanel.setChallenge(ChallengeCache.cached(currentTask.parentId()).orElse(null));
         this.nameLink.setText(TaskRows.readableName(currentTask));
         this.nameLink.setIcon(ImageProvider.get("dialogs/autoscale", "selection", ImageProvider.ImageSizes.SMALLICON));
         this.nameLink.setEnabled(true);
