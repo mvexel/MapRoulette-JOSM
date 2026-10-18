@@ -134,7 +134,7 @@ public final class IgnoreList {
      */
     private static long[] removeFromArray(long[] array, int location) {
         final var newArray = Arrays.copyOf(array, array.length - 1);
-        System.arraycopy(array, location, newArray, location, array.length - 1);
+        System.arraycopy(array, location + 1, newArray, location, array.length - location - 1);
         return newArray;
     }
 
