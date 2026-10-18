@@ -38,7 +38,7 @@ public class GoToTaskLocation extends JosmAction {
         super(tr("Zoom to task"), "dialogs/autoscale/selection", tr("Zoom to the selected tasks"),
                 Shortcut.registerShortcut("maproulette:zoom_to_task_selection",
                         tr("MapRoulette: Zoom to task selection"), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/zoom_to_task", true);
     }
 
     @Override

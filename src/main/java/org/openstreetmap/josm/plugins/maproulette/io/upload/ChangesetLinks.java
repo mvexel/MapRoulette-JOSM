@@ -4,8 +4,11 @@ package org.openstreetmap.josm.plugins.maproulette.io.upload;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,11 +20,13 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteExceptio
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
+import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
  * Links tasks marked Fixed to the changeset of their edits. MapRoulette only links a closed changeset, so a link to a
- * changeset that is still open waits and is tried again. Everything here makes HTTP calls: call it off the EDT.
+ * changeset that is still open waits and is tried again, also after JOSM restarts. Everything here makes HTTP calls:
+ * call it off the EDT.
  */
 public final class ChangesetLinks {
     /**
@@ -30,14 +35,29 @@ public final class ChangesetLinks {
     static final Duration WINDOW = Duration.ofHours(24);
 
     /**
+     * The preference that keeps the waiting links when JOSM quits
+     */
+    static final String PREF = "maproulette.changeset.links.pending";
+
+    /**
      * A link that waits for its changeset to be closed
      *
-     * @param task        The task marked Fixed
+     * @param taskId      The task marked Fixed
      * @param changesetId The changeset
      * @param since       When the link was first tried
      * @param server      The MapRoulette server the task was marked Fixed on
      */
-    private record Pending(Task task, long changesetId, Instant since, String server) {
+    private record Pending(long taskId, long changesetId, Instant since, String server) {
+        Map<String, String> toMap() {
+            // The preferences look up null keys, which an immutable map refuses
+            return new HashMap<>(Map.of("task", Long.toString(this.taskId), "changeset",
+                    Long.toString(this.changesetId), "since", this.since.toString(), "server", this.server));
+        }
+
+        static Pending fromMap(Map<String, String> map) {
+            return new Pending(Long.parseLong(map.get("task")), Long.parseLong(map.get("changeset")),
+                    Instant.parse(map.get("since")), Objects.requireNonNull(map.get("server")));
+        }
     }
 
     /**
@@ -59,11 +79,12 @@ public final class ChangesetLinks {
     static void link(List<Task> tasks, long changesetId, String server) {
         final var now = Instant.now();
         for (var task : tasks) {
-            if (!tryLink(task, changesetId, server) && changesetId > 0) {
-                PENDING.put(task.id(), new Pending(task, changesetId, now, server));
+            if (!tryLink(task.id(), changesetId, server) && changesetId > 0) {
+                PENDING.put(task.id(), new Pending(task.id(), changesetId, now, server));
                 TaskResults.waiting(task.id(), changesetId);
             }
         }
+        save();
     }
 
     /**
@@ -76,9 +97,10 @@ public final class ChangesetLinks {
     static void await(List<Task> tasks, long changesetId, String server) {
         final var now = Instant.now();
         tasks.forEach(task -> {
-            PENDING.put(task.id(), new Pending(task, changesetId, now, server));
+            PENDING.put(task.id(), new Pending(task.id(), changesetId, now, server));
             TaskResults.waiting(task.id(), changesetId);
         });
+        save();
     }
 
     /**
@@ -124,14 +146,37 @@ public final class ChangesetLinks {
             }
             if (pending.since().plus(WINDOW).isBefore(now)) {
                 // MapRoulette no longer links it
-                PENDING.remove(pending.task().id(), pending);
-                Logging.info("Gave up linking MapRoulette task " + pending.task().id() + " to changeset "
+                PENDING.remove(pending.taskId(), pending);
+                Logging.info("Gave up linking MapRoulette task " + pending.taskId() + " to changeset "
                         + pending.changesetId());
-                TaskResults.linked(pending.task().id(), pending.changesetId(), false);
-            } else if (tryLink(pending.task(), pending.changesetId(), pending.server())) {
-                PENDING.remove(pending.task().id(), pending);
+                TaskResults.linked(pending.taskId(), pending.changesetId(), false);
+            } else if (tryLink(pending.taskId(), pending.changesetId(), pending.server())) {
+                PENDING.remove(pending.taskId(), pending);
             }
         }
+        save();
+    }
+
+    /**
+     * Pick up the links that were still waiting when JOSM quit. The timer that tries all waiting links sends them.
+     */
+    public static void load() {
+        for (var map : Config.getPref().getListOfMaps(PREF, Collections.emptyList())) {
+            try {
+                final var pending = Pending.fromMap(map);
+                PENDING.putIfAbsent(pending.taskId(), pending);
+            } catch (RuntimeException e) {
+                Logging.warn("Ignoring a stored MapRoulette changeset link: " + map);
+                Logging.debug(e);
+            }
+        }
+    }
+
+    /**
+     * Keep the waiting links, so that they are still sent if JOSM quits first
+     */
+    private static synchronized void save() {
+        Config.getPref().putListOfMaps(PREF, PENDING.values().stream().map(Pending::toMap).toList());
     }
 
     /**
@@ -142,26 +187,27 @@ public final class ChangesetLinks {
     public static Set<Long> forgetAll() {
         final var ids = new TreeSet<>(PENDING.keySet());
         ids.forEach(PENDING::remove);
+        save();
         return ids;
     }
 
     /**
      * Link a task to a changeset. The status is already sent, so a refusal here only means the task stays unlinked.
      *
-     * @param task        The task marked Fixed
+     * @param taskId      The task marked Fixed
      * @param changesetId The changeset, or {@code 0} to let MapRoulette find it
      * @param server      The MapRoulette server the task was marked Fixed on
      * @return {@code true} if done (linked, or refused for good); {@code false} to try again later
      */
-    private static boolean tryLink(Task task, long changesetId, String server) {
+    private static boolean tryLink(long taskId, long changesetId, String server) {
         if (!server.equals(MapRouletteConfig.getBaseUrl())) {
             // The task id may belong to an unrelated task on the server now configured
-            Logging.info("Not linking MapRoulette task " + task.id() + ": it is on " + server);
+            Logging.info("Not linking MapRoulette task " + taskId + ": it is on " + server);
             return true;
         }
         try {
-            TaskAPI.changeset(task.id(), changesetId);
-            TaskResults.linked(task.id(), changesetId, true);
+            TaskAPI.changeset(taskId, changesetId);
+            TaskResults.linked(taskId, changesetId, true);
             return true;
         } catch (IOException e) {
             if (changesetId > 0 && isTemporary(e)) {
@@ -170,7 +216,7 @@ public final class ChangesetLinks {
             }
             Logging.warn(e);
             // Tells the user, in a notification and in the panel
-            TaskResults.linked(task.id(), changesetId, false);
+            TaskResults.linked(taskId, changesetId, false);
             return true;
         }
     }

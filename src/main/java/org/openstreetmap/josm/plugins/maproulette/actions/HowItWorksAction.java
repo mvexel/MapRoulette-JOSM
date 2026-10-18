@@ -32,7 +32,7 @@ public class HowItWorksAction extends JosmAction {
         super(tr("How MapRoulette in JOSM works"), "help", tr("Open the MapRoulette help page in your browser"),
                 Shortcut.registerShortcut("maproulette:how_it_works", tr("MapRoulette: How it works"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/how_it_works", true);
     }
 
     @Override

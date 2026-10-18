@@ -22,7 +22,7 @@ public class LoadTasksInViewAction extends JosmAction {
         super(tr("Load tasks here"), "download", tr("Load the MapRoulette tasks in the current map view"),
                 Shortcut.registerShortcut("maproulette:load_tasks_in_view", tr("MapRoulette: Load tasks here"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false, null, true);
+                false, "maproulette/load_tasks_in_view", true);
     }
 
     @Override

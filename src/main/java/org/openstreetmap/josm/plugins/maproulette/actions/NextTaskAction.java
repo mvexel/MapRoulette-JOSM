@@ -24,7 +24,7 @@ public class NextTaskAction extends JosmAction {
         super(tr("Next task"), "dialogs/next", tr("Start the next task in the challenge of the task just finished"),
                 Shortcut.registerShortcut("maproulette:next_task", tr("MapRoulette: Next task"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/next_task", true);
     }
 
     @Override
