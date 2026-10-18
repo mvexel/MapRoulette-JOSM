@@ -39,11 +39,11 @@ class CurrentTaskPanelHeaderTest {
         dataSet.addPrimitive(other);
         final List<PrimitiveId> ids = List.of(bench.getPrimitiveId(), other.getPrimitiveId());
 
-        assertEquals("Task 27", CurrentTaskPanel.header(TASK, false));
-        assertEquals("Working on task 27", CurrentTaskPanel.header(TASK, true));
+        // The state line says the task is started (#116)
+        assertEquals("Task 27", CurrentTaskPanel.header(TASK));
         final var done = new Task(28, "Bench 28", null, null, 15318, null, null, new DataSet(), null,
                 TaskStatus.ALREADY_FIXED, null, null, null, null, 0, null, null, null, false, null, null);
-        assertEquals("Task 28 · Done · Already fixed", CurrentTaskPanel.header(done, false), "#146");
+        assertEquals("Task 28 · Done · Already fixed", CurrentTaskPanel.header(done), "#146");
         assertNull(CurrentTaskPanel.selection(ids, dataSet, "Bench"));
         assertNull(CurrentTaskPanel.selection(ids, null, "Bench"));
 
@@ -66,7 +66,6 @@ class CurrentTaskPanelHeaderTest {
     void testIdNotGrouped() {
         final var task = new Task(132_279_499, "Bench", null, null, 15318, null, null, new DataSet(), null, null, null,
                 null, null, null, 0, null, null, null, false, null, null);
-        assertEquals("Working on task 132279499", CurrentTaskPanel.header(task, true));
-        assertEquals("Task 132279499", CurrentTaskPanel.header(task, false));
+        assertEquals("Task 132279499", CurrentTaskPanel.header(task));
     }
 }

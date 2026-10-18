@@ -15,6 +15,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathMatching;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -51,6 +52,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.LoggingHandler;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -78,6 +80,7 @@ class LateUploadHookTest {
         ChangesetLinks.forgetAll();
         ModifiedObjects.takeFinishing();
         LateUploadHook.forgetUnfinished();
+        TaskResults.clearAll();
     }
 
     /**
@@ -225,6 +228,9 @@ class LateUploadHookTest {
         });
         sync();
         WireMocks.current().verifyThat(exactly(0), putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
+        // The panel says the link waits (#116)
+        assertEquals(new TaskResults.Result(task.id(), TaskStatus.FIXED, 701182, TaskResults.Link.WAITING),
+                TaskResults.get(task.id()));
         final var changeset = new Changeset(701182);
         changeset.setOpen(false);
         hook.changesetCacheUpdated(new ChangesetCacheEvent() {
@@ -251,6 +257,7 @@ class LateUploadHookTest {
         sync();
         WireMocks.current().verifyThat(1, putRequestedFor(urlPathEqualTo(taskPath + "/changeset"))
                 .withQueryParam("changesetId", equalTo("701182")));
+        assertEquals(TaskResults.Link.LINKED, TaskResults.get(task.id()).link());
     }
 
     /**
@@ -288,8 +295,9 @@ class LateUploadHookTest {
         WireMocks.current().verifyThat(putRequestedFor(urlPathEqualTo(taskPath + "/changeset")));
         assertTrue(explained.isEmpty(), "No error dialog for the link");
         final var messages = handler.getRecords().stream().map(LogRecord::getMessage).filter(Objects::nonNull).toList();
-        assertTrue(messages.stream().anyMatch(m -> m.contains("is Fixed") && m.contains("did not link")),
+        assertTrue(messages.contains("Task 147197178 marked Fixed. The changeset could not be linked."),
                 messages::toString);
+        assertEquals(TaskResults.Link.FAILED, TaskResults.get(task.id()).link());
     }
 
     /**
@@ -522,6 +530,11 @@ class LateUploadHookTest {
                 .withQueryParam("changesetId", equalTo("701200")));
         assertTrue(ModifiedObjects.getFinishing().isEmpty());
         assertTrue(ModifiedObjects.getUnlinkedFixed().isEmpty());
+        // Confirmed in a notification and in the panel until the next Start (#116)
+        assertEquals(new TaskResults.Result(task.id(), TaskStatus.FIXED, 701200, TaskResults.Link.LINKED),
+                TaskResults.get(task.id()));
+        ModifiedObjects.addLockedTask(task);
+        assertNull(TaskResults.get(task.id()));
     }
 
     /**
