@@ -89,9 +89,26 @@ class TaskDataTest {
             }
         };
         final var notFound = new CopyOnWriteArrayList<PrimitiveId>();
-        assertEquals(1, loadWithDownload(false, notFound));
+        assertEquals(1, loadWithDownload(Server.NOT_FOUND, notFound));
         assertEquals(List.of(27L), noted, "The panel says the download brought nothing (#145)");
         assertEquals(List.of(NODE), notFound, "The panel names the objects the server doesn't have (#116)");
+    }
+
+    /**
+     * If the OSM server can't be reached, the panel says the objects could not be downloaded, but the caller is not
+     * told that they don't exist
+     */
+    @Test
+    void testServerUnreachable() throws Exception {
+        final var noted = new CopyOnWriteArrayList<Long>();
+        new MockUp<CurrentTaskPanel>() {
+            @Mock
+            void notDownloaded(long taskId) {
+                noted.add(taskId);
+            }
+        };
+        assertEquals(0, loadWithDownload(Server.UNREACHABLE));
+        assertEquals(List.of(27L), noted);
     }
 
     /**
@@ -108,7 +125,7 @@ class TaskDataTest {
                 noted.add(taskId);
             }
         };
-        assertEquals(0, loadWithDownload(true));
+        assertEquals(0, loadWithDownload(Server.FOUND));
         assertEquals(List.of(), noted);
     }
 
@@ -130,34 +147,34 @@ class TaskDataTest {
     /**
      * Load a task's node that is not in the edit layer yet
      *
-     * @param found {@code true} if the OSM server has the node
+     * @param server What the OSM server answers
      * @return How often the caller was told that nothing could be downloaded
      */
-    private static int loadWithDownload(boolean found) throws Exception {
-        return loadWithDownload(found, new CopyOnWriteArrayList<>());
+    private static int loadWithDownload(Server server) throws Exception {
+        return loadWithDownload(server, new CopyOnWriteArrayList<>());
     }
 
     /**
      * Load a task's node that is not in the edit layer yet
      *
-     * @param found    {@code true} if the OSM server has the node
+     * @param server   What the OSM server answers
      * @param notFound Gets the objects the server doesn't have, as the caller is told
      * @return How often the caller was told that nothing could be downloaded
      */
-    private static int loadWithDownload(boolean found, List<PrimitiveId> notFound) throws Exception {
+    private static int loadWithDownload(Server server, List<PrimitiveId> notFound) throws Exception {
         final var dataSet = new DataSet();
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "loadWithDownload", null));
         new MockUp<TaskData.ObjectsDownload>() {
             @Mock
             void realRun(Invocation invocation) throws ReflectiveOperationException {
                 final TaskData.ObjectsDownload download = invocation.getInvokedInstance();
-                if (found) {
+                if (server == Server.FOUND) {
                     final var node = new Node(LatLon.ZERO);
                     node.setOsmId(1, 1);
                     final var tmpLayer = TaskData.ObjectsDownload.class.getDeclaredField("tmpLayer");
                     tmpLayer.setAccessible(true);
                     ((OsmDataLayer) tmpLayer.get(download)).data.addPrimitive(node);
-                } else {
+                } else if (server == Server.NOT_FOUND) {
                     // The OSM server answers 404
                     final var missing = TaskData.ObjectsDownload.class.getDeclaredField("notFound");
                     missing.setAccessible(true);
@@ -187,6 +204,18 @@ class TaskDataTest {
         assertTrue(bounds.contains(new LatLon(40.5, -111.9)));
         assertEquals(0.002, bounds.getHeight(), 1e-9);
         assertEquals(0.002, bounds.getWidth(), 1e-9);
+    }
+
+    /**
+     * What the OSM server answers for the task's node
+     */
+    private enum Server {
+        /** It has the node */
+        FOUND,
+        /** 404 */
+        NOT_FOUND,
+        /** No answer: the download fails, and JOSM shows the error */
+        UNREACHABLE
     }
 
     private static Task task(Point location) {

@@ -63,8 +63,8 @@ public final class TaskData {
      * Download the task's objects and select them, as {@link #loadAndSelect(Task)}
      *
      * @param task      The task
-     * @param onMissing Called on the EDT with the objects the OSM server doesn't have, if it has none of the task's
-     *                  objects, or {@code null}
+     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for, if none of the task's
+     *                  objects could be loaded, or {@code null}
      */
     public static void loadAndSelect(@Nonnull Task task, @Nullable Consumer<List<PrimitiveId>> onMissing) {
         // Finding the objects may need the challenge from the server
@@ -89,8 +89,8 @@ public final class TaskData {
      *
      * @param task      The task
      * @param ids       The task's objects
-     * @param onMissing Called on the EDT with the objects the OSM server doesn't have, if it has none of the task's
-     *                  objects, or {@code null}
+     * @param onMissing Called on the EDT with the objects the OSM server answered 404 for, if none of the task's
+     *                  objects could be loaded, or {@code null}
      */
     static void load(@Nonnull Task task, @Nonnull List<PrimitiveId> ids,
             @Nullable Consumer<List<PrimitiveId>> onMissing) {
@@ -109,8 +109,9 @@ public final class TaskData {
             // Objects that don't exist on the server (404) stay missing, for example a task made for another server
             if (missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
                 CurrentTaskPanel.notDownloaded(task.id());
-                if (onMissing != null) {
-                    onMissing.accept(notFound.isEmpty() ? ids : notFound);
+                // Without a 404, the download failed and JOSM explained why: the objects may well exist
+                if (onMissing != null && !notFound.isEmpty()) {
+                    onMissing.accept(notFound);
                 }
             }
             select(ids);
@@ -136,7 +137,8 @@ public final class TaskData {
 
     /**
      * Download objects with their referrers into the edit layer, as {@link DownloadPrimitivesWithReferrersTask} does,
-     * but without its dialog for objects the server doesn't have: the panel says so instead (#116)
+     * but without its dialog for objects the server doesn't have: the panel says so instead (#116). Unlike JOSM's
+     * download, it always asks the OSM API, never Overpass: a task has only a few objects.
      */
     static final class ObjectsDownload extends PleaseWaitRunnable {
         private final List<PrimitiveId> ids;

@@ -148,7 +148,7 @@ final class LockUnlockTaskAction extends JosmAction {
         final var held = heldTask.id();
         final var heldId = Long.toString(held);
         final var startId = Long.toString(ids[0]);
-        final var start = new CurrentTaskPanel.Choice(tr("Put task {0} back and start {1}", heldId, startId),
+        final var start = new CurrentTaskPanel.Choice(tr("Stop task {0} and start {1}", heldId, startId),
                 tr("Stop task {0} without a status, so other mappers can work on it, and start task {1}", heldId,
                         startId),
                 // A task this JOSM started is stopped as Stop does; one from an earlier session is released first

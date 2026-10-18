@@ -386,7 +386,7 @@ class LockUnlockTaskActionTest {
         // Asked in the panel, which shows task 125, not in a dialog (#116)
         assertEquals(0, dialogs.get());
         assertNotNull(stateText("Task 125 is still started"));
-        click(choice == 0 ? "Put task 125 back and start 132279499" : "Cancel");
+        click(choice == 0 ? "Stop task 125 and start 132279499" : "Cancel");
         // The release and the second start
         sync();
         sync();
@@ -423,7 +423,7 @@ class LockUnlockTaskActionTest {
 
             GuiHelper.runInEDTAndWaitWithException(() -> action.actionPerformed(null));
             sync();
-            click("Put task 147197178 back and start 132279499");
+            click("Stop task 147197178 and start 132279499");
             // The stop, then the start
             for (var i = 0; i < 4; i++) {
                 sync();

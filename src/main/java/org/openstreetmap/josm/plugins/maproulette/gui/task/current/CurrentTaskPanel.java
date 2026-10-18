@@ -495,7 +495,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.choicesPanel.setVisible(!state.choices().isEmpty());
         if (!state.choices().isEmpty()) {
             final var buttons = state.choices().stream().map(this::button).toList();
-            // Short labels share a row; long ones, such as "Put task 27 back and start 151", get one each
+            // Short labels share a row; long ones, such as "Stop task 27 and start 151", get one each
             final var shared = state.choices().stream().allMatch(choice -> choice.label().length() <= 20);
             this.choicesPanel.add(
                     MRGuiHelper.buttonRows(shared ? List.of(buttons) : buttons.stream().map(List::of).toList()),
