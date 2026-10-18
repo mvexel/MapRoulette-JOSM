@@ -24,6 +24,7 @@ import javax.swing.UIManager;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.UserAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
+import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.util.Workers;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -39,11 +40,12 @@ import jakarta.annotation.Nullable;
  * owner's name is known, and when it cannot be looked up.
  */
 final class ChallengeOwnerPanel extends JPanel {
-    /**
-     * The OSM display names of challenge owners by OSM id, for this session. Empty if the lookup failed.
-     */
     private static final String SEPARATOR = " \u00b7 ";
-    private static final Map<Long, Optional<String>> NAMES = new ConcurrentHashMap<>();
+    /**
+     * The OSM display names of challenge owners by server and OSM id, for this session. Empty if the server has no
+     * usable name. The server is part of the key: an OSM id on a dev server names someone else on production.
+     */
+    private static final Map<String, Optional<String>> NAMES = new ConcurrentHashMap<>();
 
     private final JLabel byLabel = new JLabel(tr("Challenge by"));
     private final JLabel ownerLink = new JLabel();
@@ -90,15 +92,15 @@ final class ChallengeOwnerPanel extends JPanel {
             return;
         }
         final long owner = newChallenge.general().owner();
-        final var known = NAMES.get(owner);
+        final var key = key(owner);
+        final var known = NAMES.get(key);
         if (known != null) {
             show(known);
             return;
         }
         this.setVisible(false);
         Workers.execute(() -> {
-            final var name = lookUp(owner);
-            NAMES.put(owner, name);
+            final var name = remember(key, owner);
             GuiHelper.runInEDT(() -> {
                 final var current = this.challenge;
                 if (current != null && current.general().owner() == owner) {
@@ -106,6 +108,26 @@ final class ChallengeOwnerPanel extends JPanel {
                 }
             });
         });
+    }
+
+    /**
+     * Look up an owner and remember the answer. A failure to ask isn't remembered, so the next task of this owner
+     * asks again.
+     *
+     * @param key   The key in {@link #NAMES}
+     * @param owner The owner's OSM id
+     * @return The name, or empty
+     */
+    private static Optional<String> remember(String key, long owner) {
+        try {
+            final var name = lookUp(owner);
+            NAMES.put(key, name);
+            return name;
+        } catch (IOException e) {
+            Logging.debug("MapRoulette: could not look up challenge owner " + owner + ": " + e.getMessage());
+            Logging.trace(e);
+            return Optional.empty();
+        }
     }
 
     private void show(Optional<String> name) {
@@ -122,16 +144,18 @@ final class ChallengeOwnerPanel extends JPanel {
 
     private Optional<String> name() {
         final var current = this.challenge;
-        return current == null ? Optional.empty() : NAMES.getOrDefault(current.general().owner(), Optional.empty());
+        return current == null ? Optional.empty()
+                : NAMES.getOrDefault(key(current.general().owner()), Optional.empty());
     }
 
     /**
      * Look up an owner's OSM display name through MapRoulette
      *
      * @param osmId The owner's OSM id
-     * @return The name, or empty if it could not be looked up
+     * @return The name, or empty if MapRoulette has no usable name for the id
+     * @throws IOException if MapRoulette could not be asked
      */
-    static Optional<String> lookUp(long osmId) {
+    static Optional<String> lookUp(long osmId) throws IOException {
         try {
             final var user = UserAPI.publicUser(osmId);
             // MapRoulette falls back to its own user ids, which would name someone else
@@ -139,11 +163,15 @@ final class ChallengeOwnerPanel extends JPanel {
                     && !user.osmProfile().displayName().isBlank()) {
                 return Optional.of(user.osmProfile().displayName());
             }
-        } catch (IOException | RuntimeException e) {
-            Logging.debug("MapRoulette: could not look up challenge owner " + osmId + ": " + e.getMessage());
+        } catch (RuntimeException e) {
+            Logging.debug("MapRoulette: could not read challenge owner " + osmId + ": " + e.getMessage());
             Logging.trace(e);
         }
         return Optional.empty();
+    }
+
+    private static String key(long osmId) {
+        return MapRouletteConfig.getBaseUrl() + " " + osmId;
     }
 
     /**

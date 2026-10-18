@@ -6,8 +6,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.ChallengeAPI;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -34,7 +37,7 @@ class ChallengeOwnerPanelTest {
     }
 
     @Test
-    void testLookUp() {
+    void testLookUp() throws Exception {
         assertEquals(Optional.of("mvexelmrtest"), ChallengeOwnerPanel.lookUp(11353));
     }
 
@@ -57,7 +60,50 @@ class ChallengeOwnerPanelTest {
     void testLookUpFails() {
         WireMocks.current()
                 .register(get(urlPathEqualTo("/api/v2/user/918586/public")).willReturn(aResponse().withStatus(404)));
-        assertEquals(Optional.empty(), ChallengeOwnerPanel.lookUp(918586));
+        assertThrows(IOException.class, () -> ChallengeOwnerPanel.lookUp(918586));
+    }
+
+    /**
+     * A failed lookup is asked again, and a name from one server isn't used on another, where the same OSM id is
+     * someone else
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testNamesPerServer() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var path = urlPathEqualTo("/api/v2/user/918586/public");
+        final var challenge = ChallengeAPI.challenge(15318);
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(ChallengeOwnerPanel::new);
+        wireMock.register(get(path).willReturn(aResponse().withStatus(500)));
+        show(panel, challenge);
+        assertFalse(panel.isVisible());
+
+        wireMock.register(get(path).willReturn(aResponse().withStatus(200)
+                .withBody(Files.readString(Path.of("src/test/resources/__files/api/v2/user/11353/public"))
+                        .replace("11353", "918586"))));
+        show(panel, challenge);
+        assertTrue(panel.isVisible(), "a failed lookup isn't remembered");
+
+        final var server = org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getInstance();
+        try {
+            // Nothing listens there, so only a remembered name could show the line
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig
+                    .setInstance(new org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig(
+                            "http://127.0.0.1:1/api/v2"));
+            show(panel, challenge);
+            assertFalse(panel.isVisible());
+        } finally {
+            org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.setInstance(server);
+        }
+    }
+
+    private static void show(ChallengeOwnerPanel panel, Challenge challenge) throws Exception {
+        GuiHelper.runInEDTAndWait(() -> panel.setChallenge(challenge));
+        MainApplication.worker.submit(() -> {
+        }).get();
+        GuiHelper.runInEDTAndWait(() -> {
+        });
     }
 
     /**
