@@ -346,8 +346,8 @@ class MapRouletteDialogTest {
     }
 
     /**
-     * A finished task's status line and a long name are cut short instead of making the panel too small to use, which
-     * left it on "Make this panel bigger" until another task was shown (#197)
+     * A finished task's long name is cut short and its outcome wraps instead of making the panel too small to use,
+     * which left it on "Make this panel bigger" until another task was shown (#197). The outcome is never cut.
      */
     @Test
     void testFinishedTaskFits() {
@@ -357,9 +357,21 @@ class MapRouletteDialogTest {
         try {
             CurrentTaskPanel.show(new Task(147197178, "Bench by the playground on the north side of the park",
                     Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(), null,
-                    TaskStatus.ALREADY_FIXED, null, null, null, null, 0, null, null, null, false, null, ""), false);
+                    TaskStatus.FALSE_POSITIVE, null, null, null, null, 0, null, null, null, false, null, ""), false);
             final var needed = dialog.neededSize();
             assertTrue(needed.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, needed::toString);
+            final var panel = dialog.currentTask();
+            GuiHelper.runInEDTAndWait(() -> {
+                panel.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 400);
+                layOut(panel);
+            });
+            // The resize event refits the line; lay out the result
+            GuiHelper.runInEDTAndWait(() -> layOut(panel));
+            final var line = TaskListPanelTest.find(panel, JLabel.class,
+                    l -> l.getText() != null && l.getText().contains("Not an Issue"));
+            assertEquals("<html>Task 147197178<br>Not an Issue</html>", line.getText(), "The outcome wraps");
+            assertTrue(line.getWidth() >= line.getPreferredSize().width,
+                    () -> line.getWidth() + " for " + line.getPreferredSize());
         } finally {
             MainApplication.getMap().removeToggleDialog(dialog);
         }

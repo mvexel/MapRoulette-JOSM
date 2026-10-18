@@ -329,14 +329,16 @@ public final class TaskRows {
      * Describe a status for the current task's header
      *
      * @param status The status
-     * @return Such as "Done · Already fixed", or {@code null} for an open task
+     * @return Such as "Already fixed", or {@code null} for an open task. A finished task's outcome says it is done, so
+     *         "Done" isn't repeated (#197).
      */
     @Nullable
     public static String statusLine(@Nullable TaskStatus status) {
         final var statusChip = chip(status);
         return switch (statusChip) {
         case OPEN, STARTED, LOCKED -> null;
-        case DONE, UNAVAILABLE -> statusChip.label() + " · " + MRGuiHelper.statusLabel(status);
+        case DONE -> MRGuiHelper.statusLabel(status);
+        case UNAVAILABLE -> statusChip.label() + " · " + MRGuiHelper.statusLabel(status);
         case SKIPPED, CANT_COMPLETE -> statusChip.label();
         };
     }

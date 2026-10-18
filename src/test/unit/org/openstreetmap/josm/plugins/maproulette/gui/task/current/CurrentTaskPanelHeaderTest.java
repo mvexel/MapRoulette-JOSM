@@ -43,7 +43,7 @@ class CurrentTaskPanelHeaderTest {
         assertEquals("Task 27", CurrentTaskPanel.header(TASK));
         final var done = new Task(28, "Bench 28", null, null, 15318, null, null, new DataSet(), null,
                 TaskStatus.ALREADY_FIXED, null, null, null, null, 0, null, null, null, false, null, null);
-        assertEquals("Task 28 · Done · Already fixed", CurrentTaskPanel.header(done), "#146");
+        assertEquals("Task 28 · Already fixed", CurrentTaskPanel.header(done), "#146");
         assertNull(CurrentTaskPanel.selection(ids, dataSet, "Bench"));
         assertNull(CurrentTaskPanel.selection(ids, null, "Bench"));
 

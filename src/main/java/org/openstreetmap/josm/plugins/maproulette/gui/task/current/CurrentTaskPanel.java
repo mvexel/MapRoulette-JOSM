@@ -20,6 +20,8 @@ import java.awt.Insets;
 import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
 import java.util.ArrayList;
@@ -140,9 +142,21 @@ public final class CurrentTaskPanel extends JPanel {
 
     @Override public Dimension getMinimumSize(){return new Dimension(0,super.getMinimumSize().height);}};
     /**
-     * The label for the task id, and its MapRoulette status once it is finished
+     * The label for the task id, and its MapRoulette status once it is finished. The outcome is the point of the line
+     * after a finish, so it is never cut short: it goes on a line of its own when the line doesn't fit (#197).
      */
-    private final JLabel idLabel = shrinkingLabel();
+    private final JLabel idLabel=new JLabel(){@Serial private static final long serialVersionUID=5181952307519578497L;
+
+    @Override public Dimension getMinimumSize(){
+    // As wide as its longest line once the status has a line of its own, however it is shown now, so the panel's
+    // minimum doesn't depend on the last layout
+    final var metrics=this.getFontMetrics(this.getFont());final var insets=this.getInsets();var width=0;
+    // Null while the panel is built
+    final String[]lines=CurrentTaskPanel.this.idLines;for(var line:lines==null?new String[0]:lines){if(line!=null){width=Math.max(width,metrics.stringWidth(line));}}return new Dimension(width+insets.left+insets.right,super.getMinimumSize().height);}};
+    /**
+     * The lines of the {@link #idLabel}: the task and its status, then the selection, each may be {@code null}
+     */
+    private String[] idLines = new String[3];
     /**
      * Opens the task on the MapRoulette website
      */
@@ -375,6 +389,12 @@ public final class CurrentTaskPanel extends JPanel {
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
         header.add(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
         header.add(this.ownerPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
+        header.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                fitIdLabel();
+            }
+        });
         this.add(header, BorderLayout.NORTH);
         final var gbc = GBC.eol();
         this.panel.add(new JLabel(tr("Instructions: ")), gbc);
@@ -524,9 +544,8 @@ public final class CurrentTaskPanel extends JPanel {
         final var started = showsLockedTask();
         final var selection = started ? selection(ids, dataSet, TaskRows.readableName(currentTask)) : null;
         // The selection goes on a line of its own, so the narrow panel doesn't cut it off
-        this.idLabel.setText(selection == null ? header(currentTask)
-                : "<html>" + Utils.escapeReservedCharactersHTML(header(currentTask)) + "<br>"
-                        + Utils.escapeReservedCharactersHTML(selection) + "</html>");
+        final var status = TaskRows.statusLine(TaskRows.status(currentTask));
+        setIdLines(tr("Task {0}", Long.toString(currentTask.id())), status, selection);
         this.refreshState();
     }
 
@@ -906,6 +925,54 @@ enum Tone {
     }
 
     /**
+     * Set the lines of the task line
+     *
+     * @param task      Such as "Task 27", or {@code null} for no task
+     * @param status    Such as "Already fixed", or {@code null}
+     * @param selection Such as "Bench selected", or {@code null}
+     */
+    private void setIdLines(@Nullable String task, @Nullable String status, @Nullable String selection) {
+        this.idLines = new String[] { task, status, selection };
+        fitIdLabel();
+    }
+
+    /**
+     * Show the task line on one line if it fits next to the Open on MapRoulette button, else with the status on a line
+     * of its own
+     */
+    private void fitIdLabel() {
+        final var task = this.idLines[0];
+        final var status = this.idLines[1];
+        final var selection = this.idLines[2];
+        if (task == null) {
+            this.idLabel.setText(null);
+            return;
+        }
+        final var oneLine = status == null ? task : task + " · " + status;
+        final var room = this.header.getWidth() - this.openButton.getPreferredSize().width - 12;
+        final var insets = this.idLabel.getInsets();
+        final var fits = this.header.getWidth() <= 0
+                || this.idLabel.getFontMetrics(this.idLabel.getFont()).stringWidth(oneLine) + insets.left
+                        + insets.right <= room;
+        final var lines = new ArrayList<String>();
+        if (fits) {
+            lines.add(oneLine);
+        } else {
+            lines.add(task);
+            lines.add(status);
+        }
+        if (selection != null) {
+            lines.add(selection);
+        }
+        final var text = lines.size() == 1 ? lines.get(0)
+                : lines.stream().map(Utils::escapeReservedCharactersHTML)
+                        .collect(Collectors.joining("<br>", "<html>", "</html>"));
+        if (!text.equals(this.idLabel.getText())) {
+            this.idLabel.setText(text);
+        }
+    }
+
+    /**
      * Create a label that may be cut short: a long challenge name or status line must not make the panel too small to
      * use (#197)
      *
@@ -1276,7 +1343,7 @@ enum Tone {
             this.nameLink.setText(tr("No current task"));
             this.nameLink.setIcon(null);
             this.nameLink.setEnabled(false);
-            this.idLabel.setText(null);
+            setIdLines(null, null, null);
             this.openButton.setVisible(false);
             this.ownerPanel.setChallenge(null);
             this.instructionPane.setText(tr("Start a task from the list to work on it here."));

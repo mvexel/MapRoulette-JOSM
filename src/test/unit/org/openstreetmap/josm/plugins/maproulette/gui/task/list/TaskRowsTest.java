@@ -143,8 +143,8 @@ class TaskRowsTest {
     }
 
     @ParameterizedTest
-    @CsvSource(value = { ";", "CREATED;", "FIXED;Done · Fixed", "ALREADY_FIXED;Done · Already fixed",
-            "FALSE_POSITIVE;Done · Not an Issue", "SKIPPED;Skipped", "TOO_HARD;Can't Complete",
+    @CsvSource(value = { ";", "CREATED;", "FIXED;Fixed", "ALREADY_FIXED;Already fixed", "FALSE_POSITIVE;Not an Issue",
+            "SKIPPED;Skipped", "TOO_HARD;Can't Complete",
             "DELETED;Unavailable · Deleted" }, delimiter = ';', quoteCharacter = '"')
     void testStatusLine(TaskStatus status, String expected) {
         assertEquals(expected, TaskRows.statusLine(status));
