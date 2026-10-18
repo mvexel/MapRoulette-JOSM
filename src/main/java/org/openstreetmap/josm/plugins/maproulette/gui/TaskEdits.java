@@ -10,7 +10,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
+import org.openstreetmap.josm.command.Command;
+import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandAddedEvent;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandQueueCleanedEvent;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandQueueListener;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandQueuePreciseListener;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandRedoneEvent;
+import org.openstreetmap.josm.data.UndoRedoHandler.CommandUndoneEvent;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveData;
@@ -41,9 +50,12 @@ import jakarta.annotation.Nullable;
  * The OSM objects the user edits while a task is started (#115). An upload that contains one of them finishes the task.
  * Edits made before the task was started don't count, except unuploaded edits of the task's own objects, for example
  * from an autosave restored after a restart (#141). Undone edits drop out because they are not uploaded.
- * Merging a layer into another drops the edits of the merged layer, since they are recorded by object.
+ * Merging a layer into another drops the edits of the merged layer, since they are recorded by object. Undoing or
+ * redoing an edit made before Start doesn't count either, and new objects count only when an edit made after Start
+ * adds them, not when they come in with a merged layer (#130).
  */
-public final class TaskEdits implements DataSetListener, LayerChangeListener {
+public final class TaskEdits
+        implements DataSetListener, LayerChangeListener, CommandQueueListener, CommandQueuePreciseListener {
     private static final TaskEdits INSTANCE = new TaskEdits();
     /**
      * The touched objects. New objects get their real ids only after the upload, so they are kept by identity.
@@ -62,6 +74,20 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
     private final AtomicBoolean firing = new AtomicBoolean();
     private final Runnable lockListener = this::locksChanged;
     private final Runnable challengeListener = this::adoptTaskObjectEdits;
+    /**
+     * The edits made while a task is started, so undoing or redoing older edits can be told apart. Kept by identity.
+     */
+    private final Set<Command> commandsSinceStart = Collections
+            .synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+    /**
+     * What happened since the undo list last changed. JOSM fires the data changes of an undo after the undo event, and
+     * those of an edit or redo before it, so they are sorted out once the undo list has changed. Guarded by itself.
+     */
+    private final Batch batch = new Batch();
+    /**
+     * The tasks that were started when the lock listener last ran
+     */
+    private Set<Long> followedTasks = Set.of();
     private boolean started;
     /**
      * {@code true} while the OSM data layers are followed, which is while a task is started
@@ -179,6 +205,15 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
         INSTANCE.touch(List.of(primitive));
     }
 
+    /**
+     * Count the commands since Start that are still in the undo list, for tests
+     *
+     * @return The number of commands
+     */
+    static int commandsSinceStart() {
+        return INSTANCE.commandsSinceStart.size();
+    }
+
     private static boolean pending(OsmPrimitive primitive) {
         return primitive.getDataSet() != null && (primitive.isNew() || primitive.isModified() || primitive.isDeleted());
     }
@@ -188,18 +223,31 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
      * or stopped task no longer count.
      */
     private void locksChanged() {
-        final var started = !ModifiedObjects.getLockedTasks().isEmpty();
+        final var ids = ModifiedObjects.getLockedTasks().stream().map(Task::id).collect(Collectors.toSet());
+        final var started = !ids.isEmpty();
+        // The listener runs later on the EDT, so the next task may already be started when it learns that one ended
+        final var ended = !ids.containsAll(this.followedTasks);
+        this.followedTasks = ids;
         if (started && !this.attached) {
             this.attached = true;
+            UndoRedoHandler.getInstance().addCommandQueuePreciseListener(this);
+            UndoRedoHandler.getInstance().addCommandQueueListener(this);
             MainApplication.getLayerManager().addAndFireLayerChangeListener(this);
         } else if (!started && this.attached) {
             this.attached = false;
+            UndoRedoHandler.getInstance().removeCommandQueuePreciseListener(this);
+            UndoRedoHandler.getInstance().removeCommandQueueListener(this);
             MainApplication.getLayerManager().removeAndFireLayerChangeListener(this);
         }
-        if (!started && !this.touched.isEmpty()) {
-            clear();
-        }
-        if (!started) {
+        if (!started || ended) {
+            this.commandsSinceStart.clear();
+            synchronized (this.batch) {
+                this.batch.clear();
+            }
+            if (!this.touched.isEmpty()) {
+                clear();
+            }
+            // The next task takes its own baseline below, with the last task's edits in it
             this.baseline.clear();
         }
         adoptTaskObjectEdits();
@@ -237,8 +285,17 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
         if (ModifiedObjects.getLockedTasks().isEmpty() || primitives.isEmpty()) {
             return;
         }
+        var added = false;
+        synchronized (this.batch) {
+            for (var primitive : primitives) {
+                if (this.touched.add(primitive)) {
+                    this.batch.touched.add(primitive);
+                    added = true;
+                }
+            }
+        }
         // Another edit of an object already counted still changes what the task's changes show (#148)
-        if (this.touched.addAll(primitives) || !this.baseline.isEmpty()) {
+        if (added || !this.baseline.isEmpty()) {
             fire();
         }
     }
@@ -255,8 +312,13 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
 
     @Override
     public void primitivesAdded(PrimitivesAddedEvent event) {
-        // Downloads add objects too; only new objects are edits. A download can bring the task's own objects.
-        touch(event.getPrimitives().stream().filter(OsmPrimitive::isNew).toList());
+        // Downloads add objects too; only new objects are edits, and only once an edit made after Start turns out to
+        // have added them. A download can bring the task's own objects.
+        if (!ModifiedObjects.getLockedTasks().isEmpty()) {
+            synchronized (this.batch) {
+                event.getPrimitives().stream().filter(OsmPrimitive::isNew).forEach(this.batch.added::add);
+            }
+        }
         if (event.getPrimitives().stream().anyMatch(p -> !p.isNew())) {
             adoptTaskObjectEdits();
         }
@@ -305,6 +367,97 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
             touch(event.getDataset().allPrimitives().stream().filter(TaskEdits::pending).toList());
         }
         fire();
+    }
+
+    @Override
+    public void commandAdded(CommandAddedEvent e) {
+        this.commandsSinceStart.add(e.getCommand());
+        noteCommand(e.getCommand());
+    }
+
+    @Override
+    public void commandUndone(CommandUndoneEvent e) {
+        noteCommand(e.getCommand());
+    }
+
+    @Override
+    public void commandRedone(CommandRedoneEvent e) {
+        noteCommand(e.getCommand());
+    }
+
+    @Override
+    public void cleaned(CommandQueueCleanedEvent e) {
+        // The undo list lost entries; edits made since Start stay edits
+    }
+
+    private void noteCommand(Command command) {
+        final var participants = command.getParticipatingPrimitives();
+        synchronized (this.batch) {
+            (this.commandsSinceStart.contains(command) ? this.batch.sinceStart : this.batch.beforeStart)
+                    .addAll(participants);
+        }
+    }
+
+    @Override
+    public void commandChanged(int queueSize, int redoSize) {
+        if (this.commandsSinceStart.size() > queueSize + redoSize) {
+            // JOSM dropped the oldest commands from its undo list, or cleaned it
+            final var kept = Collections.newSetFromMap(new IdentityHashMap<Command, Boolean>());
+            kept.addAll(UndoRedoHandler.getInstance().getUndoCommands());
+            kept.addAll(UndoRedoHandler.getInstance().getRedoCommands());
+            this.commandsSinceStart.retainAll(kept);
+        }
+        final List<OsmPrimitive> created;
+        final var dropped = new ArrayList<OsmPrimitive>();
+        synchronized (this.batch) {
+            // New objects that an edit made after Start added, or brought back
+            created = this.batch.added.stream().filter(this.batch.sinceStart::contains).toList();
+            // Objects touched only by undoing or redoing an edit made before Start
+            for (var primitive : this.batch.touched) {
+                if (this.batch.beforeStart.contains(primitive) && !this.batch.sinceStart.contains(primitive)) {
+                    dropped.add(primitive);
+                }
+            }
+            this.batch.clear();
+        }
+        if (!dropped.isEmpty()) {
+            dropped.forEach(this.touched::remove);
+            fire();
+        }
+        touch(created);
+        // An undone edit of the task's own objects still counts if it is not uploaded yet (#141)
+        if (!dropped.isEmpty()) {
+            adoptTaskObjectEdits();
+        }
+    }
+
+    /**
+     * What happened since the undo list last changed
+     */
+    private static final class Batch {
+        /**
+         * Objects that started to count as edits
+         */
+        final Set<OsmPrimitive> touched = Collections.newSetFromMap(new IdentityHashMap<>());
+        /**
+         * New objects that appeared in the data
+         */
+        final Set<OsmPrimitive> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        /**
+         * Objects of edits made after Start that were made, undone or redone
+         */
+        final Set<OsmPrimitive> sinceStart = Collections.newSetFromMap(new IdentityHashMap<>());
+        /**
+         * Objects of edits made before Start that were undone or redone
+         */
+        final Set<OsmPrimitive> beforeStart = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        void clear() {
+            this.touched.clear();
+            this.added.clear();
+            this.sinceStart.clear();
+            this.beforeStart.clear();
+        }
     }
 
     @Override
