@@ -23,6 +23,7 @@ import javax.swing.JPanel;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.markdown.SelectParser;
@@ -107,6 +108,22 @@ public final class MRGuiHelper {
      */
     public static Stream<String> filterKeys(Stream<String> keys) {
         return keys.filter(key -> !DISCARDABLE_KEYS.contains(key));
+    }
+
+    /**
+     * Get the name of a status, as the MapRoulette website's buttons name it
+     *
+     * @param status The status
+     * @return The name
+     */
+    public static String statusLabel(TaskStatus status) {
+        return switch (status) {
+        case ALREADY_FIXED -> tr("Already fixed");
+        case FALSE_POSITIVE -> tr("Not an Issue");
+        case TOO_HARD -> tr("Can''t Complete");
+        case SKIPPED -> tr("Skip");
+        default -> status.description();
+        };
     }
 
     /**
