@@ -36,7 +36,7 @@ class MapRouletteMenuTest {
             final List<String> items = Arrays.stream(menu.getMenuComponents()).filter(JMenuItem.class::isInstance)
                     .map(c -> ((JMenuItem) c).getText()).toList();
             assertEquals(List.of("Find a challenge…", "Load tasks here", "Open challenge or task link…",
-                    "Show MapRoulette panel", "MapRoulette login…", "MapRoulette preferences…",
+                    "Show MapRoulette panel", "Next task", "MapRoulette login…", "MapRoulette preferences…",
                     "How MapRoulette in JOSM works"), items);
             assertTrue(Arrays.asList(mainMenu.getComponents()).contains(menu), "The menu is in the main menu");
             final Component load = menu.getMenuComponent(1);
