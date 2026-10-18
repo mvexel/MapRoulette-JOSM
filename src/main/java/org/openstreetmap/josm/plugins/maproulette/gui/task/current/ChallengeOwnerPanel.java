@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
@@ -46,6 +47,15 @@ final class ChallengeOwnerPanel extends JPanel {
      * usable name. The server is part of the key: an OSM id on a dev server names someone else on production.
      */
     private static final Map<String, Optional<String>> NAMES = new ConcurrentHashMap<>();
+    /**
+     * When a lookup last failed, or started, by the keys of {@link #NAMES}. The panel refreshes often, so a lookup is
+     * asked again only after a while, and not twice at once.
+     */
+    private static final Map<String, Long> TRIED = new ConcurrentHashMap<>();
+    /**
+     * How long to wait before asking again for a name that could not be looked up
+     */
+    static final long RETRY_MILLIS = TimeUnit.MINUTES.toMillis(5);
 
     private final JLabel byLabel = new JLabel(tr("Challenge by"));
     private final JLabel ownerLink = new JLabel();
@@ -99,6 +109,12 @@ final class ChallengeOwnerPanel extends JPanel {
             return;
         }
         this.setVisible(false);
+        final var now = System.currentTimeMillis();
+        final var tried = TRIED.get(key);
+        if (tried != null && now - tried < RETRY_MILLIS) {
+            return;
+        }
+        TRIED.put(key, now);
         Workers.execute(() -> {
             final var name = remember(key, owner);
             GuiHelper.runInEDT(() -> {
@@ -111,8 +127,8 @@ final class ChallengeOwnerPanel extends JPanel {
     }
 
     /**
-     * Look up an owner and remember the answer. A failure to ask isn't remembered, so the next task of this owner
-     * asks again.
+     * Look up an owner and remember the answer. A failure to ask isn't remembered: the owner is asked again after
+     * {@link #RETRY_MILLIS}.
      *
      * @param key   The key in {@link #NAMES}
      * @param owner The owner's OSM id
@@ -122,8 +138,10 @@ final class ChallengeOwnerPanel extends JPanel {
         try {
             final var name = lookUp(owner);
             NAMES.put(key, name);
+            TRIED.remove(key);
             return name;
         } catch (IOException e) {
+            TRIED.put(key, System.currentTimeMillis());
             Logging.debug("MapRoulette: could not look up challenge owner " + owner + ": " + e.getMessage());
             Logging.trace(e);
             return Optional.empty();
@@ -225,10 +243,18 @@ final class ChallengeOwnerPanel extends JPanel {
     }
 
     /**
+     * Ask again at once for names that could not be looked up, for tests
+     */
+    static void retryNow() {
+        TRIED.clear();
+    }
+
+    /**
      * Forget the names looked up so far, for tests
      */
     static void clearNames() {
         NAMES.clear();
+        TRIED.clear();
     }
 
     /**

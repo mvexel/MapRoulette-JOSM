@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -64,7 +65,7 @@ class ChallengeOwnerPanelTest {
     }
 
     /**
-     * A failed lookup is asked again, and a name from one server isn't used on another, where the same OSM id is
+     * A failed lookup is asked again after a while, and a name from one server isn't used on another, where the same OSM id is
      * someone else
      *
      * @throws Exception if the test fails
@@ -82,8 +83,13 @@ class ChallengeOwnerPanelTest {
         wireMock.register(get(path).willReturn(aResponse().withStatus(200)
                 .withBody(Files.readString(Path.of("src/test/resources/__files/api/v2/user/11353/public"))
                         .replace("11353", "918586"))));
+        // The panel refreshes often: a failed name is asked again only after a while
         show(panel, challenge);
-        assertTrue(panel.isVisible(), "a failed lookup isn't remembered");
+        assertFalse(panel.isVisible());
+        wireMock.verifyThat(1, getRequestedFor(path));
+        ChallengeOwnerPanel.retryNow();
+        show(panel, challenge);
+        assertTrue(panel.isVisible(), "a failed lookup isn't remembered for good");
 
         final var server = org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig.getInstance();
         try {
