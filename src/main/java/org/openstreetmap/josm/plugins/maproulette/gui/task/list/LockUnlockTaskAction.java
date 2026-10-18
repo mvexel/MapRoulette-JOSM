@@ -3,6 +3,7 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.list;
 
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -26,6 +27,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteLockHeldException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
@@ -89,10 +91,45 @@ final class LockUnlockTaskAction extends JosmAction {
         final var selected = this.table.getSelectionModel().getSelectedIndices();
         final var model = (TaskTableModel) this.table.getModel();
         final var ids = new long[selected.length];
+        final var done = new ArrayList<TaskClusteredPoint>();
         for (int j = 0; j < selected.length; j++) {
-            ids[j] = model.get(this.table.getRowSorter().convertRowIndexToModel(selected[j])).id();
+            final var point = model.get(this.table.getRowSorter().convertRowIndexToModel(selected[j]));
+            ids[j] = point.id();
+            final var chip = TaskRows.chip(point);
+            if (chip == TaskRows.Chip.DONE || chip == TaskRows.Chip.UNAVAILABLE) {
+                done.add(point);
+            }
+        }
+        if (!done.isEmpty() && !confirmStartDone(done)) {
+            return;
         }
         lockTasks(ids, selected, -1);
+    }
+
+    /**
+     * Ask before starting tasks that are already done, or no longer available (#142)
+     *
+     * @param done The selected tasks that are not open
+     * @return {@code true} if the user wants to start them anyway
+     */
+    private static boolean confirmStartDone(List<TaskClusteredPoint> done) {
+        final String message;
+        if (done.size() == 1) {
+            final var point = done.get(0);
+            final var modified = ModifiedObjects.getModifiedTask(point.id());
+            final var status = modified != null ? modified.status() : point.status();
+            message = tr("MapRoulette task {0} is already marked \"{1}\".\nStart it anyway?", Long.toString(point.id()),
+                    status == null ? "" : status.description());
+        } else {
+            message = trn("{0} of the selected MapRoulette tasks is already done.\nStart them anyway?",
+                    "{0} of the selected MapRoulette tasks are already done.\nStart them anyway?", done.size(),
+                    done.size());
+        }
+        final var options = new String[] { tr("Start anyway"), tr("Cancel") };
+        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(), message,
+                tr("MapRoulette task already done"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+                options, options[1]);
+        return choice == 0;
     }
 
     /**

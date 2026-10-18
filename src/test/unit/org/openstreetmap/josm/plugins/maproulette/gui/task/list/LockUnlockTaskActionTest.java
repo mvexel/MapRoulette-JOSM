@@ -82,15 +82,25 @@ class LockUnlockTaskActionTest {
     void setUp() {
         this.model = new TaskTableModel();
         MainApplication.getLayerManager().addAndFireLayerChangeListener(this.model);
-        MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
-                Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
-                        new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, TaskStatus.CREATED,
-                        null, Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
-                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
-                        Map.of()))));
+        MainApplication.getLayerManager().addLayer(layer(TaskStatus.CREATED));
         this.table = new JTable(this.model);
         this.table.setRowSorter(new TableRowSorter<>(this.model));
         this.table.getSelectionModel().setSelectionInterval(0, 0);
+    }
+
+    /**
+     * A layer with task 132279499
+     *
+     * @param status The task's status
+     * @return The layer
+     */
+    private static MapRouletteClusteredPointLayer layer(TaskStatus status) {
+        return new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0),
+                Collections.singleton(new ClusteredPoint(132279499L, 0L, "null", "title", 0L, "parentName",
+                        new Point(0, 0), "bounding", "blurb", Instant.EPOCH, Difficulty.NORMAL, 2, status, null,
+                        Instant.EPOCH, 0L, new PublicUser(0L, null, "someone", Instant.EPOCH, null),
+                        new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
+                        Map.of())));
     }
 
     @AfterEach
@@ -424,6 +434,104 @@ class LockUnlockTaskActionTest {
             }
             MapRouletteClient.getInstance().setAuthProvider(originalAuth);
         }
+    }
+
+    /**
+     * Start on a task that is already Fixed asks first; Cancel starts nothing (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartDoneTaskCancelled() throws Exception {
+        final var wireMock = WireMocks.current();
+        assertEquals(1, startDone(1).size());
+        try {
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Start on a task that is already Fixed asks first; Start anyway starts it (#142)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartDoneTaskConfirmed() throws Exception {
+        final var wireMock = WireMocks.current();
+        final var messages = startDone(0);
+        try {
+            assertEquals(1, messages.size());
+            assertTrue(messages.get(0).contains("Fixed"), messages.get(0));
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Start on an open task doesn't ask
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartOpenTaskDoesNotAsk() throws Exception {
+        final var asked = new AtomicInteger();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                asked.incrementAndGet();
+                return 1;
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        try {
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertEquals(0, asked.get());
+            assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            cleanUp();
+        }
+    }
+
+    /**
+     * Click Start on task 132279499 marked Fixed, answering the question with {@code choice}
+     *
+     * @param choice The option picked in the question
+     * @return The questions asked
+     */
+    private List<String> startDone(int choice) throws Exception {
+        MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
+                .forEach(MainApplication.getLayerManager()::removeLayer);
+        MainApplication.getLayerManager().addLayer(layer(TaskStatus.FIXED));
+        GuiHelper.runInEDTAndWait(() -> this.table.getSelectionModel().setSelectionInterval(0, 0));
+        final var messages = new CopyOnWriteArrayList<String>();
+        new MockUp<JOptionPane>() {
+            @Mock
+            int showOptionDialog(Component parentComponent, Object message, String title, int optionType,
+                    int messageType, Icon icon, Object[] options, Object initialValue) {
+                messages.add(String.valueOf(message));
+                return choice;
+            }
+        };
+        final var action = new LockUnlockTaskAction(this.table);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+            action.updateEnabledState();
+            action.actionPerformed(null);
+        });
+        sync();
+        return messages;
     }
 
     private static void cleanUp() {
