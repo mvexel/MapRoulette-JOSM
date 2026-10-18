@@ -15,6 +15,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.ListenerList;
 import org.openstreetmap.josm.tools.bugreport.BugReport;
@@ -100,6 +101,7 @@ public final class TaskStatusSender {
                     continue;
                 }
                 ModifiedObjects.setSentStatus(entry.task().id(), entry.status());
+                TaskResults.sent(entry.task().id(), entry.status());
                 // A skip has already released the lock
                 updatedTasks.put(entry.task().id(),
                         entry.status() == TaskStatus.SKIPPED ? TaskAPI.get(entry.task().id())

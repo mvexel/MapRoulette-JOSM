@@ -1,9 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.io.upload;
 
-import static org.openstreetmap.josm.tools.I18n.tr;
-
-import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,16 +10,13 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
-import javax.swing.JOptionPane;
-
-import org.openstreetmap.josm.gui.Notification;
-import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
@@ -67,6 +61,7 @@ public final class ChangesetLinks {
         for (var task : tasks) {
             if (!tryLink(task, changesetId, server) && changesetId > 0) {
                 PENDING.put(task.id(), new Pending(task, changesetId, now, server));
+                TaskResults.waiting(task.id(), changesetId);
             }
         }
     }
@@ -80,7 +75,10 @@ public final class ChangesetLinks {
      */
     static void await(List<Task> tasks, long changesetId, String server) {
         final var now = Instant.now();
-        tasks.forEach(task -> PENDING.put(task.id(), new Pending(task, changesetId, now, server)));
+        tasks.forEach(task -> {
+            PENDING.put(task.id(), new Pending(task, changesetId, now, server));
+            TaskResults.waiting(task.id(), changesetId);
+        });
     }
 
     /**
@@ -129,6 +127,7 @@ public final class ChangesetLinks {
                 PENDING.remove(pending.task().id(), pending);
                 Logging.info("Gave up linking MapRoulette task " + pending.task().id() + " to changeset "
                         + pending.changesetId());
+                TaskResults.linked(pending.task().id(), pending.changesetId(), false);
             } else if (tryLink(pending.task(), pending.changesetId(), pending.server())) {
                 PENDING.remove(pending.task().id(), pending);
             }
@@ -162,6 +161,7 @@ public final class ChangesetLinks {
         }
         try {
             TaskAPI.changeset(task.id(), changesetId);
+            TaskResults.linked(task.id(), changesetId, true);
             return true;
         } catch (IOException e) {
             if (changesetId > 0 && isTemporary(e)) {
@@ -169,14 +169,8 @@ public final class ChangesetLinks {
                 return false;
             }
             Logging.warn(e);
-            final var message = tr("MapRoulette task {0} is Fixed, but MapRoulette did not link it to your changeset.",
-                    Long.toString(task.id()));
-            if (GraphicsEnvironment.isHeadless()) {
-                Logging.info(message);
-            } else {
-                GuiHelper.runInEDT(() -> new Notification(message).setIcon(JOptionPane.INFORMATION_MESSAGE)
-                        .setDuration(Notification.TIME_LONG).show());
-            }
+            // Tells the user, in a notification and in the panel
+            TaskResults.linked(task.id(), changesetId, false);
             return true;
         }
     }

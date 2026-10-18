@@ -8,12 +8,16 @@ import static org.openstreetmap.josm.tools.I18n.trn;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
-import java.awt.Insets;
 import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
@@ -29,12 +33,14 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.UIManager;
+import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
 import javax.swing.text.StyleConstants;
@@ -74,6 +80,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskChanges;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskRows;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
@@ -141,9 +148,29 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JPanel finishCards = new JPanel(new CardLayout());
     /**
-     * The number of edits for the started task
+     * The state line: what the task is at, with the next step (#116)
      */
-    private final JLabel editsLabel = new JLabel();
+    private final JPanel statePanel = new JPanel(new GridBagLayout());
+    /**
+     * A dot in the colour of the state
+     */
+    private final JLabel stateDot = new JLabel();
+    /**
+     * The state, which can hold a link to the changeset
+     */
+    private final JMultilineLabel stateText = new JMultilineLabel("");
+    /**
+     * More about the state, in grey under it
+     */
+    private final JMultilineLabel stateHint = new JMultilineLabel("");
+    /**
+     * Sends Fixed again after the upload succeeded but Fixed could not be sent
+     */
+    private final JButton retryButton = new JButton(tr("Send again"));
+    /**
+     * Downloads the task's objects when they are not in the edit layer (#114)
+     */
+    private final JButton downloadButton = new JButton(tr("Download"));
     /**
      * What changed on the task's objects, so it can be checked before the upload (#148)
      */
@@ -160,16 +187,6 @@ public final class CurrentTaskPanel extends JPanel {
      * Asks for a review of the task
      */
     private final JCheckBox reviewBox = new JCheckBox(tr("Ask for a review"));
-    /**
-     * Shown when the upload succeeded but Fixed could not be sent
-     */
-    private final JPanel unfinishedPanel = new JPanel(new GridBagLayout());
-    private final JLabel unfinishedLabel = new JLabel();
-    /**
-     * Shown when the task's objects are not in the edit layer, with a button to download them (#114)
-     */
-    private final JPanel dataPanel = new JPanel(new GridBagLayout());
-    private final JLabel dataLabel = new JLabel();
     /**
      * The task whose objects a download did not bring, or {@code -1}
      */
@@ -294,23 +311,25 @@ public final class CurrentTaskPanel extends JPanel {
         this.commentField.setHint(tr("Comment for MapRoulette (optional)"));
         this.commentField.setToolTipText(tr("Sent with the task''s status"));
         this.tagBox.setToolTipText(tr("Task tags for MapRoulette (optional)"));
-        this.unfinishedLabel
-                .setForeground(UIManager.getColor("Component.warningForeground") == null ? Color.RED.darker()
-                        : UIManager.getColor("Component.warningForeground"));
-        this.unfinishedPanel.add(this.unfinishedLabel, GBC.std().fill(GBC.HORIZONTAL));
-        final var retry = new JButton(tr("Send again"));
-        retry.addActionListener(
+        this.retryButton.addActionListener(
                 e -> Optional.ofNullable(this.task).map(Task::id).ifPresent(LateUploadHook::retryFinish));
-        this.unfinishedPanel.add(retry, GBC.eol().anchor(GBC.LINE_END));
-        this.dataPanel.add(this.dataLabel, GBC.std().fill(GBC.HORIZONTAL));
-        final var download = new JButton(tr("Download"));
-        download.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
-        download.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
-        this.dataPanel.add(download, GBC.eol().anchor(GBC.LINE_END));
+        this.downloadButton.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
+        this.downloadButton.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
+        // The text wraps beside the dot; a fix for the state sits at the end of the line
+        this.stateText.addHyperlinkListener(e -> {
+            if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null) {
+                OpenBrowser.displayUrl(e.getURL().toString());
+            }
+        });
+        this.stateHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
+        // Fixed cells, since the buttons come and go
+        this.statePanel.add(this.stateDot, GBC.std(0, 0).anchor(GBC.FIRST_LINE_START).insets(0, 5, 4, 0));
+        this.statePanel.add(this.stateText, GBC.std(1, 0).fill(GBC.HORIZONTAL));
+        this.statePanel.add(this.retryButton, GBC.std(2, 0).anchor(GBC.FIRST_LINE_END).insets(4, 0, 0, 0));
+        this.statePanel.add(this.downloadButton, GBC.std(3, 0).anchor(GBC.FIRST_LINE_END).insets(4, 0, 0, 0));
+        this.statePanel.add(this.stateHint, GBC.std(1, 1).span(3).fill(GBC.HORIZONTAL));
         final var south = this.south;
-        south.add(this.dataPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        south.add(this.statePanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.changesLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         // A link-like line, so the fields take no room until they are wanted
         this.feedbackToggle.setBorderPainted(false);
@@ -355,6 +374,7 @@ public final class CurrentTaskPanel extends JPanel {
         TaskEdits.addListener(this.editsListener);
         ModifiedObjects.addLockListener(this.editsListener);
         TaskStatusSender.addListener(this.sentListener);
+        TaskResults.addListener(this.editsListener);
         ChallengeCache.addListener(this.challengeListener);
         SelectionEventManager.getInstance().addSelectionListenerForEdt(this.selectionListener);
         this.refreshPanel();
@@ -382,6 +402,7 @@ public final class CurrentTaskPanel extends JPanel {
         TaskEdits.removeListener(this.editsListener);
         ModifiedObjects.removeLockListener(this.editsListener);
         TaskStatusSender.removeListener(this.sentListener);
+        TaskResults.removeListener(this.editsListener);
         ChallengeCache.removeListener(this.challengeListener);
         SelectionEventManager.getInstance().removeSelectionListener(this.selectionListener);
     }
@@ -417,37 +438,209 @@ public final class CurrentTaskPanel extends JPanel {
     private void refreshDataState() {
         final var currentTask = this.task;
         if (currentTask == null) {
-            this.dataPanel.setVisible(false);
+            this.refreshState();
             return;
         }
         final List<PrimitiveId> ids = TaskPrimitives.cachedPrimitiveIds(currentTask).map(List::copyOf)
                 .orElse(List.of());
         final var dataSet = MainApplication.getLayerManager().getEditDataSet();
-        this.dataPanel.setVisible(!TaskData.missing(ids, dataSet).isEmpty());
-        // A download that brought nothing: the server may be unreachable, or the objects deleted on OSM (#145)
-        this.dataLabel.setText(this.notDownloaded == currentTask.id()
-                ? tr("Task {0}''s objects could not be downloaded. They may no longer exist on OpenStreetMap.",
-                        Long.toString(currentTask.id()))
-                : tr("The task''s objects are not in the data."));
         final var started = showsLockedTask();
         final var selection = started ? selection(ids, dataSet, TaskRows.readableName(currentTask)) : null;
         // The selection goes on a line of its own, so the narrow panel doesn't cut it off
-        this.idLabel.setText(selection == null ? header(currentTask, started)
-                : "<html>" + Utils.escapeReservedCharactersHTML(header(currentTask, true)) + "<br>"
+        this.idLabel.setText(selection == null ? header(currentTask)
+                : "<html>" + Utils.escapeReservedCharactersHTML(header(currentTask)) + "<br>"
                         + Utils.escapeReservedCharactersHTML(selection) + "</html>");
+        this.refreshState();
     }
 
     /**
-     * Get the header line of a task
-     *
-     * @param task    The task
-     * @param started {@code true} if the user started the task
-     * @return "Working on task 27" once the task is started, "Task 27" otherwise, followed by the MapRoulette status
-     *         when the task isn't open, such as "Task 27 · Done · Already fixed" (#146)
+     * Show the state line of the task
      */
-    static String header(Task task, boolean started) {
+    private void refreshState() {
+        final var currentTask = this.task;
+        final State state;
+        if (currentTask == null) {
+            state = null;
+        } else {
+            final List<PrimitiveId> ids = TaskPrimitives.cachedPrimitiveIds(currentTask).map(List::copyOf)
+                    .orElse(List.of());
+            final var missing = !TaskData.missing(ids, MainApplication.getLayerManager().getEditDataSet()).isEmpty();
+            state = state(currentTask, showsLockedTask(), TaskEdits.count(), TaskResults.get(currentTask.id()),
+                    ModifiedObjects.isFinishPending(currentTask.id()), LateUploadHook.isUnfinished(currentTask.id()),
+                    missing, this.notDownloaded == currentTask.id());
+        }
+        this.apply(state);
+    }
+
+    /**
+     * Show a state line
+     *
+     * @param state The state, or {@code null} to hide the line
+     */
+    void apply(@Nullable State state) {
+        this.statePanel.setVisible(state != null);
+        if (state == null) {
+            return;
+        }
+        this.stateDot.setIcon(new Dot(state.tone().color()));
+        this.stateText.setText("<html>" + state.html() + "</html>");
+        this.stateHint.setVisible(state.hint() != null);
+        // It renders HTML, which ignores setForeground, so the grey goes into the text
+        final var grey = Optional.ofNullable(UIManager.getColor("Label.disabledForeground")).orElse(Color.GRAY);
+        this.stateHint.setText(state.hint() == null ? ""
+                : String.format("<html><span style=\"color:#%06x\">%s</span></html>", grey.getRGB() & 0xFFFFFF,
+                        Utils.escapeReservedCharactersHTML(state.hint())));
+        this.retryButton.setVisible(state.fix() == Fix.SEND_AGAIN);
+        this.downloadButton.setVisible(state.fix() == Fix.DOWNLOAD);
+        this.statePanel.revalidate();
+    }
+
+    /**
+     * The colour of a state
+     */
+    enum Tone {
+        /** The task is started */
+        WORKING(new Color(0x2e7d32)),
+        /** MapRoulette recorded the result */
+        DONE(new Color(0x1f5fad)),
+        /** Something needs the user */
+        WARNING(new Color(0xd08a00)),
+        /** Waiting for something */
+        WAITING(Color.GRAY);
+
+        private final Color color;
+
+        Tone(Color color) {
+            this.color = color;
+        }
+
+        Color color() {
+            return this.color;
+        }
+    }
+
+    /**
+     * The button that fixes a state
+     */
+    enum Fix {
+        /** None */
+        NONE,
+        /** Send Fixed again */
+        SEND_AGAIN,
+        /** Download the task's objects */
+        DOWNLOAD
+    }
+
+    /**
+     * The state line of a task
+     *
+     * @param tone The colour
+     * @param html The state, as HTML without the html element
+     * @param hint More about it, as plain text, or {@code null}
+     * @param fix  The button that fixes it
+     */
+    record State(Tone tone, String html, @Nullable String hint, Fix fix) {
+    }
+
+    /**
+     * Get the state line of a task: the first of an upload that finishes it, a Fixed that could not be sent, missing
+     * objects, the work on a started task, and the result MapRoulette recorded
+     *
+     * @param task          The task
+     * @param started       {@code true} if the user started it
+     * @param edits         The edits for the started task
+     * @param result        What MapRoulette recorded since the task was last started, or {@code null}
+     * @param finishPending {@code true} while an upload that finishes the task runs
+     * @param unfinished    {@code true} if the upload succeeded but Fixed could not be sent
+     * @param missing       {@code true} if the task's objects are not in the edit layer
+     * @param notDownloaded {@code true} if a download did not bring them
+     * @return The state, or {@code null} for none
+     */
+    @Nullable
+    static State state(Task task, boolean started, int edits, @Nullable TaskResults.Result result,
+            boolean finishPending, boolean unfinished, boolean missing, boolean notDownloaded) {
         final var id = Long.toString(task.id());
-        final var header = started ? tr("Working on task {0}", id) : tr("Task {0}", id);
+        if (finishPending) {
+            return new State(Tone.WAITING,
+                    html(tr("Uploading. Task {0} is marked Fixed once the upload succeeds.", id)), null, Fix.NONE);
+        } else if (unfinished) {
+            return new State(Tone.WARNING,
+                    html(tr("Your edits are uploaded, but Fixed was not sent for task {0}.", id)), null,
+                    Fix.SEND_AGAIN);
+        } else if (missing && (started || result == null)) {
+            // A download that brought nothing: the server may be unreachable, or the objects deleted on OSM (#145)
+            return new State(Tone.WARNING,
+                    html(notDownloaded ? tr("Task {0}''s objects could not be downloaded. They may no longer exist on "
+                            + "OpenStreetMap.", id) : tr("The task''s objects are not in the data.")),
+                    null, Fix.DOWNLOAD);
+        } else if (started && task.isChoiceTask()) {
+            return new State(Tone.WORKING, html(tr("Working on task {0}", id)), null, Fix.NONE);
+        } else if (started) {
+            return edits == 0
+                    ? new State(Tone.WORKING, html(tr("Working on task {0} · no edits since it was started", id)),
+                            noEditsReason(), Fix.NONE)
+                    : new State(Tone.WORKING, html(trn("Working on task {1} · {0} edit so far",
+                            "Working on task {1} · {0} edits so far", edits, edits, id)), null, Fix.NONE);
+        } else if (result != null) {
+            return new State(result.link() == TaskResults.Link.FAILED ? Tone.WARNING : Tone.DONE, result.html(), null,
+                    Fix.NONE);
+        }
+        return null;
+    }
+
+    /**
+     * Explain why a started task has no edits, which is why Upload is disabled
+     *
+     * @return The explanation
+     */
+    static String noEditsReason() {
+        return tr("Edits from before Start or from before a restart aren''t counted. Already uploaded them? Use "
+                + "Already fixed.");
+    }
+
+    private static String html(String text) {
+        return Utils.escapeReservedCharactersHTML(text);
+    }
+
+    /**
+     * A filled dot in the colour of the state, the same size as the text
+     *
+     * @param color The colour
+     */
+    private record Dot(Color color) implements Icon {
+
+    private static final int SIZE = 8;
+
+    @Override
+    public void paintIcon(Component c, Graphics g, int x, int y) {
+        final var g2 = (Graphics2D) g.create();
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setColor(this.color);
+        g2.fillOval(x, y, SIZE, SIZE);
+        g2.dispose();
+    }
+
+    @Override
+    public int getIconWidth() {
+        return SIZE;
+    }
+
+    @Override
+    public int getIconHeight() {
+        return SIZE;
+    }
+
+    }
+
+    /**
+     * Get the header line of a task. The state line says whether it is started (#116).
+     *
+     * @param task The task
+     * @return "Task 27", followed by the MapRoulette status when the task isn't open, such as "Task 27 · Done ·
+     *         Already fixed" (#146)
+     */
+    static String header(Task task) {
+        final var header = tr("Task {0}", Long.toString(task.id()));
         final var status = TaskRows.statusLine(TaskRows.status(task));
         return status == null ? header : header + " · " + status;
     }
@@ -553,7 +746,7 @@ public final class CurrentTaskPanel extends JPanel {
         final var width = Math.max(this.statusButtons.getPreferredSize().width, this.header.getMinimumSize().width);
         // The notices and the opened feedback fields come and go; leave them out, so the minimum stays put
         var south = this.south.getPreferredSize().height;
-        for (var notice : List.of(this.dataPanel, this.unfinishedPanel, this.changesLabel)) {
+        for (var notice : List.of(this.stateHint, this.changesLabel)) {
             if (notice.isVisible()) {
                 south -= notice.getPreferredSize().height + 4;
             }
@@ -620,18 +813,12 @@ public final class CurrentTaskPanel extends JPanel {
     }
 
     /**
-     * Show the edit count, a Fixed that could not be sent, and whether the upload can finish the task
+     * Show the state line, the task's changes, and whether the upload can finish the task
      */
     private void refreshFinish() {
         final var currentTask = this.task;
         final var started = currentTask != null && showsLockedTask() && !currentTask.isChoiceTask();
         final var edits = TaskEdits.count();
-        this.editsLabel.setVisible(started);
-        if (started) {
-            this.editsLabel.setText(edits == 0 ? tr("No edits yet for task {0}", Long.toString(currentTask.id()))
-                    : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits,
-                            Long.toString(currentTask.id())));
-        }
         final var summary = started && edits > 0
                 ? TaskChanges.of(currentTask, MainApplication.getLayerManager().getEditDataSet())
                 : TaskChanges.Summary.NONE;
@@ -641,12 +828,7 @@ public final class CurrentTaskPanel extends JPanel {
                 .setText(summary.lines().stream().map(line -> "\u2022 " + Utils.escapeReservedCharactersHTML(line))
                         .collect(Collectors.joining("<br>", "<html>", summary.warning() == null ? "</html>"
                                 : "<br>" + Utils.escapeReservedCharactersHTML(summary.warning()) + "</html>")));
-        final var unfinished = currentTask != null && LateUploadHook.isUnfinished(currentTask.id());
-        this.unfinishedPanel.setVisible(unfinished);
-        if (unfinished) {
-            this.unfinishedLabel.setText(tr("Your edits are uploaded, but Fixed was not sent for task {0}.",
-                    Long.toString(currentTask.id())));
-        }
+        this.refreshState();
         ((CardLayout) this.finishCards.getLayout()).show(this.finishCards,
                 currentTask != null && currentTask.cooperativeWork() != null && !currentTask.isChoiceTask()
                         ? COOPERATIVE_CARD
@@ -730,7 +912,7 @@ public final class CurrentTaskPanel extends JPanel {
         refreshFeedbackFold();
         refreshFinish();
         if (currentTask == null) {
-            this.dataPanel.setVisible(false);
+            this.refreshState();
             this.instructionPending = false;
             this.challengeLabel.setText(null);
             this.nameLink.setText(tr("No current task"));
@@ -1001,7 +1183,8 @@ private static final class FinishAction extends InnerAction {
             this.setTooltip(MapRouletteAuth.unavailableTooltip());
         } else if (TaskEdits.count() == 0) {
             this.setEnabled(false);
-            this.setTooltip(tr("Edit the map for this task first. Uploading the edits finishes the task."));
+            this.setTooltip(tr("No edits for task {0} since it was started.", Long.toString(task.id())) + ' '
+                    + noEditsReason());
         } else {
             this.setEnabled(true);
             this.setTooltip(tr("Upload your edits to OpenStreetMap, which finishes the task"));

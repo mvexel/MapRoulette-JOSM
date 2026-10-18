@@ -70,6 +70,8 @@ public final class ModifiedObjects {
     public static boolean addLockedTask(Task task) {
         // A new lock: refresh it even if the old one was lost
         LockRefresher.forget(task.id());
+        // The panel confirms a result only until the task is started again
+        TaskResults.clear(task.id());
         final var changed = LOCKED_TASK_MAP.put(task.id(), task) == null;
         if (changed) {
             fireLocksChanged();

@@ -128,10 +128,6 @@ class MapRouletteDialogTest {
             };
             GuiHelper.runInEDTAndWait(nameLink::doClick);
             assertEquals(List.of(task), zoomed, "Clicking the name zooms to the task");
-            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.notDownloaded(task.id()));
-            assertNotNull(TaskListPanelTest.find(panel, JLabel.class,
-                    l -> ("Task 27's objects could not be downloaded." + " They may no longer exist on OpenStreetMap.")
-                            .equals(l.getText())));
             assertEquals("Challenge 1", ((JLabel) ((Container) panel.getComponent(0)).getComponent(0)).getText(),
                     "The challenge is not cached, so its id is shown");
         } finally {
