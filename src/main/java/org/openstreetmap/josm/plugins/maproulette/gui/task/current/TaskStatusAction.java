@@ -114,6 +114,7 @@ class TaskStatusAction extends CurrentTaskPanel.InnerAction {
         case ALREADY_FIXED -> tr("Nothing to edit: someone already fixed this");
         case FALSE_POSITIVE -> tr("Nothing to edit: the task is wrong, there is nothing to fix");
         case TOO_HARD -> tr("Nothing to edit: you can''t fix this one, for example it can''t be seen on the imagery");
+        case SKIPPED -> tr("Put the task back for later");
         default -> label(status);
         };
     }

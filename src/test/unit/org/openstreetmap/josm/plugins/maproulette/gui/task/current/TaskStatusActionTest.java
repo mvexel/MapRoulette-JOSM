@@ -94,7 +94,7 @@ class TaskStatusActionTest {
         for (var status : List.of(TaskStatus.ALREADY_FIXED, TaskStatus.FALSE_POSITIVE, TaskStatus.TOO_HARD)) {
             assertTrue(TaskStatusAction.tooltip(status).startsWith("Nothing to edit: "), status.name());
         }
-        assertEquals("Skip", TaskStatusAction.tooltip(TaskStatus.SKIPPED));
+        assertEquals("Put the task back for later", TaskStatusAction.tooltip(TaskStatus.SKIPPED));
         assertEquals("Skip", TaskStatusAction.label(TaskStatus.SKIPPED));
     }
 

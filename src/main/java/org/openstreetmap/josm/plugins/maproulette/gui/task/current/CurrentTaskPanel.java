@@ -131,15 +131,18 @@ public final class CurrentTaskPanel extends JPanel {
     /**
      * The name of the challenge of the task
      */
-    private final JLabel challengeLabel = new JLabel();
+    private final JLabel challengeLabel = shrinkingLabel();
     /**
-     * The name of the task. It zooms to the task, so the user finds the way back after panning away (#145).
+     * The name of the task. It zooms to the task, so the user finds the way back after panning away (#145). Like the
+     * labels below, it cuts its text short in a narrow panel instead of making the panel too small to use (#197).
      */
-    private final JButton nameLink = new JButton();
+    private final JButton nameLink=new JButton(){@Serial private static final long serialVersionUID=4471318431296470651L;
+
+    @Override public Dimension getMinimumSize(){return new Dimension(0,super.getMinimumSize().height);}};
     /**
-     * The label for the task id
+     * The label for the task id, and its MapRoulette status once it is finished
      */
-    private final JLabel idLabel = new JLabel();
+    private final JLabel idLabel = shrinkingLabel();
     /**
      * Opens the task on the MapRoulette website
      */
@@ -900,6 +903,31 @@ enum Tone {
         return SIZE;
     }
 
+    }
+
+    /**
+     * Create a label that may be cut short: a long challenge name or status line must not make the panel too small to
+     * use (#197)
+     *
+     * @return The label
+     */
+    private static JLabel shrinkingLabel() {
+        return new JLabel() {
+            @Serial
+            private static final long serialVersionUID = -2290529437870375493L;
+
+            @Override
+            public Dimension getMinimumSize() {
+                return new Dimension(0, super.getMinimumSize().height);
+            }
+
+            @Override
+            public void setText(String text) {
+                super.setText(text);
+                // The whole text, for when it is cut short
+                this.setToolTipText(text);
+            }
+        };
     }
 
     /**
