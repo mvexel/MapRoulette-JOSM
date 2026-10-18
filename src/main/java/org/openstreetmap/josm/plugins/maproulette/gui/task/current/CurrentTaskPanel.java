@@ -138,25 +138,12 @@ public final class CurrentTaskPanel extends JPanel {
      * The name of the task. It zooms to the task, so the user finds the way back after panning away (#145). Like the
      * labels below, it cuts its text short in a narrow panel instead of making the panel too small to use (#197).
      */
-    private final JButton nameLink=new JButton(){@Serial private static final long serialVersionUID=4471318431296470651L;
-
-    @Override public Dimension getMinimumSize(){return new Dimension(0,super.getMinimumSize().height);}};
+    private final JButton nameLink = new ShrinkingButton();
     /**
      * The label for the task id, and its MapRoulette status once it is finished. The outcome is the point of the line
      * after a finish, so it is never cut short: it goes on a line of its own when the line doesn't fit (#197).
      */
-    private final JLabel idLabel=new JLabel(){@Serial private static final long serialVersionUID=5181952307519578497L;
-
-    @Override public Dimension getMinimumSize(){
-    // As wide as its longest line once the status has a line of its own, however it is shown now, so the panel's
-    // minimum doesn't depend on the last layout
-    final var metrics=this.getFontMetrics(this.getFont());final var insets=this.getInsets();var width=0;
-    // Null while the panel is built
-    final String[]lines=CurrentTaskPanel.this.idLines;for(var line:lines==null?new String[0]:lines){if(line!=null){width=Math.max(width,metrics.stringWidth(line));}}return new Dimension(width+insets.left+insets.right,super.getMinimumSize().height);}};
-    /**
-     * The lines of the {@link #idLabel}: the task and its status, then the selection, each may be {@code null}
-     */
-    private String[] idLines = new String[3];
+    private final TaskLineLabel idLabel = new TaskLineLabel();
     /**
      * Opens the task on the MapRoulette website
      */
@@ -252,9 +239,13 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private long notDownloaded = -1;
     /**
+     * The left and right insets of the header's rows
+     */
+    private static final int HEADER_INSETS = 8;
+    /**
      * The task name and id, above the instructions
      */
-    private final JPanel header = new JPanel(new GridBagLayout());
+    private final JPanel header = new HeaderPanel();
     /**
      * The state line, the feedback and the notes, below the instructions
      */
@@ -932,7 +923,7 @@ enum Tone {
      * @param selection Such as "Bench selected", or {@code null}
      */
     private void setIdLines(@Nullable String task, @Nullable String status, @Nullable String selection) {
-        this.idLines = new String[] { task, status, selection };
+        this.idLabel.lines = new String[] { task, status, selection };
         fitIdLabel();
     }
 
@@ -941,19 +932,28 @@ enum Tone {
      * of its own
      */
     private void fitIdLabel() {
-        final var task = this.idLines[0];
-        final var status = this.idLines[1];
-        final var selection = this.idLines[2];
+        final var task = this.idLabel.lines[0];
+        final var status = this.idLabel.lines[1];
+        final var selection = this.idLabel.lines[2];
         if (task == null) {
             this.idLabel.setText(null);
             return;
         }
         final var oneLine = status == null ? task : task + " · " + status;
-        final var room = this.header.getWidth() - this.openButton.getPreferredSize().width - 12;
+        final var metrics = this.idLabel.getFontMetrics(this.idLabel.getFont());
         final var insets = this.idLabel.getInsets();
-        final var fits = this.header.getWidth() <= 0
-                || this.idLabel.getFontMetrics(this.idLabel.getFont()).stringWidth(oneLine) + insets.left
-                        + insets.right <= room;
+        final var oneLineWidth = metrics.stringWidth(oneLine) + insets.left + insets.right;
+        final var wrappedWidth = Math.max(metrics.stringWidth(task), status == null ? 0 : metrics.stringWidth(status))
+                + insets.left + insets.right;
+        final var width = this.header.getWidth();
+        final var beside = width - this.openButton.getPreferredSize().width - HEADER_INSETS - 4;
+        // One line next to the button, else two lines next to it, else the button goes under the task line
+        final var stacked = width > 0 && wrappedWidth > beside;
+        final var room = stacked ? width - HEADER_INSETS : beside;
+        final var fits = width <= 0 || oneLineWidth <= room;
+        final var layout = (GridBagLayout) this.header.getLayout();
+        layout.setConstraints(this.idLabel, (stacked ? GBC.eol() : GBC.std()).fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
+        layout.setConstraints(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(stacked ? 4 : 0, 0, 4, 2));
         final var lines = new ArrayList<String>();
         if (fits) {
             lines.add(oneLine);
@@ -970,6 +970,7 @@ enum Tone {
         if (!text.equals(this.idLabel.getText())) {
             this.idLabel.setText(text);
         }
+        this.header.revalidate();
     }
 
     /**
@@ -1657,5 +1658,68 @@ private static class SelectOsmPrimitives extends InnerAction {
             // A task with no objects zooms to its location
             this.setEnabled(task != null);
         }
+    }
+}
+
+/**
+ * A button that may cut its text short: a long task name must not make the panel too small to use (#197)
+ */
+private static final class ShrinkingButton extends JButton {
+    @Serial
+    private static final long serialVersionUID = 4471318431296470651L;
+
+    @Override
+    public Dimension getMinimumSize() {
+        return new Dimension(0, super.getMinimumSize().height);
+    }
+}
+
+/**
+ * The task line. Its minimum width is that of its longest line once the status has a line of its own, however it
+ * is shown now, so the panel's minimum doesn't depend on the last layout (#197).
+ */
+private static final class TaskLineLabel extends JLabel {
+    @Serial
+    private static final long serialVersionUID = 5181952307519578497L;
+    /**
+     * The task and its status, then the selection, each may be {@code null}
+     */
+    private String[] lines = new String[3];
+
+    @Override
+    public Dimension getMinimumSize() {
+        final var metrics = this.getFontMetrics(this.getFont());
+        final var insets = this.getInsets();
+        var width = 0;
+        for (var line : this.lines) {
+            if (line != null) {
+                width = Math.max(width, metrics.stringWidth(line));
+            }
+        }
+        return new Dimension(width + insets.left + insets.right, super.getMinimumSize().height);
+    }
+}
+
+/**
+ * The header. Its rows may stack, with the task line over the Open on MapRoulette button, so it is as narrow as its
+ * widest part however it is laid out now (#197).
+ */
+private static final class HeaderPanel extends JPanel {
+    @Serial
+    private static final long serialVersionUID = -3528386771755049442L;
+
+    HeaderPanel() {
+        super(new GridBagLayout());
+    }
+
+    @Override
+    public Dimension getMinimumSize() {
+        var width = 0;
+        for (var child : this.getComponents()) {
+            if (child.isVisible()) {
+                width = Math.max(width, child.getMinimumSize().width + HEADER_INSETS);
+            }
+        }
+        return new Dimension(width, super.getMinimumSize().height);
     }
 }}

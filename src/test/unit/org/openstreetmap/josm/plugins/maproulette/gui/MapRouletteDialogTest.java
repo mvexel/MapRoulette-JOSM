@@ -369,7 +369,7 @@ class MapRouletteDialogTest {
             GuiHelper.runInEDTAndWait(() -> layOut(panel));
             final var line = TaskListPanelTest.find(panel, JLabel.class,
                     l -> l.getText() != null && l.getText().contains("Not an Issue"));
-            assertEquals("<html>Task 147197178<br>Not an Issue</html>", line.getText(), "The outcome wraps");
+            // On one line, two lines, or over the Open on MapRoulette button, depending on the fonts: never cut
             assertTrue(line.getWidth() >= line.getPreferredSize().width,
                     () -> line.getWidth() + " for " + line.getPreferredSize());
         } finally {
