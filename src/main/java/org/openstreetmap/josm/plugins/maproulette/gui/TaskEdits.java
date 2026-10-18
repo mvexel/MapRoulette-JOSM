@@ -247,8 +247,7 @@ public final class TaskEdits
             if (!this.touched.isEmpty()) {
                 clear();
             }
-        }
-        if (!started) {
+            // The next task takes its own baseline below, with the last task's edits in it
             this.baseline.clear();
         }
         adoptTaskObjectEdits();

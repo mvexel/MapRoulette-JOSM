@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -17,13 +19,18 @@ import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
+
+import mockit.Mock;
+import mockit.MockUp;
 
 /**
  * Test class for {@link TaskEdits}
@@ -234,6 +241,37 @@ class TaskEditsTest {
         UndoRedoHandler.getInstance().redo();
         assertEquals(0, TaskEdits.count(), "Undoing and redoing the last task's edit");
         assertFalse(TaskEdits.touches(List.of(bench)));
+    }
+
+    /**
+     * An object both tasks name: the next task's changes are shown against the object as the last task left it (#130)
+     */
+    @Test
+    void testNextTaskBaselineOfSharedObject() {
+        TaskEdits.start();
+        final var bench = new Node(LatLon.ZERO);
+        bench.setOsmId(8, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(bench);
+        new MockUp<TaskPrimitives>() {
+            @Mock
+            Optional<Collection<PrimitiveId>> cachedPrimitiveIds(Task task) {
+                return Optional.of(List.of(bench.getPrimitiveId()));
+            }
+        };
+        MainApplication.getLayerManager()
+                .addLayer(new OsmDataLayer(dataSet, "testNextTaskBaselineOfSharedObject", null));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(bench, "amenity", "bench"));
+
+        // As the auto-start after Fixed does: both changes reach the listener after the next task is started
+        ModifiedObjects.removeLockedTask(TASK);
+        ModifiedObjects.addLockedTask(NEXT_TASK);
+        sync();
+        UndoRedoHandler.getInstance().add(new ChangePropertyCommand(bench, "backrest", "yes"));
+        assertEquals("bench", TaskEdits.baseline(bench).get("amenity"), "The last task's edit is in the baseline");
+        assertEquals(null, TaskEdits.baseline(bench).get("backrest"));
     }
 
     /**
