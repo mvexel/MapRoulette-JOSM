@@ -43,11 +43,22 @@ public final class TaskArea {
      * @return {@code true} if it is one of the task's objects, or near the task
      */
     public static boolean concerns(@Nonnull Task task, @Nonnull OsmPrimitive primitive) {
+        return concerns(task, area(task), primitive);
+    }
+
+    /**
+     * Check if an edited object concerns a task, with the task's area already known
+     *
+     * @param task      The task
+     * @param area      The task's area, from {@link #area(Task)}
+     * @param primitive The edited object
+     * @return {@code true} if it is one of the task's objects, or near the task
+     */
+    static boolean concerns(@Nonnull Task task, @Nullable BBox area, @Nonnull OsmPrimitive primitive) {
         if (TaskPrimitives.cachedPrimitiveIds(task).map(ids -> ids.contains(primitive.getPrimitiveId()))
                 .orElse(false)) {
             return true;
         }
-        final var area = area(task);
         return area != null && near(area, primitive, Collections.newSetFromMap(new IdentityHashMap<>()));
     }
 

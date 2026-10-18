@@ -6,12 +6,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.PrimitiveData;
 import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSetListener;
@@ -33,6 +35,7 @@ import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 
 import jakarta.annotation.Nonnull;
+import jakarta.annotation.Nullable;
 
 /**
  * The OSM objects the user edits while a task is started (#115). An upload that contains one of them finishes the task.
@@ -47,6 +50,11 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
      */
     private final Set<OsmPrimitive> touched = Collections
             .synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+    /**
+     * The started tasks' own objects as they were when they first appeared in the data after Start, to show what
+     * changed (#148). Edits from before Start are part of it.
+     */
+    private final Map<OsmPrimitive, PrimitiveData> baseline = Collections.synchronizedMap(new IdentityHashMap<>());
     /**
      * Called on the EDT when the edits change
      */
@@ -131,6 +139,30 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
     }
 
     /**
+     * Get a task object as it was when it first appeared in the data after Start
+     *
+     * @param primitive The task object
+     * @return Its saved state, or {@code null} if it was not seen while a task was started
+     */
+    @Nullable
+    public static PrimitiveData baseline(@Nonnull OsmPrimitive primitive) {
+        return INSTANCE.baseline.get(primitive);
+    }
+
+    /**
+     * Get the objects created while a task was started that are still waiting for an upload
+     *
+     * @return The new objects
+     */
+    @Nonnull
+    public static List<OsmPrimitive> created() {
+        synchronized (INSTANCE.touched) {
+            return INSTANCE.touched.stream().filter(p -> p.isNew() && !p.isDeleted() && p.getDataSet() != null)
+                    .toList();
+        }
+    }
+
+    /**
      * Forget the edits, for example once the task is finished
      */
     public static void clear() {
@@ -167,6 +199,9 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
         if (!started && !this.touched.isEmpty()) {
             clear();
         }
+        if (!started) {
+            this.baseline.clear();
+        }
         adoptTaskObjectEdits();
     }
 
@@ -184,6 +219,11 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
             for (var layer : MainApplication.getLayerManager().getLayersOfType(OsmDataLayer.class)) {
                 for (var id : ids) {
                     final var primitive = layer.getDataSet().getPrimitiveById(id);
+                    if (primitive != null && !primitive.isIncomplete()) {
+                        // Taken when the object first shows up for a started task. If the challenge is cached only
+                        // after Start, edits made in between count as made before Start.
+                        this.baseline.computeIfAbsent(primitive, OsmPrimitive::save);
+                    }
                     if (primitive != null && pending(primitive)) {
                         edited.add(primitive);
                     }
@@ -197,7 +237,8 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
         if (ModifiedObjects.getLockedTasks().isEmpty() || primitives.isEmpty()) {
             return;
         }
-        if (this.touched.addAll(primitives)) {
+        // Another edit of an object already counted still changes what the task's changes show (#148)
+        if (this.touched.addAll(primitives) || !this.baseline.isEmpty()) {
             fire();
         }
     }
@@ -214,8 +255,11 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
 
     @Override
     public void primitivesAdded(PrimitivesAddedEvent event) {
-        // Downloads add objects too; only new objects are edits
+        // Downloads add objects too; only new objects are edits. A download can bring the task's own objects.
         touch(event.getPrimitives().stream().filter(OsmPrimitive::isNew).toList());
+        if (event.getPrimitives().stream().anyMatch(p -> !p.isNew())) {
+            adoptTaskObjectEdits();
+        }
     }
 
     @Override
@@ -278,6 +322,9 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
             dataSet.removeDataSetListener(this);
             synchronized (this.touched) {
                 this.touched.removeIf(p -> p.getDataSet() == dataSet || p.getDataSet() == null);
+            }
+            synchronized (this.baseline) {
+                this.baseline.keySet().removeIf(p -> p.getDataSet() == dataSet || p.getDataSet() == null);
             }
             fire();
         }

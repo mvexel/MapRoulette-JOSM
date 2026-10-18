@@ -189,6 +189,12 @@ class EarlyUploadHookTest {
 
         assertTrue(hook.checkUpload(new APIDataSet(far.getDataSet())));
         assertEquals(1, dialogs.getInvocationLog().size(), "The request is used up");
+
+        // An upload that stopped before its check leaves no request behind
+        EarlyUploadHook.requestFinish();
+        EarlyUploadHook.clearFinishRequest();
+        assertTrue(hook.checkUpload(new APIDataSet(far.getDataSet())));
+        assertEquals(1, dialogs.getInvocationLog().size(), "The request was dropped");
     }
 
     /**

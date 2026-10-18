@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
@@ -70,6 +71,7 @@ import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
 import org.openstreetmap.josm.plugins.maproulette.gui.TagChangeTable;
+import org.openstreetmap.josm.plugins.maproulette.gui.TaskChanges;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskData;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
@@ -142,6 +144,10 @@ public final class CurrentTaskPanel extends JPanel {
      * The number of edits for the started task
      */
     private final JLabel editsLabel = new JLabel();
+    /**
+     * What changed on the task's objects, so it can be checked before the upload (#148)
+     */
+    private final JMultilineLabel changesLabel = new JMultilineLabel("");
     /**
      * The comment sent with the status (#115)
      */
@@ -305,6 +311,7 @@ public final class CurrentTaskPanel extends JPanel {
         south.add(this.dataPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
+        south.add(this.changesLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         // A link-like line, so the fields take no room until they are wanted
         this.feedbackToggle.setBorderPainted(false);
         this.feedbackToggle.setContentAreaFilled(false);
@@ -545,7 +552,7 @@ public final class CurrentTaskPanel extends JPanel {
         final var width = Math.max(this.statusButtons.getPreferredSize().width, this.header.getMinimumSize().width);
         // The notices and the opened feedback fields come and go; leave them out, so the minimum stays put
         var south = this.south.getPreferredSize().height;
-        for (var notice : List.of(this.dataPanel, this.unfinishedPanel)) {
+        for (var notice : List.of(this.dataPanel, this.unfinishedPanel, this.changesLabel)) {
             if (notice.isVisible()) {
                 south -= notice.getPreferredSize().height + 4;
             }
@@ -623,6 +630,15 @@ public final class CurrentTaskPanel extends JPanel {
             this.editsLabel.setText(edits == 0 ? tr("No edits yet for task {0}", currentTask.id())
                     : trn("{0} edit for task {1}", "{0} edits for task {1}", edits, edits, currentTask.id()));
         }
+        final var summary = started && edits > 0
+                ? TaskChanges.of(currentTask, MainApplication.getLayerManager().getEditDataSet())
+                : TaskChanges.Summary.NONE;
+        this.changesLabel.setVisible(!summary.lines().isEmpty());
+        // The warning in plain text under the lines; the finish question shows it in bold
+        this.changesLabel
+                .setText(summary.lines().stream().map(line -> "\u2022 " + Utils.escapeReservedCharactersHTML(line))
+                        .collect(Collectors.joining("<br>", "<html>", summary.warning() == null ? "</html>"
+                                : "<br>" + Utils.escapeReservedCharactersHTML(summary.warning()) + "</html>")));
         final var unfinished = currentTask != null && LateUploadHook.isUnfinished(currentTask.id());
         this.unfinishedPanel.setVisible(unfinished);
         if (unfinished) {
@@ -961,6 +977,8 @@ private static final class FinishAction extends InnerAction {
             // JOSM's own upload: the upload hook asks if it finishes the task, whatever the distance of the edits (#149)
             EarlyUploadHook.requestFinish();
             MainApplication.getMenu().upload.actionPerformed(e);
+            // Queued after the upload check: an upload that stops before it doesn't leave the request for the next one
+            MainApplication.worker.execute(EarlyUploadHook::clearFinishRequest);
         }
     }
 
