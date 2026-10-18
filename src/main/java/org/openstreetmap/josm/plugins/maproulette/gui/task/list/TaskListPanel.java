@@ -54,6 +54,7 @@ import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.DownloadTasks;
 import org.openstreetmap.josm.plugins.maproulette.actions.FindChallengeAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.GoToTaskLocation;
+import org.openstreetmap.josm.plugins.maproulette.actions.HowItWorksAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
 import org.openstreetmap.josm.plugins.maproulette.actions.downloadtasks.MapRouletteDownloadTaskBox;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
@@ -149,6 +150,14 @@ public final class TaskListPanel extends JPanel
      */
     private boolean rebuildingChallenges;
     /**
+     * The challenge filter choice before the user picked Find a challenge…, which is put back
+     */
+    private ChallengeChoice lastChallengeChoice;
+    /**
+     * Loads the tasks in the map view
+     */
+    private final JosmAction downloadAction;
+    /**
      * The number of listed tasks of each challenge, for the challenge headers
      */
     private final Map<Long, Integer> challengeSizes = new HashMap<>();
@@ -204,6 +213,7 @@ public final class TaskListPanel extends JPanel
         MainApplication.getLayerManager().addAndFireLayerChangeListener(model);
         table = new JTable(model);
         final var downloadAction = new DownloadDataAction();
+        this.downloadAction = downloadAction;
         final var findAction = new FindChallengeAction();
         final var downloadButton = new SideButton(downloadAction);
         final var lockUnlockAction = new LockUnlockTaskAction(table);
@@ -235,9 +245,12 @@ public final class TaskListPanel extends JPanel
         challengeLabel.setLabelFor(this.challengeFilter);
         final var filterLabel = new JLabel(tr("Filter"));
         filterLabel.setLabelFor(this.filterField);
-        this.filterField.setToolTipText(tr("Name, street, task id"));
+        this.filterField.setHint(tr("Task name, street or number"));
+        this.filterField.setToolTipText(tr("Task name, street or number"));
         filters.add(challengeLabel, GBC.std().insets(4, 2, 4, 2));
         this.challengeFilter.setRenderer(new PlainTextRenderer());
+        // Arrow keys move through the open list without picking each entry, so they don't open Find a challenge…
+        this.challengeFilter.putClientProperty("JComboBox.isTableCellEditor", Boolean.TRUE);
         filters.add(this.challengeFilter, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
         filters.add(filterLabel, GBC.std().insets(4, 2, 4, 2));
         filters.add(this.filterField, GBC.eol().fill(GBC.HORIZONTAL).insets(0, 2, 4, 2));
@@ -246,9 +259,19 @@ public final class TaskListPanel extends JPanel
         HiddenList.addListUpdater(this.hiddenTest);
         this.filterField.filter(expr -> applyFilters());
         this.challengeFilter.addActionListener(e -> {
-            if (!this.rebuildingChallenges) {
-                applyFilters();
+            if (this.rebuildingChallenges) {
+                return;
             }
+            if (this.challengeFilter.getSelectedItem()instanceof ChallengeChoice choice
+                    && choice.id() == FIND_CHALLENGE) {
+                // The last item finds another challenge, so finding one stays at hand once tasks are loaded
+                selectChallengeChoice(this.lastChallengeChoice);
+                SwingUtilities.invokeLater(() -> findAction
+                        .actionPerformed(new ActionEvent(this.challengeFilter, ActionEvent.ACTION_PERFORMED, "find")));
+                return;
+            }
+            this.lastChallengeChoice = (ChallengeChoice) this.challengeFilter.getSelectedItem();
+            applyFilters();
         });
         tableRowSorter.setStringConverter(new TableStringConverter() {
             @Override
@@ -437,6 +460,7 @@ public final class TaskListPanel extends JPanel
         try {
             if (this.challengeFilter.getItemCount() > 0) {
                 this.challengeFilter.setSelectedIndex(0);
+                this.lastChallengeChoice = this.challengeFilter.getItemAt(0);
             }
         } finally {
             this.rebuildingChallenges = false;
@@ -461,13 +485,17 @@ public final class TaskListPanel extends JPanel
         final var selected = this.challengeFilter.getSelectedItem()instanceof ChallengeChoice choice ? choice.id() : -1;
         final var choices = new ArrayList<ChallengeChoice>();
         choices.add(new ChallengeChoice(-1, tr("All challenges in view ({0})", counts.size())));
-        counts.entrySet().stream().sorted(Comparator.comparing(e -> labels.get(e.getKey()))).forEach(e -> choices
-                .add(new ChallengeChoice(e.getKey(), tr("{0} ({1})", labels.get(e.getKey()), e.getValue()))));
+        // Names alone are hard to tell apart, so the number shows too
+        counts.entrySet().stream().sorted(Comparator.comparing(e -> labels.get(e.getKey())))
+                .forEach(e -> choices.add(new ChallengeChoice(e.getKey(), tr("{0} · #{1} · {2}", labels.get(e.getKey()),
+                        Long.toString(e.getKey()), trn("{0} task", "{0} tasks", e.getValue(), e.getValue())))));
+        choices.add(new ChallengeChoice(FIND_CHALLENGE, tr("Find a challenge…")));
         this.rebuildingChallenges = true;
         try {
             this.challengeFilter.setModel(new DefaultComboBoxModel<>(choices.toArray(ChallengeChoice[]::new)));
             final var keep = choices.stream().filter(c -> c.id() == selected).findFirst();
             this.challengeFilter.setSelectedItem(keep.orElse(choices.get(0)));
+            this.lastChallengeChoice = (ChallengeChoice) this.challengeFilter.getSelectedItem();
         } finally {
             this.rebuildingChallenges = false;
         }
@@ -475,6 +503,34 @@ public final class TaskListPanel extends JPanel
             // The selected challenge is gone: show all again
             applyFilters();
         }
+    }
+
+    /**
+     * Select a challenge filter choice without filtering again, or the first choice if it is gone
+     *
+     * @param choice The choice to select
+     */
+    private void selectChallengeChoice(ChallengeChoice choice) {
+        this.rebuildingChallenges = true;
+        try {
+            final var model = this.challengeFilter.getModel();
+            var index = 0;
+            for (var i = 0; i < model.getSize(); i++) {
+                if (choice != null && model.getElementAt(i).id() == choice.id()) {
+                    index = i;
+                }
+            }
+            this.challengeFilter.setSelectedIndex(index);
+        } finally {
+            this.rebuildingChallenges = false;
+        }
+    }
+
+    /**
+     * Load the MapRoulette tasks in the map view, as Load tasks here does
+     */
+    public void loadTasksInView() {
+        this.downloadAction.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "load"));
     }
 
     /**
@@ -489,6 +545,7 @@ public final class TaskListPanel extends JPanel
         empty.add(new JLabel(tr("No tasks loaded yet")), GBC.eol().insets(4));
         empty.add(new JButton(findAction), GBC.eol().insets(2).fill(GBC.HORIZONTAL));
         empty.add(new JButton(downloadAction), GBC.eol().insets(2).fill(GBC.HORIZONTAL));
+        empty.add(HowItWorksAction.link(), GBC.eol().insets(4));
         empty.add(new JLabel(), GBC.eol().fill(GBC.BOTH));
         return empty;
     }
@@ -794,6 +851,11 @@ public final class TaskListPanel extends JPanel
             putClientProperty("html.disable", Boolean.TRUE);
         }
     }
+
+    /**
+     * The id of the challenge filter's Find a challenge… item
+     */
+    private static final long FIND_CHALLENGE = -2;
 
     /**
      * An entry of the challenge filter
