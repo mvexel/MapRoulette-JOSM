@@ -339,8 +339,10 @@ public final class TaskListPanel extends JPanel
                     CurrentTaskPanel.show(task, false);
                 } else {
                     final var currentTaskPanel = CurrentTaskPanel.get();
-                    // The window follows the user's locked task: filtering it out or selecting another row must not drop it
-                    if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()) {
+                    // The window follows the user's locked task: filtering it out or selecting another row must not drop it.
+                    // Nor the task just finished, which offers the next one; the list reloads after the release.
+                    if (currentTaskPanel != null && !currentTaskPanel.showsLockedTask()
+                            && !currentTaskPanel.showsFinishedTask()) {
                         currentTaskPanel.refreshModel(null);
                     }
                 }

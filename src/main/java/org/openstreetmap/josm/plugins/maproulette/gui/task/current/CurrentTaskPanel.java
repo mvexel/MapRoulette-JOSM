@@ -1022,6 +1022,15 @@ enum Tone {
     }
 
     /**
+     * Check if the panel shows a task finished in this session, with the next task offered in its place (#117)
+     *
+     * @return {@code true} if the next task is offered
+     */
+    public boolean showsFinishedTask() {
+        return this.showsNext;
+    }
+
+    /**
      * Check if the panel shows a task the user still has locked
      *
      * @return {@code true} if the shown task is still locked
