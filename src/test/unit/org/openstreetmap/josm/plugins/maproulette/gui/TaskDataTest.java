@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -13,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.DataSource;
 import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.gpx.GpxData;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
@@ -21,10 +25,14 @@ import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.io.DownloadPrimitivesWithReferrersTask;
+import org.openstreetmap.josm.gui.layer.GpxLayer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Challenge;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
+import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.annotations.Main;
@@ -71,6 +79,48 @@ class TaskDataTest {
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testSelectLoaded", null));
         TaskData.load(task(null), List.of(NODE));
         assertEquals(List.of(node), List.copyOf(dataSet.getSelected()));
+    }
+
+    /**
+     * After a restart, the task's object is selected in the layer JOSM restored from its autosave, also when another
+     * layer is active (#140)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testSelectInRestoredAutosave() throws Exception {
+        // What JOSM's autosave holds for an edited task object; the restore reads it as OsmImporter does
+        final var xml = "<osm version='0.6' upload='true' generator='JOSM'><node id='4365677669' action='modify'"
+                + " version='5' lat='40.7608' lon='-111.8848'><tag k='amenity' v='bench'/>"
+                + "<tag k='backrest' v='yes'/></node></osm>";
+        final var restored = OsmReader.parseDataSet(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)),
+                null);
+        final var layer = new OsmDataLayer(restored, "Data Layer 1", null);
+        MainApplication.getLayerManager().addLayer(layer);
+        // Load tasks here adds the task layer on top
+        MainApplication.getLayerManager().addLayer(new GpxLayer(new GpxData(), "MapRoulette tasks"));
+
+        final var geometries = new DataSet();
+        final var feature = new Node(new LatLon(40.7608, -111.8848));
+        feature.put("@id", "node/4365677669");
+        feature.put("amenity", "bench");
+        geometries.addPrimitive(feature);
+        final var task = new Task(235, "235", null, null, 10, null, null, geometries, null, null, null, null, null,
+                null, 0, null, null, null, false, null, null);
+        new MockUp<ChallengeCache>() {
+            @Mock
+            Challenge challenge(long id) throws IOException {
+                throw new IOException("No challenge in this test");
+            }
+        };
+
+        GuiHelper.runInEDTAndWait(() -> TaskData.loadAndSelect(task));
+        MainApplication.worker.submit(() -> {
+            /* Sync worker */ }).get(10, TimeUnit.SECONDS);
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
+        assertEquals(List.of(restored.getPrimitiveById(4365677669L, OsmPrimitiveType.NODE)),
+                List.copyOf(restored.getSelected()));
     }
 
     /**
