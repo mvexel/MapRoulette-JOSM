@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.LongPredicate;
 import java.util.regex.Pattern;
@@ -694,6 +695,9 @@ public final class TaskListPanel extends JPanel
                 LoginControl.showUnavailableNoticeOnce();
             }
             updateTitle();
+            // After the layer's map and panels exist
+            SwingUtilities.invokeLater(
+                    () -> Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::openForFirstTasks));
         }
     }
 

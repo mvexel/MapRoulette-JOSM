@@ -21,12 +21,14 @@ import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import javax.swing.JTable;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
+import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
@@ -37,6 +39,7 @@ import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskReviewFields;
+import org.openstreetmap.josm.plugins.maproulette.gui.layer.MapRouletteClusteredPointLayer;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskListPanel;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
@@ -327,10 +330,58 @@ class MapRouletteDialogTest {
             final var withTask = dialog.neededSize();
             assertTrue(withTask.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, withTask::toString);
             assertTrue(withTask.height > noTask.height, "A task needs more room than the list alone");
-            assertTrue(withTask.height <= 380, () -> "Fits a short docked panel: " + withTask);
+            // A docked panel under JOSM's four default panels at 1600x1000 gets about 270 px, with the header line
+            assertTrue(noTask.height <= 160, () -> "The list works in a short docked panel: " + noTask);
+            assertTrue(withTask.height <= 160, () -> "The task works in a short docked panel: " + withTask);
+            final var scroll = assertInstanceOf(JScrollPane.class,
+                    SwingUtilities.getAncestorOfClass(JScrollPane.class, dialog.currentTask()));
+            assertSame(scroll, SwingUtilities.getAncestorOfClass(JScrollPane.class, dialog.currentTask().getParent()));
+            assertTrue(SwingUtilities.isDescendingFrom(scroll, dialog.taskList().getParent()),
+                    "The current task scrolls as a whole, inside the split");
         } finally {
             MainApplication.getMap().removeToggleDialog(dialog);
         }
+    }
+
+    /**
+     * The first tasks of a JOSM session open the panel; later ones leave JOSM's visibility setting alone (dry run 2)
+     */
+    @Test
+    void testOpensForFirstTasks() {
+        MapRouletteDialog.resetOpenedForTasks();
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testOpensForFirstTasks", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        try {
+            if (dialog.isDialogShowing()) {
+                dialog.hideDialog();
+            }
+            MainApplication.getLayerManager()
+                    .addLayer(new MapRouletteClusteredPointLayer(new Bounds(40, -112, 41, -111), List.of()));
+            GuiHelper.runInEDTAndWait(() -> {
+                // The panel opens after the layer is in
+            });
+            assertTrue(dialog.isDialogShowing(), "The first tasks open the panel");
+
+            dialog.hideDialog();
+            MainApplication.getLayerManager()
+                    .addLayer(new MapRouletteClusteredPointLayer(new Bounds(40, -112, 41, -111), List.of()));
+            GuiHelper.runInEDTAndWait(() -> {
+                // As above
+            });
+            assertFalse(dialog.isDialogShowing(), "Once per session: then the user's choice wins");
+        } finally {
+            MainApplication.getMap().removeToggleDialog(dialog);
+            MapRouletteDialog.resetOpenedForTasks();
+        }
+    }
+
+    /**
+     * The panel asks for a fair share of the column, at least what it asked before
+     */
+    @Test
+    void testDefaultHeight() {
+        assertTrue(MapRouletteDialog.defaultHeight() >= 300);
     }
 
     /**
