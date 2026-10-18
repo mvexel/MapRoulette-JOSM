@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
+import org.openstreetmap.josm.command.PurgeCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -161,6 +162,27 @@ class TaskEditsTest {
     }
 
     /**
+     * Objects downloaded from OSM that come back with an undo are not edits (#130)
+     */
+    @Test
+    void testUndonePurgeIsNotAnEdit() {
+        TaskEdits.start();
+        final var bench = new Node(LatLon.ZERO);
+        bench.setOsmId(5, 1);
+        final var dataSet = new DataSet();
+        dataSet.addPrimitive(bench);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "testUndonePurgeIsNotAnEdit", null));
+        ModifiedObjects.addLockedTask(TASK);
+        sync();
+        UndoRedoHandler.getInstance().add(PurgeCommand.build(List.of(bench), null));
+        assertTrue(dataSet.getNodes().isEmpty());
+        UndoRedoHandler.getInstance().undo();
+        assertEquals(List.of(bench), List.copyOf(dataSet.getNodes()));
+        assertFalse(TaskEdits.touches(List.of(bench)), "A downloaded object put back");
+        assertEquals(0, TaskEdits.count());
+    }
+
+    /**
      * A removed layer is no longer followed: edits in it don't count (#130)
      */
     @Test
@@ -172,9 +194,12 @@ class TaskEditsTest {
         dataSet.addPrimitive(bench);
         final var layer = new OsmDataLayer(dataSet, "testRemovedLayerNotFollowed", null);
         MainApplication.getLayerManager().addLayer(layer);
+        // Another layer keeps the map open
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "other", null));
         ModifiedObjects.addLockedTask(TASK);
         sync();
         MainApplication.getLayerManager().removeLayer(layer);
+        assertEquals(List.of(TASK), ModifiedObjects.getLockedTasks());
         bench.put("amenity", "bench");
         assertEquals(0, TaskEdits.count(), "An edit in a removed layer");
         assertFalse(TaskEdits.touches(List.of(bench)));
