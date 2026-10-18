@@ -12,6 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api.model.TaskClusteredPoint;
@@ -47,6 +48,11 @@ public final class ModifiedObjects {
      * The tasks an upload in progress finishes, from the upload until Fixed is sent or the upload fails
      */
     private static final Set<Long> FINISH_PENDING = ConcurrentHashMap.newKeySet();
+    /**
+     * The statuses sent since the tasks were last loaded, by task id. The server's answer to a release can still carry
+     * the old status, and the list must not wait for the next load to show the new one (#146).
+     */
+    private static final Map<Long, TaskStatus> SENT_STATUS_MAP = new ConcurrentHashMap<>();
 
     /**
      * Don't allow this static class to be instantiated
@@ -273,6 +279,36 @@ public final class ModifiedObjects {
     }
 
     /**
+     * Remember a status that the server accepted
+     *
+     * @param id     The task id
+     * @param status The status
+     */
+    public static void setSentStatus(long id, @Nonnull TaskStatus status) {
+        SENT_STATUS_MAP.put(id, status);
+    }
+
+    /**
+     * Get the status sent for a task since its last load
+     *
+     * @param id The task id
+     * @return The status, or {@code null} if none was sent
+     */
+    @Nullable
+    public static TaskStatus getSentStatus(long id) {
+        return SENT_STATUS_MAP.get(id);
+    }
+
+    /**
+     * Forget the sent statuses of tasks that were loaded again: the server's status is newer
+     *
+     * @param ids The task ids
+     */
+    public static void clearSentStatuses(@Nonnull Collection<Long> ids) {
+        ids.forEach(SENT_STATUS_MAP::remove);
+    }
+
+    /**
      * Forget every task, for example when the user switches to another MapRoulette server. Nothing is sent.
      *
      * @return The ids of the tasks that were forgotten
@@ -287,6 +323,7 @@ public final class ModifiedObjects {
         ids.addAll(FINISHING_MAP.keySet());
         ids.addAll(FINISH_PENDING);
         FINISH_PENDING.clear();
+        SENT_STATUS_MAP.clear();
         ids.forEach(id -> {
             FINISHING_MAP.remove(id);
             LOCKED_TASK_MAP.remove(id);

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -123,6 +124,30 @@ class TaskRowsTest {
             "TOO_HARD,CANT_COMPLETE", "DELETED,UNAVAILABLE" })
     void testChipFromStatus(TaskStatus status, TaskRows.Chip expected) {
         assertEquals(expected, TaskRows.chip(point(1, "n1", status, 0, null, Map.of())));
+    }
+
+    /**
+     * A sent status shows at once, until the tasks are loaded again (#146)
+     */
+    @Test
+    void testChipOfSentStatus() {
+        final var open = point(900_146, "n1", TaskStatus.CREATED, 0, null, Map.of());
+        ModifiedObjects.setSentStatus(open.id(), TaskStatus.ALREADY_FIXED);
+        try {
+            assertEquals(TaskRows.Chip.DONE, TaskRows.chip(open));
+            assertEquals(TaskStatus.ALREADY_FIXED, TaskRows.status(open));
+        } finally {
+            ModifiedObjects.clearSentStatuses(List.of(open.id()));
+        }
+        assertEquals(TaskRows.Chip.OPEN, TaskRows.chip(open));
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = { ";", "CREATED;", "FIXED;Done · Fixed", "ALREADY_FIXED;Done · Already fixed",
+            "FALSE_POSITIVE;Done · Not an Issue", "SKIPPED;Skipped", "TOO_HARD;Can't Complete",
+            "DELETED;Unavailable · Deleted" }, delimiter = ';', quoteCharacter = '"')
+    void testStatusLine(TaskStatus status, String expected) {
+        assertEquals(expected, TaskRows.statusLine(status));
     }
 
     @Test

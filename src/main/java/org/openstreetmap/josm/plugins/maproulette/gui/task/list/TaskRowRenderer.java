@@ -151,48 +151,36 @@ final class TaskRowRenderer extends JPanel implements TableCellRenderer {
     }
 
     /**
-     * Set the text and colours of the chip
+     * Set the text and colours of the chip. Open is the normal state and has no chip. Chips are flat labels, so they
+     * don't look like buttons (#146).
      *
      * @param rowChip The chip to show
      */
     private void styleChip(TaskRows.Chip rowChip) {
+        this.chip.setVisible(rowChip != TaskRows.Chip.OPEN);
         this.chip.setText(rowChip.label());
         final Color background;
         final Color foreground;
-        final Color line;
-        boolean dashed = false;
         switch (rowChip) {
         case STARTED -> {
             background = new Color(0x2e7d32);
             foreground = Color.WHITE;
-            line = background;
         }
         case DONE -> {
             background = new Color(0x1f5fad);
             foreground = Color.WHITE;
-            line = background;
         }
         case SKIPPED, CANT_COMPLETE -> {
             background = new Color(0xfff3d6);
             foreground = new Color(0x6b4a00);
-            line = new Color(0xd9a530);
-        }
-        case LOCKED, UNAVAILABLE -> {
-            background = new Color(0xf2f2f2);
-            foreground = new Color(0x555555);
-            line = new Color(0x999999);
-            dashed = true;
         }
         default -> {
             background = new Color(0xeeeeee);
-            foreground = new Color(0x333333);
-            line = new Color(0xbbbbbb);
+            foreground = new Color(0x555555);
         }
         }
         this.chip.setBackground(background);
         this.chip.setForeground(foreground);
-        final Border outline = dashed ? BorderFactory.createDashedBorder(line, 3, 2)
-                : BorderFactory.createLineBorder(line);
-        this.chip.setBorder(BorderFactory.createCompoundBorder(outline, BorderFactory.createEmptyBorder(0, 6, 0, 6)));
+        this.chip.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
     }
 }

@@ -4,11 +4,15 @@ package org.openstreetmap.josm.plugins.maproulette.gui.layer;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -27,7 +31,11 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.plugins.maproulette.actions.IgnoreAction;
+import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.ClusteredPoint;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Identifier;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Point;
+import org.openstreetmap.josm.plugins.maproulette.api.model.PointReview;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.MapRouletteDialog;
@@ -285,5 +293,25 @@ class MapRouletteClusteredPointLayerTest {
         GuiHelper.runInEDTAndWait(cdl::countDown);
         MainApplication.worker.execute(cdl::countDown);
         assertTrue(cdl.await(10, TimeUnit.SECONDS));
+    }
+
+    /**
+     * A new load replaces the statuses sent before it, for the tasks it loads (#146)
+     */
+    @Test
+    void testNewLayerClearsSentStatuses() {
+        ModifiedObjects.setSentStatus(900_156L, TaskStatus.FIXED);
+        ModifiedObjects.setSentStatus(900_157L, TaskStatus.SKIPPED);
+        try {
+            final var point = new ClusteredPoint(900_156L, 1, "", "n", 10, "Benches", new Point(0, 0), null, "",
+                    Instant.EPOCH, null, 2, TaskStatus.CREATED, null, null, null, null,
+                    new PointReview(null, null, null, null, null, null, null, null, null), 0, null, false, null,
+                    Map.of());
+            new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), List.of(point));
+            assertNull(ModifiedObjects.getSentStatus(900_156L), "Loaded again: the server's status counts");
+            assertEquals(TaskStatus.SKIPPED, ModifiedObjects.getSentStatus(900_157L), "Not in this load");
+        } finally {
+            ModifiedObjects.clearSentStatuses(List.of(900_156L, 900_157L));
+        }
     }
 }

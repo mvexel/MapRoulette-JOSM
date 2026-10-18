@@ -209,6 +209,8 @@ public final class CurrentTaskPanel extends JPanel {
     private final transient Consumer<Map<Long, Task>> sentListener = tasks -> {
         this.refreshActions();
         this.refreshFinish();
+        // The header shows the status that was sent
+        this.refreshDataState();
     };
     /**
      * The task the comment and the review request were filled in for
@@ -433,10 +435,13 @@ public final class CurrentTaskPanel extends JPanel {
      *
      * @param task    The task
      * @param started {@code true} if the user started the task
-     * @return "Working on task 27" once the task is started, "Task 27" otherwise
+     * @return "Working on task 27" once the task is started, "Task 27" otherwise, followed by the MapRoulette status
+     *         when the task isn't open, such as "Task 27 · Done · Already fixed" (#146)
      */
     static String header(Task task, boolean started) {
-        return started ? tr("Working on task {0}", task.id()) : tr("Task {0}", task.id());
+        final var header = started ? tr("Working on task {0}", task.id()) : tr("Task {0}", task.id());
+        final var status = TaskRows.statusLine(TaskRows.status(task));
+        return status == null ? header : header + " · " + status;
     }
 
     /**

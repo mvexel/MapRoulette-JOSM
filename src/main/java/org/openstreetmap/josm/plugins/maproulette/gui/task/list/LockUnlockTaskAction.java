@@ -152,15 +152,17 @@ final class LockUnlockTaskAction extends JosmAction {
         final String message;
         if (done.size() == 1) {
             final var point = done.get(0);
-            final var modified = ModifiedObjects.getModifiedTask(point.id());
-            final var status = modified != null ? modified.status() : point.status();
+            // A status set in this session is newer than the server's mappedOn and completedBy (#146)
+            final var local = ModifiedObjects.getModifiedTask(point.id()) != null
+                    || ModifiedObjects.getSentStatus(point.id()) != null;
+            final var status = TaskRows.status(point);
             final var label = status == null ? tr("Done") : MRGuiHelper.statusLabel(status);
             final var id = Long.toString(point.id());
-            final var mappedOn = modified != null ? null : point.mappedOn();
+            final var mappedOn = local ? null : point.mappedOn();
             final var doneText = mappedOn == null ? tr("Task {0} is already done ({1}).", id, label)
                     : tr("Task {0} is already done ({1}, {2}).", id, label, DateUtils
                             .getDateFormatter(FormatStyle.MEDIUM).withZone(ZoneId.systemDefault()).format(mappedOn));
-            final var completedBy = modified != null ? null : completedBy(point);
+            final var completedBy = local ? null : completedBy(point);
             final var self = MapRouletteClient.getInstance().auth().knownUserId();
             if (completedBy != null && self.isPresent() && completedBy != self.getAsLong()) {
                 // MapRoulette only lets the mapper who finished a task change its status

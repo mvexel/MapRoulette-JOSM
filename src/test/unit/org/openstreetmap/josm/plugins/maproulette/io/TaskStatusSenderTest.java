@@ -34,6 +34,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedObjects;
 import org.openstreetmap.josm.plugins.maproulette.gui.ModifiedTask;
+import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskRows;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteConfig;
 import org.openstreetmap.josm.plugins.maproulette.util.MapRouletteLogin;
@@ -55,6 +56,7 @@ class TaskStatusSenderTest {
         ModifiedObjects.getModifiedTasks().forEach(ModifiedObjects::removeModifiedTask);
         ModifiedObjects.getUnlinkedFixed().forEach(ModifiedObjects::removeUnlinkedFixed);
         ModifiedObjects.getLockedTasks().forEach(ModifiedObjects::removeLockedTask);
+        ModifiedObjects.clearSentStatuses(List.of(147197178L, 132279499L));
     }
 
     /**
@@ -115,6 +117,9 @@ class TaskStatusSenderTest {
         assertEquals(List.of(task), ModifiedObjects.getUnlinkedFixed(), "The changeset is linked after the upload");
         assertEquals(1, sent.size());
         assertTrue(sent.get(0).containsKey(task.id()));
+        // The list shows the task as done at once, whatever status the release answered with (#146)
+        assertEquals(TaskStatus.FIXED, ModifiedObjects.getSentStatus(task.id()));
+        assertEquals(TaskStatus.FIXED, TaskRows.status(sent.get(0).get(task.id())));
     }
 
     /**
@@ -147,6 +152,7 @@ class TaskStatusSenderTest {
         assertNull(ModifiedObjects.getModifiedTask(task.id()));
         assertTrue(ModifiedObjects.getUnlinkedFixed().isEmpty(), "A status that was not sent is not linked");
         assertEquals(task, ModifiedObjects.getLockedTask(task.id()), "The task stays started");
+        assertNull(ModifiedObjects.getSentStatus(task.id()), "The list doesn't show it as done");
         assertEquals(1, explained.size(), "The user is told");
         assertEquals("Invalid task status supplied.",
                 ((MapRouletteHttpException) explained.get(0)).serverMessage().orElseThrow(),
