@@ -4,8 +4,10 @@ package org.openstreetmap.josm.plugins.maproulette.gui.task.current;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagLayout;
+import java.awt.Rectangle;
 import java.io.IOException;
 import java.io.Serial;
 import java.util.Collection;
@@ -22,6 +24,8 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSeparator;
 import javax.swing.JToggleButton;
+import javax.swing.JViewport;
+import javax.swing.Scrollable;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
 
@@ -50,7 +54,7 @@ import jakarta.annotation.Nullable;
 /**
  * What comes after a finished task: the next task in the same challenge, and the tasks done this session (#117)
  */
-final class NextTaskPanel extends JPanel {
+final class NextTaskPanel extends JPanel implements Scrollable {
     @Serial
     private static final long serialVersionUID = -3926483109374726451L;
     /**
@@ -68,7 +72,7 @@ final class NextTaskPanel extends JPanel {
 
     private final JToggleButton random = new JToggleButton(tr("Random"));
     private final JToggleButton nearby = new JToggleButton(tr("Nearby"));
-    private final JLabel candidateName = new JLabel();
+    private final JLabel candidateName = shrinkingLabel(null);
     private final JMultilineLabel candidateDetail = new JMultilineLabel("");
     private final JButton startButton = new JButton(tr("Start next task"));
     private final JButton pickButton = new JButton();
@@ -123,8 +127,9 @@ final class NextTaskPanel extends JPanel {
         final var modes = new JPanel(new GridBagLayout());
         modes.add(this.random, GBC.std());
         modes.add(this.nearby, GBC.eol());
-        this.add(title, GBC.std().fill(GBC.HORIZONTAL).insets(4, 4, 4, 2));
-        this.add(modes, GBC.eol().anchor(GBC.LINE_END).insets(0, 4, 4, 2));
+        // The modes go under the title, so the card fits the docked panel's width
+        this.add(title, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 4, 4, 0));
+        this.add(modes, GBC.eol().anchor(GBC.LINE_START).insets(0, 0, 4, 2));
         final var box = new JPanel(new GridBagLayout());
         final var border = Optional.ofNullable(UIManager.getColor("Separator.foreground")).orElse(Color.GRAY);
         box.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(border),
@@ -152,6 +157,53 @@ final class NextTaskPanel extends JPanel {
         this.add(new JPanel(), GBC.eol().fill(GBC.BOTH));
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         this.update();
+    }
+
+    /**
+     * Get a label that is cut short with an ellipsis when the panel is narrow, instead of making the whole card wider
+     * than the panel (a long task name)
+     *
+     * @param text The text
+     * @return The label
+     */
+    private static JLabel shrinkingLabel(@Nullable String text) {
+        return new JLabel(text) {
+            @Serial
+            private static final long serialVersionUID = -6191626391474707716L;
+
+            @Override
+            public Dimension getMinimumSize() {
+                return new Dimension(0, super.getMinimumSize().height);
+            }
+        };
+    }
+
+    @Override
+    public Dimension getPreferredScrollableViewportSize() {
+        return getPreferredSize();
+    }
+
+    @Override
+    public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+        return this.getFontMetrics(this.getFont()).getHeight();
+    }
+
+    @Override
+    public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+        return Math.max(visibleRect.height - getScrollableUnitIncrement(visibleRect, orientation, direction), 1);
+    }
+
+    /**
+     * The card takes the panel's width: wider, it would be cut off on both sides (dry run 2)
+     */
+    @Override
+    public boolean getScrollableTracksViewportWidth() {
+        return true;
+    }
+
+    @Override
+    public boolean getScrollableTracksViewportHeight() {
+        return this.getParent()instanceof JViewport viewport && viewport.getHeight() >= getPreferredSize().height;
     }
 
     /**
@@ -369,7 +421,7 @@ final class NextTaskPanel extends JPanel {
         this.doneList.setVisible(!session.isEmpty());
         final var font = this.doneTitle.getFont().deriveFont(Font.PLAIN, this.doneTitle.getFont().getSize2D() * 0.9f);
         for (var done : session) {
-            final var task = new JLabel(
+            final var task = shrinkingLabel(
                     tr("Task {0} · {1}", Long.toString(done.task().id()), TaskRows.readableName(done.task())));
             task.setFont(font);
             task.putClientProperty("html.disable", Boolean.TRUE);
