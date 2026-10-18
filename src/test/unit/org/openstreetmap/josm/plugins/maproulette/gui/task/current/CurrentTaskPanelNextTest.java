@@ -68,6 +68,7 @@ class CurrentTaskPanelNextTest {
             GuiHelper.runInEDTAndWait(() -> {
                 /* Sync EDT */ });
             assertTrue(isCardShown(next), "The finished task shows the next one");
+            assertFalse(GuiHelper.runInEDTAndWaitAndReturn(CurrentTaskPanel::startNextTask), "No MapRoulette panel");
             assertFalse(upload.getParent().isVisible(), "The finish strip is hidden");
             assertEquals(List.of(Boolean.FALSE), offers.stream().distinct().toList(), "Off by default");
         } finally {

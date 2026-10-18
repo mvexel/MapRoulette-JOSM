@@ -71,7 +71,7 @@ public final class TaskResults {
             return switch (this.link) {
             case LINKED -> this.changesetId > 0 ? tr("Task {0} marked Fixed and linked to changeset {1}.", id, changeset)
                     : tr("Task {0} marked Fixed and linked to your changeset.", id);
-            case WAITING -> tr("Task {0} marked Fixed. It is linked to changeset {1} once the changeset is closed.", id,
+            case WAITING -> tr("Task {0} marked Fixed. It will be linked to changeset {1} when the changeset closes.", id,
                     changeset);
             default -> tr("Task {0} marked Fixed. The changeset could not be linked.", id);
             };

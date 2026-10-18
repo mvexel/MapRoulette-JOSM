@@ -600,6 +600,16 @@ public final class CurrentTaskPanel extends JPanel {
     }
 
     /**
+     * Start the next task the panel offers after a finished one, as its Start button does. Call on the EDT.
+     *
+     * @return {@code false} if the panel offers no next task, for example while a task is still being worked on
+     */
+    public static boolean startNextTask() {
+        final var panel = get();
+        return panel != null && panel.showsNext && panel.nextPanel.start();
+    }
+
+    /**
      * Ask a question about a task in the state line, instead of a dialog (#116). It shows while the panel shows the
      * task, until the user answers it or another question replaces it. Call on the EDT.
      *

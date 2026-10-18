@@ -261,13 +261,17 @@ final class NextTaskPanel extends JPanel {
 
     /**
      * Start the offered task
+     *
+     * @return {@code true} if a task was offered and started
      */
-    private void start() {
+    boolean start() {
         final var next = this.candidate;
         final var list = TaskListPanel.get();
         if (next != null && list != null && MapRouletteAuth.isAvailable()) {
             list.start(next);
+            return true;
         }
+        return false;
     }
 
     /**

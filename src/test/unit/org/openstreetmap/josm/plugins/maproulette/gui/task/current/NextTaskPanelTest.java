@@ -6,6 +6,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -98,6 +99,7 @@ class NextTaskPanelTest {
             GuiHelper.runInEDTAndWait(() -> panel.show(FINISHED, false));
             sync();
             assertEquals(242, panel.candidate().id());
+            assertFalse(GuiHelper.runInEDTAndWaitAndReturn(panel::start), "No task list to start it from");
             final var pick = TaskListPanelTest.find(panel, JButton.class, b -> "Pick another".equals(b.getText()));
             // 241 is the finished task: Pick another asks again, and starts over with 242
             GuiHelper.runInEDTAndWait(pick::doClick);
@@ -110,6 +112,7 @@ class NextTaskPanelTest {
             GuiHelper.runInEDTAndWait(pick::doClick);
             sync();
             assertNull(panel.candidate());
+            assertFalse(GuiHelper.runInEDTAndWaitAndReturn(panel::start), "Nothing offered");
             assertEquals(List.of(242L), TaskResults.session().stream().map(done -> done.task().id()).toList());
             assertTrue(TaskListPanelTest.find(panel, JButton.class, b -> "Try again".equals(b.getText())).isEnabled());
         } finally {
