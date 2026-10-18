@@ -52,14 +52,13 @@ public final class TaskArea {
     }
 
     /**
-     * Get the area that counts as near a task
+     * Get the place of a task: the bounding box of its geometry, or its location when it has no geometry
      *
      * @param task The task
-     * @return The bounding box of the task's geometry or location, grown by {@value #NEAR_METRES} m, or {@code null}
-     *         if the task has neither
+     * @return The place, or {@code null} if the task has neither
      */
     @Nullable
-    static BBox area(@Nonnull Task task) {
+    static BBox place(@Nonnull Task task) {
         BBox box = null;
         for (var geometry : task.geometries().allNonDeletedPrimitives()) {
             final var geometryBox = geometry.getBBox();
@@ -74,7 +73,19 @@ public final class TaskArea {
         if (box == null && task.location() != null) {
             box = new BBox(task.location().getBBox());
         }
-        if (box == null || !box.isValid()) {
+        return box == null || !box.isValid() ? null : box;
+    }
+
+    /**
+     * Get the area that counts as near a task
+     *
+     * @param task The task
+     * @return The {@link #place(Task)} of the task grown by {@value #NEAR_METRES} m, or {@code null} if it has none
+     */
+    @Nullable
+    static BBox area(@Nonnull Task task) {
+        final var box = place(task);
+        if (box == null) {
             return null;
         }
         // Metres to degrees: a degree of longitude shrinks with the cosine of the latitude
