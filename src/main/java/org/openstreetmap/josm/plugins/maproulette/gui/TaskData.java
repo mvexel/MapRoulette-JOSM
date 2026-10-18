@@ -11,7 +11,6 @@ import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadOsmTask;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
 import org.openstreetmap.josm.data.Bounds;
-import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
@@ -98,9 +97,11 @@ public final class TaskData {
         MainApplication.worker.submit(new DownloadPrimitivesWithReferrersTask(false, missing, true, true, null, null));
         MainApplication.worker.submit(() -> GuiHelper.runInEDT(() -> {
             // Objects that don't exist on the server (404) stay missing, for example a task made for another server
-            if (onMissing != null
-                    && missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
-                onMissing.run();
+            if (missing(ids, MainApplication.getLayerManager().getEditDataSet()).size() == ids.size()) {
+                CurrentTaskPanel.notDownloaded(task.id());
+                if (onMissing != null) {
+                    onMissing.run();
+                }
             }
             select(ids);
         }));
@@ -114,8 +115,12 @@ public final class TaskData {
      */
     private static void loadArea(@Nonnull Task task, @Nullable DataSet dataSet) {
         final var bounds = bounds(task);
-        if (bounds == null || dataSet != null
-                && dataSet.getDataSourceBounds().stream().anyMatch(loaded -> loaded.contains(bounds))) {
+        if (bounds == null) {
+            return;
+        }
+        // Back to the task, whether or not its area is loaded (#145)
+        Optional.ofNullable(MainApplication.getMap()).ifPresent(map -> map.mapView.zoomTo(bounds));
+        if (dataSet != null && dataSet.getDataSourceBounds().stream().anyMatch(loaded -> loaded.contains(bounds))) {
             return;
         }
         final var maxArea = Config.getPref().getDouble("osm-server.max-request-area", 0.25);
@@ -136,25 +141,12 @@ public final class TaskData {
      */
     @Nullable
     static Bounds bounds(@Nonnull Task task) {
-        Bounds bounds = null;
-        for (var primitive : task.geometries().allNonDeletedPrimitives()) {
-            final var bbox = primitive.getBBox();
-            if (bbox.isValid()) {
-                if (bounds == null) {
-                    bounds = new Bounds(bbox.getBottomRight());
-                }
-                bounds.extend(bbox.getTopLeft());
-                bounds.extend(bbox.getBottomRight());
-            }
+        final var place = TaskArea.place(task);
+        if (place == null) {
+            return null;
         }
-        if (bounds == null && task.location() != null) {
-            bounds = new Bounds(new LatLon(task.location().lat(), task.location().lon()));
-        }
-        if (bounds != null) {
-            bounds.extend(bounds.getMinLat() - POINT_MARGIN, bounds.getMinLon() - POINT_MARGIN);
-            bounds.extend(bounds.getMaxLat() + POINT_MARGIN, bounds.getMaxLon() + POINT_MARGIN);
-        }
-        return bounds;
+        return new Bounds(place.getBottomRightLat() - POINT_MARGIN, place.getTopLeftLon() - POINT_MARGIN,
+                place.getTopLeftLat() + POINT_MARGIN, place.getBottomRightLon() + POINT_MARGIN);
     }
 
     /**
@@ -186,6 +178,9 @@ public final class TaskData {
             if (!present.isEmpty()) {
                 dataSet.setSelected(present);
                 AutoScaleAction.autoScale(AutoScaleAction.AutoScaleMode.SELECTION);
+            } else if (!ids.isEmpty() && missing(ids, dataSet).isEmpty()) {
+                // In the data but deleted there: nothing to select, and no download would help (#145)
+                new Notification(tr("The task''s objects are deleted in your data.")).show();
             }
         }
         CurrentTaskPanel.refreshData();
