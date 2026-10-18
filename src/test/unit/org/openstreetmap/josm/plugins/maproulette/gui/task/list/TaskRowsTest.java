@@ -54,6 +54,12 @@ class TaskRowsTest {
     }
 
     @Test
+    void testReadableNamePutsPresetBeforeName() {
+        assertEquals("Bench \"sue\"", TaskRows.readableName(
+                point(1, "n1", null, 0, null, Map.of("amenity", "bench", "name", "sue", "@id", "node/1"))));
+    }
+
+    @Test
     void testReadableNameUsesPreset() {
         assertEquals("Bench",
                 TaskRows.readableName(point(1, "n1", null, 0, null, Map.of("amenity", "bench", "@id", "node/1"))));
