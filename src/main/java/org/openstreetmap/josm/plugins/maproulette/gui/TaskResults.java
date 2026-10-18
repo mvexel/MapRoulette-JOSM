@@ -4,6 +4,8 @@ package org.openstreetmap.josm.plugins.maproulette.gui;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GraphicsEnvironment;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,6 +15,7 @@ import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ListenerList;
 import org.openstreetmap.josm.tools.Logging;
@@ -91,9 +94,22 @@ public final class TaskResults {
     }
 
     /**
+     * A task the user finished in this JOSM session, for the done this session list (#117)
+     *
+     * @param task   The task, as it was when its status was sent
+     * @param result What MapRoulette recorded, the latest if the task was finished again
+     */
+    public record Done(@Nonnull Task task, @Nonnull Result result) {
+    }
+
+    /**
      * The results, by task id
      */
     private static final Map<Long, Result> RESULTS = new ConcurrentHashMap<>();
+    /**
+     * The tasks finished in this JOSM session, oldest first. Starting a task again doesn't remove it.
+     */
+    private static final Map<Long, Done> SESSION = new LinkedHashMap<>();
     /**
      * Listeners for changed results, called on the EDT
      */
@@ -133,13 +149,30 @@ public final class TaskResults {
     }
 
     /**
+     * Get the tasks finished in this JOSM session
+     *
+     * @return The tasks, oldest first
+     */
+    public static List<Done> session() {
+        synchronized (SESSION) {
+            return List.copyOf(SESSION.values());
+        }
+    }
+
+    /**
      * Note that MapRoulette accepted a status
      *
-     * @param taskId The task
+     * @param task   The task
      * @param status The status
      */
-    public static void sent(long taskId, @Nonnull TaskStatus status) {
-        put(new Result(taskId, status, 0, Link.NONE), false);
+    public static void sent(@Nonnull Task task, @Nonnull TaskStatus status) {
+        final var result = new Result(task.id(), status, 0, Link.NONE);
+        synchronized (SESSION) {
+            // Finished again: it moves to the end, with the new result
+            SESSION.remove(task.id());
+            SESSION.put(task.id(), new Done(task, result));
+        }
+        put(result, false);
     }
 
     /**
@@ -175,23 +208,35 @@ public final class TaskResults {
     }
 
     /**
-     * Forget all results, for example when the user switches to another MapRoulette server
+     * Forget all results and the done this session list, for example when the user switches to another MapRoulette
+     * server
      */
     public static void clearAll() {
-        if (!RESULTS.isEmpty()) {
+        final boolean hadSession;
+        synchronized (SESSION) {
+            hadSession = !SESSION.isEmpty();
+            SESSION.clear();
+        }
+        if (!RESULTS.isEmpty() || hadSession) {
             RESULTS.clear();
             fire();
         }
     }
 
     private static void put(Result result, boolean notify) {
+        if (result.link() != Link.NONE) {
+            synchronized (SESSION) {
+                SESSION.computeIfPresent(result.taskId(), (id, done) -> new Done(done.task(), result));
+            }
+        }
         // A link can finish after the task was started again, which cleared its result: the new start wins, but the user
         // still hears how the link went
         if (result.link() == Link.NONE || RESULTS.containsKey(result.taskId())
                 || ModifiedObjects.getLockedTask(result.taskId()) == null) {
             RESULTS.put(result.taskId(), result);
-            fire();
         }
+        // The done this session list shows the link even when the panel has moved on
+        fire();
         if (notify) {
             if (GraphicsEnvironment.isHeadless()) {
                 Logging.info(result.text());

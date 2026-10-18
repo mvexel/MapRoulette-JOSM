@@ -141,6 +141,27 @@ final class LockUnlockTaskAction extends JosmAction {
     }
 
     /**
+     * Start a task that is in the list, as Start does for a selected row, for example the next task (#117). Call on the
+     * EDT.
+     *
+     * @param task The task
+     * @param rows The table selection to restore, such as the task's row
+     */
+    void start(Task task, int[] rows) {
+        if (this.running) {
+            return;
+        }
+        final var ids = new long[] { task.id() };
+        final var other = ModifiedObjects.getLockedTasks().stream().filter(locked -> locked.id() != task.id())
+                .findFirst();
+        if (other.isPresent()) {
+            askStartBlocked(other.get(), true, ids, rows);
+        } else {
+            lockTasks(ids, rows, -1);
+        }
+    }
+
+    /**
      * Ask in the panel whether to put the started task back and start the selected one (#116). Without a panel, ask in
      * a dialog. Call on the EDT.
      *

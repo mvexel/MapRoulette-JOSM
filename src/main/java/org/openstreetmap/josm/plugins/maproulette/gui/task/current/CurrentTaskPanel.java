@@ -21,12 +21,15 @@ import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.Serial;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -38,6 +41,8 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
@@ -111,6 +116,8 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private static final int REJECTED = 2;
     private static final String COOPERATIVE_CARD = "cooperative";
+    private static final String INSTRUCTIONS_CARD = "instructions";
+    private static final String NEXT_CARD = "next";
     /**
      * The model for the task
      */
@@ -132,6 +139,26 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final OpenOnMapRouletteAction openAction = new OpenOnMapRouletteAction(() -> this.task);
     private final JButton openButton = new JButton(this.openAction);
+    /**
+     * Shows the instructions, or the next task once the shown task is finished (#117)
+     */
+    private final JPanel centerCards = new JPanel(new CardLayout());
+    /**
+     * The next task and the tasks done this session
+     */
+    private final NextTaskPanel nextPanel = new NextTaskPanel();
+    /**
+     * The finished tasks the next task was offered for, so the next task starts on its own only once per task
+     */
+    private final Set<Long> offered = new HashSet<>();
+    /**
+     * {@code true} while the panel shows a finished task, with the next task instead of the instructions
+     */
+    private boolean showsNext;
+    /**
+     * The lines of the finish strip, hidden once the task is finished
+     */
+    private final List<Component> finishStrip = new ArrayList<>();
     /**
      * The panel for instructions
      */
@@ -312,7 +339,12 @@ public final class CurrentTaskPanel extends JPanel {
         gbc.fill(GridBagConstraints.BOTH);
         this.panel.add(this.instructionPane, gbc);
         this.panel.add(this.cooperativeWork, gbc);
-        this.add(this.panel.getVerticalScrollPane(), BorderLayout.CENTER);
+        this.centerCards.add(this.panel.getVerticalScrollPane(), INSTRUCTIONS_CARD);
+        final var nextScroll = new JScrollPane(this.nextPanel);
+        nextScroll.setBorder(null);
+        nextScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        this.centerCards.add(nextScroll, NEXT_CARD);
+        this.add(this.centerCards, BorderLayout.CENTER);
         this.commentField.setHint(tr("Comment for MapRoulette (optional)"));
         this.commentField.setToolTipText(tr("Sent with the task''s status"));
         this.tagBox.setToolTipText(tr("Task tags for MapRoulette (optional)"));
@@ -369,6 +401,7 @@ public final class CurrentTaskPanel extends JPanel {
                         List.of(new SideButton(newActions[2]), new JPanel()),
                         List.of(new SideButton(newActions[3]), new SideButton(newActions[5]))));
         south.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
+        this.finishStrip.addAll(List.of(this.finishCards, uploadHint, noEdit, this.statusButtons));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -398,6 +431,7 @@ public final class CurrentTaskPanel extends JPanel {
         // The side buttons destroy their own actions, once
         GuiHelper.destroyComponents(this, false);
         this.openAction.destroy();
+        this.nextPanel.destroy();
         MapRouletteClient.getInstance().removeAuthListener(this.authListener);
         TaskEdits.removeListener(this.editsListener);
         ModifiedObjects.removeLockListener(this.editsListener);
@@ -478,6 +512,29 @@ public final class CurrentTaskPanel extends JPanel {
                                     LoginControl.canLogIn());
         }
         this.apply(state);
+        this.refreshNext();
+    }
+
+    /**
+     * Once the shown task is finished, show the next task in its challenge instead of the instructions and the finish
+     * strip (#117)
+     */
+    private void refreshNext() {
+        final var currentTask = this.task;
+        final var result = currentTask == null || showsLockedTask() ? null : TaskResults.get(currentTask.id());
+        final var next = result != null;
+        if (next) {
+            // The next task starts on its own only right after an upload finished the task, not when it is shown again
+            final var first = this.offered.add(currentTask.id());
+            this.nextPanel.show(currentTask,
+                    first && result.status() == TaskStatus.FIXED && NextTaskPanel.AUTO_START.get());
+        }
+        if (next != this.showsNext) {
+            this.showsNext = next;
+            ((CardLayout) this.centerCards.getLayout()).show(this.centerCards, next ? NEXT_CARD : INSTRUCTIONS_CARD);
+            this.finishStrip.forEach(component -> component.setVisible(!next));
+            this.refreshFeedbackFold();
+        }
     }
 
     /**
@@ -989,7 +1046,8 @@ enum Tone {
      * Show the line that opens the feedback fields, or the fields once the user opened them
      */
     private void refreshFeedbackFold() {
-        final var any = this.commentField.isVisible() || this.tagBox.isVisible() || this.reviewBox.isVisible();
+        final var any = !this.showsNext
+                && (this.commentField.isVisible() || this.tagBox.isVisible() || this.reviewBox.isVisible());
         this.feedbackToggle.setVisible(any && !this.feedbackOpen);
         this.feedbackPanel.setVisible(any && this.feedbackOpen);
         this.revalidate();

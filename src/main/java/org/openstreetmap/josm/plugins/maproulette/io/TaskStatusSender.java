@@ -101,7 +101,7 @@ public final class TaskStatusSender {
                     continue;
                 }
                 ModifiedObjects.setSentStatus(entry.task().id(), entry.status());
-                TaskResults.sent(entry.task().id(), entry.status());
+                TaskResults.sent(entry.task(), entry.status());
                 // A skip has already released the lock
                 updatedTasks.put(entry.task().id(),
                         entry.status() == TaskStatus.SKIPPED ? TaskAPI.get(entry.task().id())

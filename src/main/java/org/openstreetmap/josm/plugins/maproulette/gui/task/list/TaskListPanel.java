@@ -42,6 +42,7 @@ import javax.swing.table.TableStringConverter;
 
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
+import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -96,6 +97,10 @@ public final class TaskListPanel extends JPanel
      * The underlying table
      */
     private final JTable table;
+    /**
+     * Starts the selected tasks, or stops them
+     */
+    private final LockUnlockTaskAction lockUnlockAction;
     /**
      * The underlying model
      */
@@ -207,6 +212,7 @@ public final class TaskListPanel extends JPanel
         final var findAction = new FindChallengeAction();
         final var downloadButton = new SideButton(downloadAction);
         final var lockUnlockAction = new LockUnlockTaskAction(table);
+        this.lockUnlockAction = lockUnlockAction;
         final var lockUnlockButton = new SideButton(lockUnlockAction);
         this.authListener = () -> {
             lockUnlockAction.updateEnabledState();
@@ -374,6 +380,31 @@ public final class TaskListPanel extends JPanel
     public static TaskListPanel get() {
         final var dialog = MapRouletteDialog.get();
         return dialog == null ? null : dialog.taskList();
+    }
+
+    /**
+     * Start a task, as Start does for its row, adding the task to the list if it isn't there, for example the next task
+     * (#117). Call on the EDT.
+     *
+     * @param task The task
+     */
+    public void start(Task task) {
+        final var layers = MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class);
+        if (layers.isEmpty()) {
+            final var location = task.location();
+            final var layer = new MapRouletteClusteredPointLayer(
+                    new Bounds(location.lat(), location.lon(), location.lat(), location.lon()), List.of(task));
+            MainApplication.getLayerManager().addLayer(layer);
+            if (MainApplication.getMap() != null) {
+                MainApplication.getMap().mapView.addMouseListener(layer);
+            }
+        } else if (layers.stream().noneMatch(layer -> layer.getTasks().stream().anyMatch(t -> t.id() == task.id()))) {
+            layers.get(0).refreshTasks(Map.of(task.id(), task));
+        }
+        // The task's row, selected as if the user picked it; none if a filter hides it
+        final var index = this.model.indexOf(this.model.find(task.id()));
+        final var row = index < 0 ? -1 : this.table.getRowSorter().convertRowIndexToView(index);
+        this.lockUnlockAction.start(task, row < 0 ? new int[0] : new int[] { row });
     }
 
     /**
