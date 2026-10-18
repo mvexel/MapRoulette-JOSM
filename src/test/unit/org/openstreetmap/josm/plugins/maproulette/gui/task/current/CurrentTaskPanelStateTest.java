@@ -121,18 +121,20 @@ class CurrentTaskPanelStateTest {
     @Test
     void testOsmLogin() {
         final var working = state(true, 2, null);
-        final var osm = CurrentTaskPanel.withOsmLogin(working, true);
+        final var osm = CurrentTaskPanel.withOsmLogin(working, true, 2, true);
         assertEquals(Tone.WORKING, osm.tone());
         assertEquals(working.html(), osm.html());
         assertEquals("Uploading also needs your OpenStreetMap login. It's separate from the MapRoulette login.",
                 osm.hint());
         assertEquals(List.of("Log in to OpenStreetMap…"), labels(osm));
-        assertEquals(working, CurrentTaskPanel.withOsmLogin(working, false), "JOSM has an OSM login");
+        assertEquals(working, CurrentTaskPanel.withOsmLogin(working, true, 2, false), "JOSM has an OSM login");
+        assertEquals(working, CurrentTaskPanel.withOsmLogin(working, false, 2, true), "Not started");
+        assertEquals(working, CurrentTaskPanel.withOsmLogin(working, true, 0, true), "Nothing to upload");
         final var noEdits = state(true, 0, null);
-        assertEquals(noEdits, CurrentTaskPanel.withOsmLogin(noEdits, true), "Its own hint wins");
+        assertEquals(noEdits, CurrentTaskPanel.withOsmLogin(noEdits, true, 0, true), "Its own hint wins");
         final var uploading = CurrentTaskPanel.state(TASK, true, 2, null, true, false, false, false);
-        assertEquals(uploading, CurrentTaskPanel.withOsmLogin(uploading, true));
-        assertNull(CurrentTaskPanel.withOsmLogin(null, true));
+        assertEquals(uploading, CurrentTaskPanel.withOsmLogin(uploading, true, 2, true));
+        assertNull(CurrentTaskPanel.withOsmLogin(null, true, 2, true));
     }
 
     /**

@@ -528,7 +528,7 @@ public final class CurrentTaskPanel extends JPanel {
                                                     ModifiedObjects.isFinishPending(currentTask.id()),
                                                     LateUploadHook.isUnfinished(currentTask.id()), missing,
                                                     this.notDownloaded == currentTask.id()),
-                                            showsLockedTask() && TaskEdits.count() > 0 && OsmLogin.needed()),
+                                            showsLockedTask(), TaskEdits.count(), OsmLogin.needed()),
                                     LoginControl.canLogIn());
         }
         this.apply(state);
@@ -785,14 +785,16 @@ enum Tone {
      * Say before the first upload that it asks for the OpenStreetMap account too, and offer JOSM's OSM login, so the
      * second login doesn't come as a surprise in the middle of the upload (#118)
      *
-     * @param state  The state line otherwise
-     * @param needed {@code true} if the task has edits to upload and JOSM has no OpenStreetMap login
+     * @param state      The state line otherwise
+     * @param started    {@code true} if the task is started
+     * @param edits      The number of edits made for the task
+     * @param osmMissing {@code true} if JOSM has no OpenStreetMap login
      * @return The state line
      */
     @Nullable
-    static State withOsmLogin(@Nullable State state, boolean needed) {
-        if (!needed || state == null || state.tone() != Tone.WORKING || state.hint() != null
-                || !state.choices().isEmpty()) {
+    static State withOsmLogin(@Nullable State state, boolean started, int edits, boolean osmMissing) {
+        if (!started || edits <= 0 || !osmMissing || state == null || state.tone() != Tone.WORKING
+                || state.hint() != null || !state.choices().isEmpty()) {
             return state;
         }
         return new State(state.tone(), state.html(),
