@@ -133,6 +133,10 @@ public final class CurrentTaskPanel extends JPanel {
     private final OpenOnMapRouletteAction openAction = new OpenOnMapRouletteAction(() -> this.task);
     private final JButton openButton = new JButton(this.openAction);
     /**
+     * The challenge owner and how to contact them (#120)
+     */
+    private final ChallengeOwnerPanel ownerPanel = new ChallengeOwnerPanel();
+    /**
      * The panel for instructions
      */
     private final HtmlPanel instructionPane = new HtmlPanel();
@@ -323,6 +327,7 @@ public final class CurrentTaskPanel extends JPanel {
         header.add(this.nameLink, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
         header.add(this.idLabel, GBC.std().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
         header.add(this.openButton, GBC.eol().anchor(GBC.LINE_END).insets(0, 0, 4, 2));
+        header.add(this.ownerPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 2));
         this.add(header, BorderLayout.NORTH);
         final var gbc = GBC.eol();
         this.panel.add(new JLabel(tr("Instructions: ")), gbc);
@@ -1069,12 +1074,14 @@ enum Tone {
             this.nameLink.setEnabled(false);
             this.idLabel.setText(null);
             this.openButton.setVisible(false);
+            this.ownerPanel.setChallenge(null);
             this.instructionPane.setText(tr("Start a task from the list to work on it here."));
             this.cooperativeWork.setVisible(false);
             return;
         }
         this.challengeLabel.setText(ChallengeCache.cached(currentTask.parentId()).map(Challenge::name)
                 .orElseGet(() -> tr("Challenge {0}", Long.toString(currentTask.parentId()))));
+        this.ownerPanel.setChallenge(ChallengeCache.cached(currentTask.parentId()).orElse(null));
         this.nameLink.setText(TaskRows.readableName(currentTask));
         this.nameLink.setIcon(ImageProvider.get("dialogs/autoscale", "selection", ImageProvider.ImageSizes.SMALLICON));
         this.nameLink.setEnabled(true);
