@@ -60,11 +60,12 @@ class CurrentTaskPanelNextTest {
                 panel.refreshModel(TASK);
             });
             final var next = TaskListPanelTest.find(panel, NextTaskPanel.class, p -> true);
-            final var upload = TaskListPanelTest.find(panel, JButton.class,
+            // Upload sits in the bar the MapRoulette panel pins under the task
+            TaskListPanelTest.find(panel.actionBar(), JButton.class,
                     b -> "Upload edits and finish…".equals(b.getText()));
             assertFalse(next.isShowing() && next.isVisible() && isCardShown(next),
                     "A started task shows its instructions");
-            assertTrue(upload.getParent().isVisible());
+            assertTrue(panel.actionBar().isVisible());
             assertTrue(offers.isEmpty());
 
             GuiHelper.runInEDTAndWait(() -> {
@@ -75,7 +76,7 @@ class CurrentTaskPanelNextTest {
                 /* Sync EDT */ });
             assertTrue(isCardShown(next), "The finished task shows the next one");
             assertFalse(GuiHelper.runInEDTAndWaitAndReturn(CurrentTaskPanel::startNextTask), "No MapRoulette panel");
-            assertFalse(upload.getParent().isVisible(), "The finish strip is hidden");
+            assertFalse(panel.actionBar().isVisible(), "The finish strip is hidden");
             assertEquals(List.of(Boolean.FALSE), offers.stream().distinct().toList(), "Off by default");
         } finally {
             GuiHelper.runInEDTAndWait(panel::destroy);

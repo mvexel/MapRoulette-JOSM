@@ -523,6 +523,46 @@ class MapRouletteDialogTest {
         }
     }
 
+    /**
+     * The outcome buttons stay in view under a started task, however short the panel and wherever the task is
+     * scrolled (dry run 2)
+     */
+    @Test
+    void testOutcomesPinnedUnderTask() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testOutcomesPinned", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        final var task = new Task(29, "Bench 29", Instant.EPOCH, Instant.EPOCH, 1,
+                "Check the bench.\n\nAdd backrest=yes if it has a backrest.\n\nAdd material=* if you can tell.", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            ModifiedObjects.addLockedTask(task);
+            GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(task, false));
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            final var card = scroll.getParent();
+            // The task part of the docked panel at 1600x1000
+            card.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 300);
+            GuiHelper.runInEDTAndWait(() -> layOut(card));
+            assertFalse(((javax.swing.Scrollable) scroll.getViewport().getView()).getScrollableTracksViewportHeight(),
+                    "The task scrolls");
+            scroll.getViewport().setViewPosition(new java.awt.Point(0, 0));
+            for (var label : List.of("Upload edits and finish…", "Already fixed", "Not an Issue", "Can't Complete",
+                    "Skip")) {
+                final var button = TaskListPanelTest.find(card, javax.swing.AbstractButton.class,
+                        b -> label.equals(b.getText()));
+                assertNull(SwingUtilities.getAncestorOfClass(JScrollPane.class, button), label + " doesn't scroll");
+                final var bottom = SwingUtilities.convertPoint(button, 0, button.getHeight(), card).y;
+                assertTrue(button.isShowing() || button.isVisible(), label);
+                assertTrue(bottom <= card.getHeight(), () -> label + " ends at " + bottom + " in " + card.getHeight());
+            }
+            assertTrue(scroll.getHeight() >= 300 / 2, () -> "The task keeps room: " + scroll.getHeight());
+        } finally {
+            ModifiedObjects.removeLockedTask(task);
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
     private static void layOut(Container container) {
         container.doLayout();
         for (var child : container.getComponents()) {

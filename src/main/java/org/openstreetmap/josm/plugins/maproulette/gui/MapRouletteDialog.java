@@ -141,7 +141,11 @@ public final class MapRouletteDialog extends ToggleDialog {
         final var taskScroll = new JScrollPane(new TaskView(this.currentTask));
         taskScroll.setBorder(null);
         taskScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        this.lower.add(taskScroll, TASK_CARD);
+        // The task scrolls; its Upload and outcome buttons stay put under it
+        final var taskCard = new JPanel(new BorderLayout());
+        taskCard.add(taskScroll, BorderLayout.CENTER);
+        taskCard.add(this.currentTask.actionBar(), BorderLayout.SOUTH);
+        this.lower.add(taskCard, TASK_CARD);
 
         this.server.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         this.header.add(this.server, BorderLayout.WEST);

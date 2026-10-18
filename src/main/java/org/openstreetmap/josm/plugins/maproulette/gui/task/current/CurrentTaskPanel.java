@@ -237,9 +237,14 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JPanel header = new JPanel(new GridBagLayout());
     /**
-     * The edit count, the feedback and the finish buttons, below the instructions
+     * The state line, the feedback and the notes, below the instructions
      */
     private final JPanel south = new JPanel(new GridBagLayout());
+    /**
+     * Upload and the outcomes. The MapRoulette panel pins it under the task, outside the part that scrolls, so the
+     * buttons never need scrolling (dry run 2)
+     */
+    private final JPanel actionBar = new JPanel(new GridBagLayout());
     /**
      * The comment, the task tags and the review request, folded until the user opens them (#132)
      */
@@ -410,7 +415,12 @@ public final class CurrentTaskPanel extends JPanel {
         finishButton.setFont(finishButton.getFont().deriveFont(Font.BOLD));
         this.finishCards.add(finishButton, FINISH_CARD);
         this.finishCards.add(new SideButton(newActions[4]), COOPERATIVE_CARD);
-        south.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
+        this.actionBar.add(this.finishCards, GBC.eol().fill(GBC.HORIZONTAL));
+        // Two rows, so the bar stays low; the task's name in the header zooms to the task
+        this.statusButtons = MRGuiHelper
+                .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
+                        List.of(new SideButton(newActions[2]), new SideButton(newActions[3]))));
+        this.actionBar.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
         // Wraps in a narrow panel. It renders HTML, which ignores setForeground, so the grey goes into the text.
         final var hintColor = Optional.ofNullable(UIManager.getColor("Label.disabledForeground")).orElse(Color.GRAY);
         final var uploadHint = new JMultilineLabel(String.format("<html><span style=\"color:#%06x\">%s</span></html>",
@@ -418,16 +428,7 @@ public final class CurrentTaskPanel extends JPanel {
                         tr("Edited the map? Upload here or with File > Upload data, and the task is finished."))));
         uploadHint.setFont(font.deriveFont(font.getSize2D() * 0.9f));
         south.add(uploadHint, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 4));
-        final var noEdit = new JLabel(tr("Nothing to edit?"));
-        noEdit.setFont(font.deriveFont(Font.BOLD));
-        south.add(noEdit, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        this.statusButtons = MRGuiHelper
-                .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
-                        // An empty cell keeps Can't Complete as wide as the others
-                        List.of(new SideButton(newActions[2]), new JPanel()),
-                        List.of(new SideButton(newActions[3]), new SideButton(newActions[5]))));
-        south.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
-        this.finishStrip.addAll(List.of(this.finishCards, uploadHint, noEdit, this.statusButtons));
+        this.finishStrip.addAll(List.of(this.actionBar, uploadHint));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -986,8 +987,18 @@ enum Tone {
     }
 
     /**
+     * Get the bar with Upload and the outcome buttons. The MapRoulette panel shows it under this panel, outside the
+     * part that scrolls.
+     *
+     * @return The bar
+     */
+    public JPanel actionBar() {
+        return this.actionBar;
+    }
+
+    /**
      * Get the size the panel needs to be usable: its header, three lines of instructions and the buttons, which must
-     * not cut off their labels (#132)
+     * not cut off their labels (#132). It counts the {@link #actionBar()} too.
      *
      * @return The size
      */
@@ -1006,12 +1017,17 @@ enum Tone {
             // Count the folded line instead
             south += this.feedbackToggle.getPreferredSize().height - this.feedbackPanel.getPreferredSize().height;
         }
-        return new Dimension(width, this.header.getPreferredSize().height + instructions + south);
+        return new Dimension(width, this.header.getPreferredSize().height + instructions + south + barHeight());
+    }
+
+    private int barHeight() {
+        return this.actionBar.isVisible() ? this.actionBar.getPreferredSize().height : 0;
     }
 
     /**
      * Get the height the panel takes when its view scrolls: the header and the lower part as they are now, with up to six
-     * lines of instructions (at least three), so the instructions never collapse
+     * lines of instructions (at least three), so the instructions never collapse. The {@link #actionBar()} doesn't
+     * scroll, so it isn't counted.
      *
      * @return The height
      */
@@ -1020,7 +1036,7 @@ enum Tone {
         final var label = this.panel.getComponent(0).getPreferredSize().height;
         final var center = Math.max(label + 3 * line,
                 Math.min(this.centerCards.getPreferredSize().height, label + 6 * line));
-        return Math.max(neededSize().height,
+        return Math.max(neededSize().height - barHeight(),
                 this.header.getPreferredSize().height + center + this.south.getPreferredSize().height);
     }
 
