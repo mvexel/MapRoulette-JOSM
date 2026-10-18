@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -32,6 +33,10 @@ import org.openstreetmap.josm.plugins.maproulette.util.WireMocks;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.testutils.annotations.Projection;
+
+import mockit.Invocation;
+import mockit.Mock;
+import mockit.MockUp;
 
 /**
  * Test {@link NextTaskPanel}: the next task after a finished one, and the tasks done this session (#117)
@@ -115,6 +120,39 @@ class NextTaskPanelTest {
             assertFalse(GuiHelper.runInEDTAndWaitAndReturn(panel::start), "Nothing offered");
             assertEquals(List.of(242L), TaskResults.session().stream().map(done -> done.task().id()).toList());
             assertTrue(TaskListPanelTest.find(panel, JButton.class, b -> "Try again".equals(b.getText())).isEnabled());
+        } finally {
+            panel.destroy();
+        }
+    }
+
+    /**
+     * The offered task starts on its own only when asked: not when it arrives with auto-start off
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testStartsOnlyWhenAsked() throws Exception {
+        WireMocks.current()
+                .register(get(urlPathEqualTo("/api/v2/challenge/11/tasks/prioritizedTasks"))
+                        .willReturn(aResponse().withStatus(200).withBody(Files.readString(
+                                Path.of("src/test/resources/__files/api/v2/challenge/11/tasks/prioritizedTasks")))));
+        final var starts = new ArrayList<Long>();
+        new MockUp<NextTaskPanel>() {
+            @Mock
+            boolean start(Invocation invocation) {
+                starts.add(invocation.<NextTaskPanel> getInvokedInstance().candidate().id());
+                return true;
+            }
+        };
+        final var panel = GuiHelper.runInEDTAndWaitAndReturn(NextTaskPanel::new);
+        try {
+            GuiHelper.runInEDTAndWait(() -> panel.show(FINISHED, false));
+            sync();
+            assertEquals(242, panel.candidate().id());
+            assertTrue(starts.isEmpty(), "Auto-start off");
+            GuiHelper.runInEDTAndWait(() -> panel.show(task(243, 11), true));
+            sync();
+            assertEquals(List.of(242L), starts, "Auto-start on: starts once the answer arrives");
         } finally {
             panel.destroy();
         }

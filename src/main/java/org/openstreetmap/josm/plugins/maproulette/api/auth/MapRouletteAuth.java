@@ -72,7 +72,7 @@ public final class MapRouletteAuth {
      */
     public static String unavailableTooltip() {
         if (MapRouletteClient.getInstance().auth() instanceof OAuthAuthProvider) {
-            return tr("Log in to MapRoulette first, with Log in… at the top of the MapRoulette panel.");
+            return tr("Log in to MapRoulette first. Use Log in… in the MapRoulette panel.");
         }
         return tr("Not available while MapRoulette does not accept logins from JOSM. "
                 + "Set task status on the MapRoulette website.");
