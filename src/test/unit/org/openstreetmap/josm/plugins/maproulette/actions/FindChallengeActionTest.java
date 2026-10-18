@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.TimeUnit;
@@ -102,11 +104,13 @@ class FindChallengeActionTest {
                 .willReturn(aResponse().withHeader("Content-Type", "application/json")
                         .withBodyFile("api/v2/tasks/box/-108.4962538/39.082404/-108.4962538/39.082404")));
         assertFalse(MainApplication.isDisplayingMapView(), "No map yet");
-        FindChallengeAction.findNear("Omaha, Nebraska");
+        final var problems = new ArrayList<String>();
+        FindChallengeAction.findNear("Omaha, Nebraska", problems::add);
         syncWorker();
         // The bounding box of the Omaha boundary in the recorded answer
         wireMock.verifyThat(
                 putRequestedFor(urlPathEqualTo("/api/v2/tasks/box/-96.2682/41.190585/-95.871141/41.3930618")));
+        assertEquals(List.of(), problems);
         assertEquals(1, MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class).size());
         assertTrue(MainApplication.isDisplayingMapView(), "The task layer opened a map");
         // The test map has no size, so its view is the centre point: it is in Omaha
@@ -115,17 +119,58 @@ class FindChallengeActionTest {
     }
 
     /**
-     * A name that matches nothing loads nothing (#187)
+     * A name that matches nothing loads nothing, and says what to type instead (#187)
      *
      * @throws Exception if the test fails
      */
     @Test
     void testFindNearNoPlace() throws Exception {
         final var wireMock = nominatim("Xyzzyplughnowhere", "nominatim/none.xml");
-        FindChallengeAction.findNear("Xyzzyplughnowhere");
+        assertEquals(List.of("Nothing found for \"Xyzzyplughnowhere\". Type a challenge number or link, or a place "
+                + "such as Omaha, Nebraska."), findNear(wireMock, "Xyzzyplughnowhere"));
+    }
+
+    /**
+     * A state is too big for the box download: it says so instead of loading part of it (#187)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testFindNearTooBig() throws Exception {
+        final var wireMock = nominatim("Texas", "nominatim/texas.xml");
+        assertEquals(List.of("Texas is too big to load at once. Type a city or county instead."),
+                findNear(wireMock, "Texas"));
+    }
+
+    /**
+     * A failed place search says that challenge numbers still work (#187)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    void testFindNearLookupFails() throws Exception {
+        final var wireMock = nominatim("Omaha, Nebraska", "nominatim/omaha-nebraska.xml");
+        wireMock.register(get(urlPathEqualTo("/search")).willReturn(aResponse().withStatus(503)));
+        assertEquals(List.of("Couldn't look up places right now. A challenge number or link still works."),
+                findNear(wireMock, "Omaha, Nebraska"));
+    }
+
+    /**
+     * Look a place up that loads no tasks
+     *
+     * @param wireMock The test server
+     * @param place    The place
+     * @return What the user is told
+     * @throws Exception if the test fails
+     */
+    private static List<String> findNear(com.github.tomakehurst.wiremock.client.WireMock wireMock, String place)
+            throws Exception {
+        final var problems = new ArrayList<String>();
+        FindChallengeAction.findNear(place, problems::add);
         syncWorker();
         wireMock.verifyThat(0, putRequestedFor(urlPathMatching("/api/v2/tasks/box/.*")));
-        assertTrue(MainApplication.getLayerManager().getLayers().isEmpty());
+        assertTrue(MainApplication.getLayerManager().getLayers().isEmpty(), "Nothing loaded");
+        return problems;
     }
 
     /**
