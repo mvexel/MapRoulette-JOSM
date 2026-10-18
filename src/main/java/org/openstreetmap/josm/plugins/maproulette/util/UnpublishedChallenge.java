@@ -65,7 +65,7 @@ public final class UnpublishedChallenge {
         } else if (project.enabled()) {
             return tr("Challenge \"{0}\" isn''t published yet. Only its owner can publish it.", name);
         }
-        return tr("Challenge \"{0}\" isn''t published yet, and its project \"{1}\" is disabled. Only their owner can "
-                + "publish them.", name, projectName);
+        return tr("Challenge \"{0}\" isn''t published yet, and its project \"{1}\" is disabled. Only the owner can "
+                + "publish the challenge and enable the project.", name, projectName);
     }
 }

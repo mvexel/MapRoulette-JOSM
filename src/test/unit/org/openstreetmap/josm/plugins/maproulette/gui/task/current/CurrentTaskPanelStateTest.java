@@ -41,8 +41,9 @@ class CurrentTaskPanelStateTest {
         final var none = state(true, 0, null);
         assertEquals(Tone.WORKING, none.tone());
         assertEquals("Working on task 235 · no edits since it was started", none.html());
-        assertEquals("Edits from before Start or from before a restart aren't counted. Already uploaded them? Use "
-                + "Already fixed.", none.hint());
+        // Since #150, unuploaded edits of the task's own objects from before Start count
+        assertEquals("Edits from before Start count only if they change the task's objects and aren't uploaded yet. "
+                + "Already uploaded them? Use Already fixed.", none.hint());
         assertEquals("Working on task 235 · 1 edit so far", state(true, 1, null).html());
         final var two = state(true, 2, null);
         assertEquals("Working on task 235 · 2 edits so far", two.html());

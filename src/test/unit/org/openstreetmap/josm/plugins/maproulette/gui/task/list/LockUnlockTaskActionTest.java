@@ -77,6 +77,7 @@ import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.Utils;
 
+import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
@@ -444,6 +445,79 @@ class LockUnlockTaskActionTest {
             wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
             assertNull(ModifiedObjects.getLockedTask(147197178L));
             assertNotNull(ModifiedObjects.getLockedTask(132279499L));
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * The start-blocked question goes once the started task is finished or stopped elsewhere, so it doesn't hide the
+     * task's real state (#116)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedQuestionDropped() throws Exception {
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertNotNull(stateText("Start task 132279499? Task 147197178 is still started."));
+            GuiHelper.runInEDTAndWait(() -> ModifiedObjects.removeLockedTask(started));
+            assertNull(TaskListPanelTest.findOrNull(Objects.requireNonNull(CurrentTaskPanel.get()),
+                    JMultilineLabel.class, l -> l.getText().contains("still started")),
+                    "The question is gone with the lock");
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * "Stop task X and start Y" doesn't start Y when MapRoulette doesn't release X: MapRoulette would refuse the start
+     * anyway, and X stays started
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedReleaseFails() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/147197178/release")).atPriority(1)
+                .willReturn(aResponse().withStatus(500)));
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            click("Stop task 147197178 and start 132279499");
+            for (var i = 0; i < 4; i++) {
+                sync();
+            }
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(ModifiedObjects.getLockedTask(147197178L), "The held task stays started");
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            assertFalse(explained.isEmpty(), "The failed release is explained");
         } finally {
             Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
             cleanUp();
@@ -847,9 +921,19 @@ class LockUnlockTaskActionTest {
                 startRefused(9010, 404, told));
         // A super-user gets challenge_draft instead
         assertEquals(List.of(challengeOff), startRefused(4, 403, told));
-        // The challenge is published, or unknown too: the refusal is explained as before
-        assertEquals(List.of("not found"), startRefused(9011, 404, told));
-        assertEquals(List.of("not found"), startRefused(999_999, 404, told));
+        // The challenge reads as published, or can't be read: the user is asked to try again
+        final var again = List.of("Task 132279499 couldn't be started. Try again.");
+        assertEquals(again, startRefused(9011, 404, told));
+        assertEquals(again, startRefused(999_999, 404, told));
+        // The controller's JSON NotFound: the task itself is gone, whatever the challenge
+        final var gone = List
+                .of("Task 132279499 no longer exists on MapRoulette. The challenge owner may have removed it.");
+        assertEquals(gone, startRefused(4, 404, true, told));
+        assertEquals(gone, startRefused(9011, 404, true, told));
+    }
+
+    private List<String> startRefused(long challenge, int status, List<String> told) throws Exception {
+        return startRefused(challenge, status, false, told);
     }
 
     /**
@@ -857,22 +941,29 @@ class LockUnlockTaskActionTest {
      *
      * @param challenge The task's challenge
      * @param status    The HTTP status of the refusal: 404, or 403 for {@code challenge_draft}
+     * @param gone      {@code true} for the controller's JSON NotFound, {@code false} for the draft gate's empty 404
      * @param told      Gets what the user is told
      * @return What the user was told this time
      */
-    private List<String> startRefused(long challenge, int status, List<String> told) throws Exception {
+    private List<String> startRefused(long challenge, int status, boolean gone, List<String> told) throws Exception {
         told.clear();
         MainApplication.getLayerManager().getLayersOfType(MapRouletteClusteredPointLayer.class)
                 .forEach(MainApplication.getLayerManager()::removeLayer);
         MainApplication.getLayerManager().addLayer(layer(TaskStatus.CREATED, challenge));
         GuiHelper.runInEDTAndWait(() -> this.table.getSelectionModel().setSelectionInterval(0, 0));
         final var start = get(urlPathEqualTo("/api/v2/task/132279499/start"));
-        // The draft refusal's body as MobileBearerFilter.denied writes it: not recorded, it needs a super-user's token
-        WireMocks.current()
-                .register(status == 404
-                        ? start.willReturn(aResponse().withStatus(404).withHeader("Content-Type", "application/json")
-                                .withBodyFile("errors/404-not-found.json"))
-                        : start.willReturn(aResponse().withStatus(403).withBody("{\"error\":\"challenge_draft\"}")));
+        // The draft refusals as MobileBearerFilter's draft gate writes them (an empty 404 with no-store, or
+        // challenge_draft for a super-user): not recorded, they need an app login's token
+        final ResponseDefinitionBuilder response;
+        if (gone) {
+            response = aResponse().withStatus(404).withHeader("Content-Type", "application/json")
+                    .withBodyFile("errors/404-not-found.json");
+        } else if (status == 404) {
+            response = aResponse().withStatus(404).withHeader("Cache-Control", "no-store");
+        } else {
+            response = aResponse().withStatus(403).withBody("{\"error\":\"challenge_draft\"}");
+        }
+        WireMocks.current().register(start.willReturn(response));
         try {
             final var action = new LockUnlockTaskAction(this.table);
             GuiHelper.runInEDTAndWaitWithException(() -> {
