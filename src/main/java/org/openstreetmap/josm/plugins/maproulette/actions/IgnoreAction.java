@@ -42,7 +42,7 @@ public class IgnoreAction extends JosmAction {
                 Shortcut.registerShortcut( /* NO-SHORTCUT */
                         "maproulette:ignore." + type.name().toLowerCase(Locale.ROOT),
                         tr("MapRoulette: {0}", tr(type.getButtonText())), KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/ignore_" + type.name().toLowerCase(Locale.ROOT), true);
         putValue("help", ht("/Action/MapRouletteIgnore"));
         this.type = type;
     }

@@ -31,7 +31,7 @@ public class DownloadTasks extends JosmAction {
                 Shortcut.registerShortcut("maproulette:download_additional_tasks_from_challenge",
                         tr("MapRoulette: Download additional tasks from challenge"), KeyEvent.CHAR_UNDEFINED,
                         Shortcut.NONE),
-                false);
+                false, "maproulette/download_additional_tasks", true);
         putValue("help", ht("/Dialog/MapRouletteDownloadTasks"));
     }
 

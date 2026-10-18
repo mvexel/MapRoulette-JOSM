@@ -23,7 +23,7 @@ public class OpenLinkAction extends JosmAction {
                 tr("Load a MapRoulette challenge or task from a link to the MapRoulette website"),
                 Shortcut.registerShortcut("maproulette:open_link", tr("MapRoulette: Open challenge or task link"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/open_link", true);
     }
 
     @Override

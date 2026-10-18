@@ -44,7 +44,7 @@ public class FindChallengeAction extends JosmAction {
         super(tr("Find a challenge…"), "dialogs/search", tr("Load a MapRoulette challenge from its link or number"),
                 Shortcut.registerShortcut("maproulette:find_challenge", tr("MapRoulette: Find a challenge"),
                         KeyEvent.CHAR_UNDEFINED, Shortcut.NONE),
-                false);
+                false, "maproulette/find_challenge", true);
     }
 
     @Override
