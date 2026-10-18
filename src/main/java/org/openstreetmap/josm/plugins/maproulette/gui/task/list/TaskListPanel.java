@@ -167,6 +167,10 @@ public final class TaskListPanel extends JPanel
      */
     private final JPanel filters = new JPanel(new GridBagLayout());
     /**
+     * The title and the filters, above the list
+     */
+    private final JPanel titleBar = new JPanel(new GridBagLayout());
+    /**
      * Repaints the distances when the map moves
      */
     private final NavigatableComponent.ZoomChangeListener zoomListener;
@@ -306,7 +310,7 @@ public final class TaskListPanel extends JPanel
             }
         });
         tableRowSorter.toggleSortOrder(0); // Start with an initial sort
-        final var titleBar = new JPanel(new GridBagLayout());
+        final var titleBar = this.titleBar;
         titleBar.add(this.title, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         titleBar.add(filters, GBC.eol().fill(GBC.HORIZONTAL));
         this.add(titleBar, BorderLayout.NORTH);
@@ -596,6 +600,18 @@ public final class TaskListPanel extends JPanel
      * @param table The task table
      * @return The step in pixels
      */
+    /**
+     * Get the size the list needs to show some rows, with its title, filters, footer and buttons (#132)
+     *
+     * @param rows The number of rows to show
+     * @return The size
+     */
+    public Dimension neededSize(int rows) {
+        final var footerHeight = this.footer.isVisible() ? this.footer.getPreferredSize().height : 0;
+        return new Dimension(this.buttons.getPreferredSize().width, this.titleBar.getPreferredSize().height
+                + rows * scrollStep(this.table) + footerHeight + this.buttons.getPreferredSize().height);
+    }
+
     static int scrollStep(JTable table) {
         return 2 * table.getFontMetrics(table.getFont()).getHeight() + 12;
     }

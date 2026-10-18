@@ -8,6 +8,7 @@ import static org.openstreetmap.josm.tools.I18n.trn;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -157,6 +158,18 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JPanel dataPanel = new JPanel(new GridBagLayout());
     /**
+     * The task name and id, above the instructions
+     */
+    private final JPanel header = new JPanel(new GridBagLayout());
+    /**
+     * The edit count, the feedback and the finish buttons, below the instructions
+     */
+    private final JPanel south = new JPanel(new GridBagLayout());
+    /**
+     * The buttons for the outcomes with no edit
+     */
+    private final JPanel statusButtons;
+    /**
      * Updates the header and the missing data notice when the selection changes
      */
     private final transient DataSelectionListener selectionListener = e -> this.refreshDataState();
@@ -220,7 +233,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.actions = newActions;
         this.instructionPane.enableClickableHyperlinks();
         // The header stays in place while the instructions scroll
-        final var header = new JPanel(new GridBagLayout());
+        final var header = this.header;
         // The task name is what people look for; the challenge above it is context
         final var font = this.nameLabel.getFont();
         this.challengeLabel.setFont(font.deriveFont(font.getSize2D() * 0.9f));
@@ -253,7 +266,7 @@ public final class CurrentTaskPanel extends JPanel {
         download.setToolTipText(tr("Download the task''s objects from OpenStreetMap and select them"));
         download.addActionListener(e -> Optional.ofNullable(this.task).ifPresent(TaskData::loadAndSelect));
         this.dataPanel.add(download, GBC.eol().anchor(GBC.LINE_END));
-        final var south = new JPanel(new GridBagLayout());
+        final var south = this.south;
         south.add(this.dataPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
@@ -276,11 +289,12 @@ public final class CurrentTaskPanel extends JPanel {
         final var noEdit = new JLabel(tr("Nothing to edit?"));
         noEdit.setFont(font.deriveFont(Font.BOLD));
         south.add(noEdit, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(MRGuiHelper.buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
-                // An empty cell keeps Can't Complete as wide as the others
-                List.of(new SideButton(newActions[2]), new JPanel()),
-                List.of(new SideButton(newActions[3]), new SideButton(newActions[5])))),
-                GBC.eol().fill(GBC.HORIZONTAL));
+        this.statusButtons = MRGuiHelper
+                .buttonRows(List.of(List.of(new SideButton(newActions[0]), new SideButton(newActions[1])),
+                        // An empty cell keeps Can't Complete as wide as the others
+                        List.of(new SideButton(newActions[2]), new JPanel()),
+                        List.of(new SideButton(newActions[3]), new SideButton(newActions[5]))));
+        south.add(this.statusButtons, GBC.eol().fill(GBC.HORIZONTAL));
         this.add(south, BorderLayout.SOUTH);
         MapRouletteClient.getInstance().addAuthListener(this.authListener);
         TaskEdits.addListener(this.editsListener);
@@ -410,13 +424,9 @@ public final class CurrentTaskPanel extends JPanel {
             }
         }
         this.task = task;
-        if (task != null) {
-            final var dialog = MapRouletteDialog.get();
-            if (dialog != null) {
-                dialog.showTask();
-            }
-        }
         this.refreshPanel();
+        // With no task, the panel gives the task list the room (#132)
+        Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
     }
 
     /**
@@ -439,6 +449,29 @@ public final class CurrentTaskPanel extends JPanel {
         if (focus) {
             dialog.unfurlDialog();
         }
+    }
+
+    /**
+     * Check if the panel shows a task
+     *
+     * @return {@code true} if there is a current task
+     */
+    public boolean hasTask() {
+        return this.task != null;
+    }
+
+    /**
+     * Get the size the panel needs to be usable: its header, three lines of instructions and the buttons, which must
+     * not cut off their labels (#132)
+     *
+     * @return The size
+     */
+    public Dimension neededSize() {
+        final var lines = 3 * this.getFontMetrics(this.getFont()).getHeight();
+        final var instructions = this.panel.getComponent(0).getPreferredSize().height + lines;
+        final var width = Math.max(this.statusButtons.getPreferredSize().width, this.header.getMinimumSize().width);
+        return new Dimension(width,
+                this.header.getPreferredSize().height + instructions + this.south.getPreferredSize().height);
     }
 
     /**
