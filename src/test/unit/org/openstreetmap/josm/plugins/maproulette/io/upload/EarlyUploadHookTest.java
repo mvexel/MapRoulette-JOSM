@@ -162,6 +162,36 @@ class EarlyUploadHookTest {
     }
 
     /**
+     * An upload whose task edits are far from the task doesn't ask, and the task stays started. "Upload edits and
+     * finish" asks anyway (#149).
+     */
+    @Test
+    @MapRouletteLogin
+    void testFarEditsAskOnlyWhenFinishRequested() {
+        TestUtils.assumeWorkingJMockit();
+        final var task = startedTask(false);
+        final var far = editedNode(true);
+        // About 80 m north of the task
+        far.setCoor(new LatLon(0.00072, 0));
+        final var statuses = List.of(new ModifiedTask(task, TaskStatus.FIXED, null, null, null, Map.of()));
+        final var dialogs = new ExtendedDialogMocker(
+                Map.of(EarlyUploadHook.finishMessage(statuses), "Finished: I fixed it!"));
+        assertTrue(hook.checkUpload(new APIDataSet(far.getDataSet())));
+        assertEquals(0, dialogs.getInvocationLog().size(), "No question for edits far from the task");
+        assertTrue(ModifiedObjects.getFinishing().isEmpty());
+        assertEquals(List.of(task), ModifiedObjects.getLockedTasks(), "The task stays started");
+
+        EarlyUploadHook.requestFinish();
+        assertTrue(hook.checkUpload(new APIDataSet(far.getDataSet())));
+        assertEquals(1, dialogs.getInvocationLog().size(), "Upload edits and finish asks");
+        assertEquals(List.of(TaskStatus.FIXED),
+                ModifiedObjects.getFinishing().stream().map(ModifiedTask::status).toList());
+
+        assertTrue(hook.checkUpload(new APIDataSet(far.getDataSet())));
+        assertEquals(1, dialogs.getInvocationLog().size(), "The request is used up");
+    }
+
+    /**
      * The question repeats the comment and the review request, so the user sees what is sent
      */
     @Test
@@ -179,7 +209,8 @@ class EarlyUploadHookTest {
     }
 
     private static Task task(long id, boolean choice) {
-        return new Task(id, "Bench " + id, null, null, 15318, null, null, null,
+        // At the edited bench, so its edits are near the task (#149)
+        return new Task(id, "Bench " + id, null, null, 15318, null, new Point(0, 0), new DataSet(),
                 choice ? Task.ChoiceWork.INSTANCE : null, null, null, null, null, null, 0, null, null, null, false,
                 null, null);
     }
