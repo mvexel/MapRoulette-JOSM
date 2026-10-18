@@ -18,6 +18,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -57,7 +58,7 @@ public final class OAuthAuthProvider implements AuthProvider {
      */
     public static final ListProperty LOGIN_SERVERS = new ListProperty("maproulette.oauth.servers",
             // JOSM's ListSetting checks for null entries, which an immutable List.of refuses
-            Collections.singletonList("https://mr-api.osm.lol"));
+            Arrays.asList("https://mr-api.osm.lol", "https://mr-stage.osm.lol"));
     /**
      * The client id MapRoulette registered for this plugin
      */

@@ -138,6 +138,7 @@ class OAuthAuthProviderTest {
         assertNull(OAuthAuthProvider.forServer("https://maproulette.org/api/v2"));
         assertNotNull(OAuthAuthProvider.forServer("https://mr-api.osm.lol/api/v2"));
         assertNotNull(OAuthAuthProvider.forServer("https://mr-api.osm.lol/api/v2/"));
+        assertNotNull(OAuthAuthProvider.forServer("https://mr-stage.osm.lol/api/v2"), "Staging, for testers");
         OAuthAuthProvider.LOGIN_SERVERS.put(Collections.singletonList("http://mr-api.example"));
         assertNull(OAuthAuthProvider.forServer("http://mr-api.example/api/v2"), "No tokens over plain http");
         assertNull(OAuthAuthProvider.serverRoot("https://mr-api.osm.lol/"), "Not an API URL");
