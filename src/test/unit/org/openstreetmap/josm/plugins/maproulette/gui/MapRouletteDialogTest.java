@@ -221,6 +221,12 @@ class MapRouletteDialogTest {
                             null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""));
             assertTrue(toggle.isVisible(), "Another task starts folded");
             assertFalse(comment.getParent().isVisible());
+
+            panel.refreshModel(new Task(29, "Bench 29", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                    new DataSet(), null, TaskStatus.FIXED, null, null, null,
+                    new TaskReviewFields(2, null, null, null, null, null, null, null, null, null), 0, null, null, null,
+                    false, null, ""));
+            assertTrue(comment.getParent().isVisible(), "A rejected task shows that it goes back for review");
         } finally {
             panel.destroy();
         }

@@ -603,8 +603,8 @@ public final class CurrentTaskPanel extends JPanel {
             return;
         }
         this.feedbackTask = id;
-        // Each task starts with the fields folded
-        this.feedbackOpen = false;
+        // Each task starts with the fields folded, except a rejected one, whose review request is always on
+        this.feedbackOpen = isInRevision(currentTask);
         this.commentField.setText("");
         this.reviewBox.setSelected(false);
         this.tagBox.getModel().removeAllElements();

@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongPredicate;
 import java.util.function.Predicate;
@@ -157,7 +158,7 @@ public class TaskListPanelTest {
      * The list groups tasks under challenge headers, filters by challenge and counts what the filters hide (#112)
      */
     @Test
-    void testChallengeFilterAndFooter() {
+    void testChallengeFilterAndFooter() throws Exception {
         // Ids that other tests leave off the ignore lists, which last for the whole test run
         final var points = new ArrayList<TaskClusteredPoint>();
         for (long id = 1001; id <= 1003; id++) {
@@ -167,7 +168,11 @@ public class TaskListPanelTest {
         points.add(point(1005, 18, "SLC benches", 99L));
         MainApplication.getLayerManager().addLayer(new MapRouletteClusteredPointLayer(new Bounds(0, 0, 0, 0), points));
         final var panel = new TaskListPanel();
-        // The model fills from the layer on the EDT
+        // The model fills from the layer on the EDT; the challenge prefetch runs on the worker and redraws on the EDT
+        GuiHelper.runInEDTAndWait(() -> {
+            /* Sync EDT */ });
+        MainApplication.worker.submit(() -> {
+            /* Sync worker */ }).get(10, TimeUnit.SECONDS);
         GuiHelper.runInEDTAndWait(() -> {
             /* Sync EDT */ });
         try {
