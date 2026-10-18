@@ -595,12 +595,6 @@ public final class TaskListPanel extends JPanel
     }
 
     /**
-     * Get the vertical scroll step of the task list: about one row, which shows a name and a details line
-     *
-     * @param table The task table
-     * @return The step in pixels
-     */
-    /**
      * Get the size the list needs to show some rows, with its title, filters, footer and buttons (#132)
      *
      * @param rows The number of rows to show
@@ -624,6 +618,12 @@ public final class TaskListPanel extends JPanel
                 this.title.getPreferredSize().height + 4 + challengeRow);
     }
 
+    /**
+     * Get the vertical scroll step of the task list: about one row, which shows a name and a details line
+     *
+     * @param table The task table
+     * @return The step in pixels
+     */
     static int scrollStep(JTable table) {
         return 2 * table.getFontMetrics(table.getFont()).getHeight() + 12;
     }

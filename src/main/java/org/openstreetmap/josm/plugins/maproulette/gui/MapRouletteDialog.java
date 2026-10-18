@@ -303,6 +303,13 @@ public final class MapRouletteDialog extends ToggleDialog {
     }
 
     @Override
+    protected void stateChanged() {
+        super.stateChanged();
+        // Shown, expanded, docked or undocked: the size may not change, so no resize event comes
+        SwingUtilities.invokeLater(this::checkSize);
+    }
+
+    @Override
     protected Dimension getDefaultDetachedSize() {
         final var size = super.getDefaultDetachedSize();
         final var needed = windowSize();

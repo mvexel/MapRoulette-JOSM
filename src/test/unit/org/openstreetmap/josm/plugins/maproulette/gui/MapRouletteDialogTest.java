@@ -210,8 +210,10 @@ class MapRouletteDialogTest {
             final var comment = TaskListPanelTest.find(panel, JosmTextField.class, f -> true);
             assertTrue(toggle.isVisible());
             assertFalse(comment.getParent().isVisible(), "The fields start folded");
+            final var folded = panel.neededSize();
             toggle.doClick();
             assertFalse(toggle.isVisible());
+            assertEquals(folded, panel.neededSize(), "Opening the fields doesn't change the minimum");
             assertTrue(comment.getParent().isVisible());
 
             panel.refreshModel(

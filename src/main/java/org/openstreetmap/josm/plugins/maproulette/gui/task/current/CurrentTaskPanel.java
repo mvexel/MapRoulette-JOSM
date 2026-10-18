@@ -498,8 +498,18 @@ public final class CurrentTaskPanel extends JPanel {
         final var lines = 3 * this.getFontMetrics(this.getFont()).getHeight();
         final var instructions = this.panel.getComponent(0).getPreferredSize().height + lines;
         final var width = Math.max(this.statusButtons.getPreferredSize().width, this.header.getMinimumSize().width);
-        return new Dimension(width,
-                this.header.getPreferredSize().height + instructions + this.south.getPreferredSize().height);
+        // The notices and the opened feedback fields come and go; leave them out, so the minimum stays put
+        var south = this.south.getPreferredSize().height;
+        for (var notice : List.of(this.dataPanel, this.unfinishedPanel)) {
+            if (notice.isVisible()) {
+                south -= notice.getPreferredSize().height + 4;
+            }
+        }
+        if (this.feedbackPanel.isVisible()) {
+            // Count the folded line instead
+            south += this.feedbackToggle.getPreferredSize().height - this.feedbackPanel.getPreferredSize().height;
+        }
+        return new Dimension(width, this.header.getPreferredSize().height + instructions + south);
     }
 
     /**
