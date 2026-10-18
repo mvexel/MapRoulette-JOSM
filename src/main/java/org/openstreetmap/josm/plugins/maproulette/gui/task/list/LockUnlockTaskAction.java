@@ -394,7 +394,11 @@ final class LockUnlockTaskAction extends JosmAction {
                 }
                 // In the panel, which shows the selected task; otherwise as a notification
                 unpublished.forEach((id, text) -> {
-                    if (!CurrentTaskPanel.ask(new CurrentTaskPanel.Prompt(id, false, text, null, List.of()))) {
+                    // OK puts the task's own state back
+                    final var ok = new CurrentTaskPanel.Choice(tr("OK"), null, () -> {
+                        // Answering clears the question
+                    });
+                    if (!CurrentTaskPanel.ask(new CurrentTaskPanel.Prompt(id, false, text, null, List.of(ok)))) {
                         ExceptionDialogUtil.notifyProblem(text);
                     }
                 });

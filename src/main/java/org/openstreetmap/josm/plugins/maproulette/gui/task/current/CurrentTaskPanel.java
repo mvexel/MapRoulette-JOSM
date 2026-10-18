@@ -618,12 +618,22 @@ public final class CurrentTaskPanel extends JPanel {
      */
     public static boolean ask(Prompt prompt) {
         final var panel = get();
-        if (panel == null || panel.task == null || panel.task.id() != prompt.taskId()) {
+        return panel != null && panel.askHere(prompt);
+    }
+
+    /**
+     * Ask a question in this panel's state line, see {@link #ask(Prompt)}
+     *
+     * @param prompt The question
+     * @return {@code false} if the panel doesn't show the task
+     */
+    boolean askHere(Prompt prompt) {
+        if (this.task == null || this.task.id() != prompt.taskId()) {
             return false;
         }
-        panel.prompt = prompt;
-        panel.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
-        panel.refreshState();
+        this.prompt = prompt;
+        this.promptHeldLock = ModifiedObjects.getLockedTask(prompt.taskId()) != null;
+        this.refreshState();
         return true;
     }
 
@@ -897,6 +907,10 @@ enum Tone {
                 }
                 ModifiedObjects.addModifiedTask(newModifiedTask);
             }
+        }
+        // A question about another task would come back stale when that task is shown again (#166)
+        if (this.prompt != null && (task == null || task.id() != this.prompt.taskId())) {
+            this.prompt = null;
         }
         this.task = task;
         this.refreshPanel();
