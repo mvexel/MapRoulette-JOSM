@@ -318,6 +318,17 @@ public final class TaskListPanel extends JPanel
                     lockUnlockAction.actionPerformed(new ActionEvent(table, ActionEvent.ACTION_PERFORMED, "start"));
                 }
             }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                // The menu acts on the selected rows: a right-click on another row selects it first (#195). A
+                // right-click on a selected row keeps the selection, so the menu acts on all of them.
+                final var row = table.rowAtPoint(e.getPoint());
+                if ((SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) && row >= 0
+                        && !table.isRowSelected(row)) {
+                    table.setRowSelectionInterval(row, row);
+                }
+            }
         });
         this.zoomListener = table::repaint;
         NavigatableComponent.addZoomChangeListener(this.zoomListener);
