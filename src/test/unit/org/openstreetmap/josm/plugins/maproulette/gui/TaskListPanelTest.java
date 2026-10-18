@@ -356,7 +356,7 @@ public class TaskListPanelTest {
         return fail("No " + type.getSimpleName() + " found");
     }
 
-    private static <T extends Component> T findOrNull(Container container, Class<T> type, Predicate<T> test) {
+    public static <T extends Component> T findOrNull(Container container, Class<T> type, Predicate<T> test) {
         try {
             return find(container, type, test);
         } catch (AssertionError e) {

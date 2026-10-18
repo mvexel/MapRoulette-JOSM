@@ -439,6 +439,79 @@ class LockUnlockTaskActionTest {
     }
 
     /**
+     * The start-blocked question goes once the started task is finished or stopped elsewhere, so it doesn't hide the
+     * task's real state (#116)
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedQuestionDropped() throws Exception {
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            assertNotNull(stateText("Start task 132279499? Task 147197178 is still started."));
+            GuiHelper.runInEDTAndWait(() -> ModifiedObjects.removeLockedTask(started));
+            assertNull(TaskListPanelTest.findOrNull(Objects.requireNonNull(CurrentTaskPanel.get()),
+                    JMultilineLabel.class, l -> l.getText().contains("still started")),
+                    "The question is gone with the lock");
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
+     * "Stop task X and start Y" doesn't start Y when MapRoulette doesn't release X: MapRoulette would refuse the start
+     * anyway, and X stays started
+     *
+     * @throws Exception if the test fails
+     */
+    @Test
+    @MapRouletteLogin
+    void testStartBlockedReleaseFails() throws Exception {
+        final var wireMock = WireMocks.current();
+        wireMock.register(get(urlPathEqualTo("/api/v2/task/147197178/release")).atPriority(1)
+                .willReturn(aResponse().withStatus(500)));
+        TestUtils.assumeWorkingJMockit();
+        final var explained = new CopyOnWriteArrayList<Exception>();
+        new MockUp<ExceptionDialogUtil>() {
+            @Mock
+            void explainException(Exception exception) {
+                explained.add(exception);
+            }
+        };
+        final var started = TaskAPI.get(147197178L);
+        GuiHelper.runInEDTAndWait(() -> ModifiedObjects.addLockedTask(started));
+        try {
+            final var action = new LockUnlockTaskAction(this.table);
+            GuiHelper.runInEDTAndWaitWithException(() -> {
+                action.updateEnabledState();
+                action.actionPerformed(null);
+            });
+            sync();
+            click("Stop task 147197178 and start 132279499");
+            for (var i = 0; i < 4; i++) {
+                sync();
+            }
+            wireMock.verifyThat(1, getRequestedFor(urlPathEqualTo("/api/v2/task/147197178/release")));
+            wireMock.verifyThat(0, getRequestedFor(urlPathEqualTo("/api/v2/task/132279499/start")));
+            assertNotNull(ModifiedObjects.getLockedTask(147197178L), "The held task stays started");
+            assertNull(ModifiedObjects.getLockedTask(132279499L));
+            assertFalse(explained.isEmpty(), "The failed release is explained");
+        } finally {
+            Optional.ofNullable(ModifiedObjects.getLockedTask(147197178L)).ifPresent(ModifiedObjects::removeLockedTask);
+            cleanUp();
+        }
+    }
+
+    /**
      * Find the state line of the current task section, by its start
      *
      * @param start The start of its text
