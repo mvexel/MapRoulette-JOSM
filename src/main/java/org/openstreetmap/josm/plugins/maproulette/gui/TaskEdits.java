@@ -23,6 +23,7 @@ import org.openstreetmap.josm.data.UndoRedoHandler.CommandUndoneEvent;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveData;
+import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataChangedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSetListener;
@@ -38,10 +39,17 @@ import org.openstreetmap.josm.gui.layer.LayerManager.LayerChangeListener;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.io.NetworkManager;
+import org.openstreetmap.josm.io.OnlineResource;
+import org.openstreetmap.josm.io.OsmServerObjectReader;
+import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
+import org.openstreetmap.josm.plugins.maproulette.util.Workers;
+import org.openstreetmap.josm.tools.Logging;
 
 import jakarta.annotation.Nonnull;
 import jakarta.annotation.Nullable;
@@ -267,10 +275,14 @@ public final class TaskEdits
             for (var layer : MainApplication.getLayerManager().getLayersOfType(OsmDataLayer.class)) {
                 for (var id : ids) {
                     final var primitive = layer.getDataSet().getPrimitiveById(id);
-                    if (primitive != null && !primitive.isIncomplete()) {
+                    if (primitive != null && !primitive.isIncomplete() && !this.baseline.containsKey(primitive)) {
                         // Taken when the object first shows up for a started task. If the challenge is cached only
                         // after Start, edits made in between count as made before Start.
-                        this.baseline.computeIfAbsent(primitive, OsmPrimitive::save);
+                        final var saved = primitive.save();
+                        this.baseline.put(primitive, saved);
+                        if (primitive.isModified() && !primitive.isNew()) {
+                            fetchUploaded(primitive, saved);
+                        }
                     }
                     if (primitive != null && pending(primitive)) {
                         edited.add(primitive);
@@ -279,6 +291,42 @@ public final class TaskEdits
             }
         }
         touch(edited);
+    }
+
+    /**
+     * Replace the baseline of a task object that was already edited when it showed up, for example restored from an
+     * autosave, by its version on the server: that is what was downloaded, so the restored edits show as changes and
+     * count for the instructions' tags (#180). Offline, or if the server can't be asked, the edits stay part of the
+     * baseline.
+     *
+     * @param primitive   The task object
+     * @param provisional Its baseline until the server answers
+     */
+    private void fetchUploaded(OsmPrimitive primitive, PrimitiveData provisional) {
+        final var id = new SimplePrimitiveId(primitive.getUniqueId(), primitive.getType());
+        final var version = primitive.getVersion();
+        if (version <= 0 || NetworkManager.isOffline(OnlineResource.OSM_API)) {
+            return;
+        }
+        Workers.execute(() -> {
+            final PrimitiveData uploaded;
+            try {
+                final var dataSet = new OsmServerObjectReader(id, version).parseOsm(NullProgressMonitor.INSTANCE);
+                final var server = dataSet.getPrimitiveById(id);
+                if (server == null) {
+                    return;
+                }
+                uploaded = server.save();
+            } catch (OsmTransferException e) {
+                Logging.debug("MapRoulette: could not read " + id + " v" + version + ": " + e.getMessage());
+                Logging.trace(e);
+                return;
+            }
+            // Unless the task ended meanwhile, which dropped the baseline
+            if (this.baseline.replace(primitive, provisional, uploaded)) {
+                fire();
+            }
+        });
     }
 
     private void touch(Collection<? extends OsmPrimitive> primitives) {
