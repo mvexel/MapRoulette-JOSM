@@ -5,13 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults;
 import org.openstreetmap.josm.plugins.maproulette.gui.TaskResults.Link;
-import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel.Fix;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel.State;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.current.CurrentTaskPanel.Tone;
 import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
@@ -23,6 +24,10 @@ import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 class CurrentTaskPanelStateTest {
     private static final Task TASK = new Task(235, "Bench", null, null, 10, null, null, new DataSet(), null, null, null,
             null, null, null, 0, null, null, null, false, null, null);
+
+    private static List<String> labels(State state) {
+        return state.choices().stream().map(CurrentTaskPanel.Choice::label).toList();
+    }
 
     private static State state(boolean started, int edits, TaskResults.Result result) {
         return CurrentTaskPanel.state(TASK, started, edits, result, false, false, false, false);
@@ -42,7 +47,7 @@ class CurrentTaskPanelStateTest {
         final var two = state(true, 2, null);
         assertEquals("Working on task 235 · 2 edits so far", two.html());
         assertNull(two.hint());
-        assertEquals(Fix.NONE, two.fix());
+        assertEquals(List.of(), two.choices());
         // A result from before the task was started again doesn't show
         assertEquals("Working on task 235 · 2 edits so far",
                 state(true, 2, new TaskResults.Result(235, TaskStatus.FIXED, 702495, Link.LINKED)).html());
@@ -76,10 +81,10 @@ class CurrentTaskPanelStateTest {
         assertEquals("Uploading. Task 235 is marked Fixed once the upload succeeds.", uploading.html());
         final var unfinished = CurrentTaskPanel.state(TASK, true, 0, null, false, true, true, false);
         assertEquals("Your edits are uploaded, but Fixed was not sent for task 235.", unfinished.html());
-        assertEquals(Fix.SEND_AGAIN, unfinished.fix());
+        assertEquals(List.of("Send again"), labels(unfinished));
         final var missing = CurrentTaskPanel.state(TASK, true, 0, null, false, false, true, false);
         assertEquals("The task's objects are not in the data.", missing.html());
-        assertEquals(Fix.DOWNLOAD, missing.fix());
+        assertEquals(List.of("Download"), labels(missing));
         assertEquals("Task 235's objects could not be downloaded. They may no longer exist on OpenStreetMap.",
                 CurrentTaskPanel.state(TASK, false, 0, null, false, false, true, true).html());
         // Once finished, the result matters more than the objects
