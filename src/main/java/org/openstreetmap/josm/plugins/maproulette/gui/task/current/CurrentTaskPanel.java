@@ -50,6 +50,7 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.event.HyperlinkEvent;
+import javax.swing.text.DefaultCaret;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
 import javax.swing.text.StyleConstants;
@@ -343,6 +344,10 @@ public final class CurrentTaskPanel extends JPanel {
                 new FinishAction(this) };
         this.actions = newActions;
         this.instructionPane.enableClickableHyperlinks();
+        // New text must not move the caret to its end, which scrolls the instructions to their last line
+        if (this.instructionPane.getEditorPane().getCaret()instanceof DefaultCaret caret) {
+            caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+        }
         // The header stays in place while the instructions scroll
         final var header = this.header;
         // The task name is what people look for; the challenge above it is context
@@ -967,10 +972,14 @@ enum Tone {
         // With no task, the panel gives the task list the room (#132)
         Optional.ofNullable(MapRouletteDialog.get()).ifPresent(MapRouletteDialog::updateLayout);
         if (otherTask) {
-            // A new task starts at its name, where the panel scrolls as a whole; after the layout has settled
-            SwingUtilities.invokeLater(
-                    () -> Optional.ofNullable((JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this))
-                            .ifPresent(viewport -> viewport.setViewPosition(new Point(0, 0))));
+            // A new task starts at its name, where the panel scrolls as a whole, and at the first line of its
+            // instructions; after the layout has settled
+            SwingUtilities.invokeLater(() -> {
+                for (var inside : List.of(this.panel, this)) {
+                    Optional.ofNullable((JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, inside))
+                            .ifPresent(viewport -> viewport.setViewPosition(new Point(0, 0)));
+                }
+            });
         }
     }
 

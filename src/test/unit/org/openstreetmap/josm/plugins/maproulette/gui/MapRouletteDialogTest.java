@@ -566,6 +566,47 @@ class MapRouletteDialogTest {
         }
     }
 
+    /**
+     * Long instructions open at their first line, not scrolled to their end by the text's caret (goal 3 of the sitting)
+     */
+    @Test
+    void testLongInstructionsStartAtTop() {
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "testLongInstructions", null));
+        final var dialog = new MapRouletteDialog();
+        MainApplication.getMap().addToggleDialog(dialog);
+        final var text = String.join("\n\n",
+                java.util.Collections.nCopies(12, "Check the bench and add backrest=yes or backrest=no."));
+        final var task = new Task(30, "Bench 30", Instant.EPOCH, Instant.EPOCH, 1, text, null, new DataSet(), null,
+                TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        final var before = new Task(31, "Bench 31", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null,
+                new DataSet(), null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, "");
+        try {
+            final var scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class,
+                    dialog.currentTask().getParent());
+            final var card = scroll.getParent();
+            card.setSize(MapFrame.DEF_TOGGLE_DLG_WIDTH, 300);
+            // Another task first, as after a finished one
+            for (var shown : List.of(before, task)) {
+                ModifiedObjects.addLockedTask(shown);
+                GuiHelper.runInEDTAndWait(() -> CurrentTaskPanel.show(shown, false));
+                for (int i = 0; i < 3; i++) {
+                    GuiHelper.runInEDTAndWait(() -> layOut(card));
+                }
+                ModifiedObjects.removeLockedTask(shown);
+            }
+            ModifiedObjects.addLockedTask(task);
+            final var label = TaskListPanelTest.find(dialog.currentTask(), JLabel.class,
+                    l -> "Instructions: ".equals(l.getText()));
+            final var inner = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, label);
+            assertTrue(inner.getViewport().getViewSize().height > inner.getViewport().getHeight(),
+                    "The instructions scroll");
+            assertEquals(0, inner.getViewport().getViewPosition().y, "The instructions open at their first line");
+        } finally {
+            ModifiedObjects.removeLockedTask(task);
+            MainApplication.getMap().removeToggleDialog(dialog);
+        }
+    }
+
     private static void layOut(Container container) {
         container.doLayout();
         for (var child : container.getComponents()) {
