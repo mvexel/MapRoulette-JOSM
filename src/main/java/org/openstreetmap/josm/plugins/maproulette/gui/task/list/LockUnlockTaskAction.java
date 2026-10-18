@@ -25,6 +25,7 @@ import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.PleaseWaitRunnable;
+import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.plugins.maproulette.api.TaskAPI;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteClient;
@@ -271,7 +272,12 @@ final class LockUnlockTaskAction extends JosmAction {
                     // Show the started task, so the user finds its instructions and status buttons (#92)
                     CurrentTaskPanel.show(lockedTasks.get(0), true);
                     // Load the task's data and select its objects, so the user can edit right away (#114)
-                    TaskData.loadAndSelect(lockedTasks.get(0));
+                    final var started = lockedTasks.get(0);
+                    TaskData.loadAndSelect(started, () -> {
+                        if (ModifiedObjects.getLockedTask(started.id()) != null && confirmStopMissing(started)) {
+                            stopTasks(List.of(started.id()), new int[0]);
+                        }
+                    });
                 }
                 if (forgotten[0] >= 0) {
                     // Ask after this job, so the question is not tied to its progress dialog
@@ -371,6 +377,35 @@ final class LockUnlockTaskAction extends JosmAction {
             // With no selection, Stop stops the started tasks (#108)
             ModifiedObjects.getLockedTasks().forEach(task -> ids.add(task.id()));
         }
+        stopTasks(ids, selected);
+    }
+
+    /**
+     * Ask whether to stop a task whose OSM objects could not be downloaded (#143)
+     *
+     * @param task The started task
+     * @return {@code true} if the user wants to stop it
+     */
+    private static boolean confirmStopMissing(Task task) {
+        final var options = new String[] { tr("Stop the task"), tr("Keep it started") };
+        final var choice = JOptionPane.showOptionDialog(MRGuiHelper.dialogParent(),
+                tr("The OSM objects of MapRoulette task {0} could not be downloaded from {1}.\n"
+                        + "The server may be unreachable, the task may be made for another OSM server,"
+                        + " or the objects were deleted.\nStop the task so other mappers can work on it?",
+                        Long.toString(task.id()), OsmApi.getOsmApi().getServerUrl()),
+                tr("MapRoulette task objects not downloaded"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE,
+                null, options, options[0]);
+        return choice == 0;
+    }
+
+    /**
+     * Stop tasks. The requests run on the worker; the table and {@link ModifiedObjects} are only touched on the EDT.
+     *
+     * @param ids      The tasks to stop
+     * @param selected The table selection to restore
+     */
+    private void stopTasks(List<Long> ids, int[] selected) {
+        final var data = (TaskTableModel) this.table.getModel();
         if (ids.isEmpty()) {
             return;
         }

@@ -66,7 +66,10 @@ class ChallengeCacheTest {
 
             @Override
             public void authenticate(HttpClient request, boolean loginRequired) {
-                onEdt.add(SwingUtilities.isEventDispatchThread());
+                // Only this test's request: fetches left over from other tests may still run on the worker
+                if (request.getURL().getPath().endsWith("/challenge/" + id)) {
+                    onEdt.add(SwingUtilities.isEventDispatchThread());
+                }
             }
         });
         final var loaded = new CountDownLatch(1);

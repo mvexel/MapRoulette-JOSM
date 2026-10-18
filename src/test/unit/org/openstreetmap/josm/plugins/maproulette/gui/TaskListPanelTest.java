@@ -29,7 +29,9 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
+import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
@@ -205,6 +207,53 @@ public class TaskListPanelTest {
         } finally {
             panel.destroy();
         }
+    }
+
+    /**
+     * A scroll step moves the list by about a row, not a few pixels (#144)
+     */
+    @Test
+    void testScrollStep() {
+        final var panel = new TaskListPanel();
+        try {
+            final var scrollPanes = new ArrayList<JScrollPane>();
+            collectScrollPanes(panel, scrollPanes);
+            final var list = scrollPanes.stream()
+                    .filter(pane -> SwingUtilities.getAncestorOfClass(JScrollPane.class, findTable(pane)) == pane)
+                    .findFirst().orElseThrow();
+            final var table = findTable(list);
+            // Two lines of text per row
+            assertTrue(list.getVerticalScrollBar().getUnitIncrement() > 2
+                    * table.getFontMetrics(table.getFont()).getHeight());
+        } finally {
+            panel.destroy();
+        }
+    }
+
+    private static void collectScrollPanes(Container container, List<JScrollPane> scrollPanes) {
+        for (var component : container.getComponents()) {
+            if (component instanceof JScrollPane scrollPane) {
+                scrollPanes.add(scrollPane);
+            }
+            if (component instanceof Container child) {
+                collectScrollPanes(child, scrollPanes);
+            }
+        }
+    }
+
+    private static JTable findTable(Container container) {
+        for (var component : container.getComponents()) {
+            if (component instanceof JTable table) {
+                return table;
+            }
+            if (component instanceof Container child) {
+                final var table = findTable(child);
+                if (table != null) {
+                    return table;
+                }
+            }
+        }
+        return null;
     }
 
     private static void collectLabels(Container container, List<JLabel> labels) {
