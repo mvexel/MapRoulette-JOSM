@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.maproulette.gui;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -27,12 +28,15 @@ import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
+import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 
 import jakarta.annotation.Nonnull;
 
 /**
  * The OSM objects the user edits while a task is started (#115). An upload that contains one of them finishes the task.
- * Edits made before the task was started don't count, and undone edits drop out because they are not uploaded.
+ * Edits made before the task was started don't count, except unuploaded edits of the task's own objects, for example
+ * from an autosave restored after a restart (#141). Undone edits drop out because they are not uploaded.
  * Merging a layer into another drops the edits of the merged layer, since they are recorded by object.
  */
 public final class TaskEdits implements DataSetListener, LayerChangeListener {
@@ -48,6 +52,7 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final AtomicBoolean firing = new AtomicBoolean();
     private final Runnable lockListener = this::locksChanged;
+    private final Runnable challengeListener = this::adoptTaskObjectEdits;
     private boolean started;
     /**
      * {@code true} while the OSM data layers are followed, which is while a task is started
@@ -66,6 +71,8 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
         if (!INSTANCE.started) {
             INSTANCE.started = true;
             ModifiedObjects.addLockListener(INSTANCE.lockListener);
+            // The task's objects are known once its challenge is cached
+            ChallengeCache.addListener(INSTANCE.challengeListener);
         }
         GuiHelper.runInEDT(INSTANCE::locksChanged);
     }
@@ -146,6 +153,30 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
         if (!started && !this.touched.isEmpty()) {
             clear();
         }
+        adoptTaskObjectEdits();
+    }
+
+    /**
+     * Count the unuploaded edits of the started tasks' own objects, even if they were made before Start. After a
+     * restart, the edits come back with the autosave, but the task is started again only afterwards (#141).
+     */
+    private void adoptTaskObjectEdits() {
+        if (!this.attached) {
+            return;
+        }
+        final var edited = new ArrayList<OsmPrimitive>();
+        for (var task : ModifiedObjects.getLockedTasks()) {
+            final var ids = TaskPrimitives.cachedPrimitiveIds(task).orElse(List.of());
+            for (var layer : MainApplication.getLayerManager().getLayersOfType(OsmDataLayer.class)) {
+                for (var id : ids) {
+                    final var primitive = layer.getDataSet().getPrimitiveById(id);
+                    if (primitive != null && pending(primitive)) {
+                        edited.add(primitive);
+                    }
+                }
+            }
+        }
+        touch(edited);
     }
 
     private void touch(Collection<? extends OsmPrimitive> primitives) {
@@ -222,6 +253,7 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
     public void layerAdded(LayerAddEvent e) {
         if (e.getAddedLayer()instanceof OsmDataLayer layer) {
             layer.getDataSet().addDataSetListener(this);
+            adoptTaskObjectEdits();
         }
     }
 
