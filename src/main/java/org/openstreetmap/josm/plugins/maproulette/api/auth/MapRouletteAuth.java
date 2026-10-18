@@ -109,6 +109,13 @@ public final class MapRouletteAuth {
     }
 
     /**
+     * Let the login notice show again, for tests
+     */
+    static void resetUnavailableNotice() {
+        UNAVAILABLE_NOTICE_SHOWN.set(false);
+    }
+
+    /**
      * Delete the MapRoulette API keys that older versions cached in plain text in the JOSM preferences.
      * MapRoulette no longer accepts API keys.
      */
