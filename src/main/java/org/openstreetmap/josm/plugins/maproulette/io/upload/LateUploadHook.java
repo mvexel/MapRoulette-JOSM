@@ -5,6 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,11 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
      * The tasks whose Fixed could not be sent after their upload, by id
      */
     private static final Map<Long, Unfinished> UNFINISHED = new ConcurrentHashMap<>();
+    /**
+     * The finishes of an upload that did not go through completely, by task id. The next upload finishes them, even if
+     * the task's edits went up in an earlier chunk and are not in it (#130).
+     */
+    private static final Map<Long, ModifiedTask> CARRIED = new ConcurrentHashMap<>();
 
     /**
      * Add a listener for tasks whose status was sent
@@ -104,7 +110,7 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
     @Override
     public void modifyChangesetTags(Map<String, String> tags) {
         // Recorded by the early hook for this upload only: a cancelled or failed upload finishes nothing
-        final var finishing = ModifiedObjects.takeFinishing();
+        final var finishing = withCarried(ModifiedObjects.takeFinishing());
         final var fixed = ModifiedObjects.getUnlinkedFixed();
         if (fixed.isEmpty() && finishing.isEmpty() || !MapRouletteAuth.isAvailable()) {
             return;
@@ -142,8 +148,11 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
         final long changesetId = GuiHelper.runInEDTAndWaitAndReturn(
                 () -> isUploaded(primitives) ? Math.max(uploadedChangeset(primitives), 0) : -1);
         if (changesetId < 0 || !server.equals(MapRouletteConfig.getBaseUrl())) {
-            // Not uploaded: wait for the next upload, and the started task stays started. Another server: the tasks
-            // were forgotten.
+            // Not uploaded: the next upload finishes the tasks, and the started task stays started meanwhile. Part of
+            // a chunked upload may have gone up, the task's edits with it. Another server: the tasks were forgotten.
+            if (changesetId < 0 && server.equals(MapRouletteConfig.getBaseUrl())) {
+                carry(finishing);
+            }
             return;
         }
         finish(finishing, changesetId, closed, server);
@@ -258,11 +267,52 @@ public class LateUploadHook implements UploadHook, ChangesetCacheListener {
     }
 
     /**
-     * Forget the tasks whose Fixed could not be sent, for example when the user switches servers
+     * Keep finishes for the next upload
      *
-     * @return The ids of the forgotten tasks
+     * @param finishing The finishes of an upload that did not go through completely
+     */
+    static void carry(List<ModifiedTask> finishing) {
+        finishing.forEach(status -> CARRIED.put(status.task().id(), status));
+    }
+
+    /**
+     * Add the finishes carried over from an upload that did not go through completely
+     *
+     * @param finishing The finishes the user chose for this upload, which win
+     * @return All finishes for this upload
+     */
+    static List<ModifiedTask> withCarried(List<ModifiedTask> finishing) {
+        if (CARRIED.isEmpty()) {
+            return finishing;
+        }
+        final var all = new ArrayList<>(finishing);
+        final var chosen = finishing.stream().map(status -> status.task().id()).collect(Collectors.toSet());
+        for (var id : Set.copyOf(CARRIED.keySet())) {
+            final var carried = CARRIED.remove(id);
+            if (carried != null && !chosen.contains(id)) {
+                all.add(carried);
+            }
+        }
+        return all;
+    }
+
+    /**
+     * Forget the carried finishes of tasks the user was asked about again, for example with Not finished yet
+     *
+     * @param tasks The tasks
+     */
+    static void forgetCarried(Collection<Task> tasks) {
+        tasks.forEach(task -> CARRIED.remove(task.id()));
+    }
+
+    /**
+     * Forget the tasks whose Fixed could not be sent, and the finishes carried over to the next upload, for example
+     * when the user switches servers
+     *
+     * @return The ids of the tasks whose Fixed could not be sent
      */
     public static Set<Long> forgetUnfinished() {
+        CARRIED.clear();
         final var ids = Set.copyOf(UNFINISHED.keySet());
         ids.forEach(UNFINISHED::remove);
         return ids;
