@@ -8,7 +8,9 @@ import static org.openstreetmap.josm.tools.I18n.trn;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.Insets;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -30,6 +32,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 import javax.swing.UIManager;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
@@ -166,6 +169,18 @@ public final class CurrentTaskPanel extends JPanel {
      */
     private final JPanel south = new JPanel(new GridBagLayout());
     /**
+     * The comment, the task tags and the review request, folded until the user opens them (#132)
+     */
+    private final JPanel feedbackPanel = new JPanel(new GridBagLayout());
+    /**
+     * Opens the feedback fields
+     */
+    private final JButton feedbackToggle = new JButton(tr("Add a comment or ask for a review…"));
+    /**
+     * {@code true} once the user opened the feedback fields for the current task
+     */
+    private boolean feedbackOpen;
+    /**
      * The buttons for the outcomes with no edit
      */
     private final JPanel statusButtons;
@@ -270,9 +285,22 @@ public final class CurrentTaskPanel extends JPanel {
         south.add(this.dataPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.unfinishedPanel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
         south.add(this.editsLabel, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 2, 4, 2));
-        south.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(this.tagBox, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
-        south.add(this.reviewBox, GBC.eol().anchor(GBC.LINE_START).insets(2, 0, 4, 0));
+        // A link-like line, so the fields take no room until they are wanted
+        this.feedbackToggle.setBorderPainted(false);
+        this.feedbackToggle.setContentAreaFilled(false);
+        this.feedbackToggle.setHorizontalAlignment(SwingConstants.LEADING);
+        this.feedbackToggle.setMargin(new Insets(0, 0, 0, 0));
+        this.feedbackToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        this.feedbackToggle.addActionListener(e -> {
+            this.feedbackOpen = true;
+            this.refreshFeedbackFold();
+            this.commentField.requestFocusInWindow();
+        });
+        south.add(this.feedbackToggle, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        this.feedbackPanel.add(this.commentField, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        this.feedbackPanel.add(this.tagBox, GBC.eol().fill(GBC.HORIZONTAL).insets(4, 0, 4, 0));
+        this.feedbackPanel.add(this.reviewBox, GBC.eol().anchor(GBC.LINE_START).insets(2, 0, 4, 0));
+        south.add(this.feedbackPanel, GBC.eol().fill(GBC.HORIZONTAL));
         // Uploading is the main way to finish; the outcomes with no edit come after it
         final var finishButton = new SideButton(newActions[6]);
         finishButton.setFont(finishButton.getFont().deriveFont(Font.BOLD));
@@ -565,6 +593,8 @@ public final class CurrentTaskPanel extends JPanel {
             return;
         }
         this.feedbackTask = id;
+        // Each task starts with the fields folded
+        this.feedbackOpen = false;
         this.commentField.setText("");
         this.reviewBox.setSelected(false);
         this.tagBox.getModel().removeAllElements();
@@ -581,6 +611,16 @@ public final class CurrentTaskPanel extends JPanel {
                     Arrays.stream(preferred.split(",")).map(String::strip).filter(tag -> !tag.isEmpty()).toList());
             this.tagBox.setEditable(!challenge.extra().limitTags());
         }
+    }
+
+    /**
+     * Show the line that opens the feedback fields, or the fields once the user opened them
+     */
+    private void refreshFeedbackFold() {
+        final var any = this.commentField.isVisible() || this.tagBox.isVisible() || this.reviewBox.isVisible();
+        this.feedbackToggle.setVisible(any && !this.feedbackOpen);
+        this.feedbackPanel.setVisible(any && this.feedbackOpen);
+        this.revalidate();
     }
 
     /**
@@ -614,6 +654,7 @@ public final class CurrentTaskPanel extends JPanel {
         this.reviewBox.setToolTipText(revision ? tr("The reviewer rejected this task, so your fix goes back for review")
                 : tr("Ask a reviewer to check your work"));
         this.tagBox.setVisible(this.tagBox.isVisible() && hasTask);
+        refreshFeedbackFold();
         refreshFinish();
         if (currentTask == null) {
             this.dataPanel.setVisible(false);

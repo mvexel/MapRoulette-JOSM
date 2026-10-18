@@ -16,6 +16,7 @@ import java.awt.Container;
 import java.awt.Dimension;
 import java.time.Instant;
 
+import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JSplitPane;
@@ -195,6 +196,35 @@ class MapRouletteDialogTest {
     }
 
     /**
+     * The comment and the review request are folded behind one line, which each new task folds again (#132)
+     */
+    @Test
+    void testFeedbackFolded() {
+        final var panel = new CurrentTaskPanel();
+        try {
+            panel.refreshModel(
+                    new Task(27, "Bench 27", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""));
+            final var toggle = TaskListPanelTest.find(panel, JButton.class,
+                    b -> "Add a comment or ask for a review…".equals(b.getText()));
+            final var comment = TaskListPanelTest.find(panel, JosmTextField.class, f -> true);
+            assertTrue(toggle.isVisible());
+            assertFalse(comment.getParent().isVisible(), "The fields start folded");
+            toggle.doClick();
+            assertFalse(toggle.isVisible());
+            assertTrue(comment.getParent().isVisible());
+
+            panel.refreshModel(
+                    new Task(28, "Bench 28", Instant.EPOCH, Instant.EPOCH, 1, "Check the bench", null, new DataSet(),
+                            null, TaskStatus.CREATED, null, null, null, null, 0, null, null, null, false, null, ""));
+            assertTrue(toggle.isVisible(), "Another task starts folded");
+            assertFalse(comment.getParent().isVisible());
+        } finally {
+            panel.destroy();
+        }
+    }
+
+    /**
      * A task whose review was rejected always goes back for review, as on the website (#115)
      */
     @Test
@@ -268,6 +298,7 @@ class MapRouletteDialogTest {
             final var withTask = dialog.neededSize();
             assertTrue(withTask.width <= MapFrame.DEF_TOGGLE_DLG_WIDTH, withTask::toString);
             assertTrue(withTask.height > noTask.height, "A task needs more room than the list alone");
+            assertTrue(withTask.height <= 380, () -> "Fits a short docked panel: " + withTask);
         } finally {
             MainApplication.getMap().removeToggleDialog(dialog);
         }

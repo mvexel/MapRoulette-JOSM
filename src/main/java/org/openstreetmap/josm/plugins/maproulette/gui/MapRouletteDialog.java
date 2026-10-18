@@ -230,7 +230,8 @@ public final class MapRouletteDialog extends ToggleDialog {
      */
     Dimension neededSize() {
         if (this.currentTask.hasTask()) {
-            final var list = this.taskList.neededSize(3);
+            // The list may shrink to its title and challenge filter: the current task matters more, and the divider moves
+            final var list = this.taskList.squeezedSize();
             final var task = this.currentTask.neededSize();
             return new Dimension(Math.max(list.width, task.width),
                     list.height + this.split.getDividerSize() + task.height);
@@ -318,7 +319,11 @@ public final class MapRouletteDialog extends ToggleDialog {
         this.ratioPending = false;
         this.settingDivider = true;
         try {
-            this.split.setDividerLocation(DIVIDER_RATIO.get());
+            // The current task keeps the room it needs; the list gets the rest above its share
+            final var room = this.split.getHeight() - this.split.getDividerSize();
+            final var forTask = room - this.currentTask.neededSize().height;
+            final var location = Math.min((int) (DIVIDER_RATIO.get() * room), forTask);
+            this.split.setDividerLocation(Math.max(location, this.taskList.squeezedSize().height));
         } finally {
             this.settingDivider = false;
         }

@@ -612,6 +612,18 @@ public final class TaskListPanel extends JPanel
                 + rows * scrollStep(this.table) + footerHeight + this.buttons.getPreferredSize().height);
     }
 
+    /**
+     * Get the size the list needs while a task is started: its title and the challenge filter. The rest may be squeezed
+     * out, since the user can drag the divider (#132).
+     *
+     * @return The size
+     */
+    public Dimension squeezedSize() {
+        final var challengeRow = this.filters.isVisible() ? this.challengeFilter.getPreferredSize().height + 4 : 0;
+        return new Dimension(this.buttons.getPreferredSize().width,
+                this.title.getPreferredSize().height + 4 + challengeRow);
+    }
+
     static int scrollStep(JTable table) {
         return 2 * table.getFontMetrics(table.getFont()).getHeight() + 12;
     }
