@@ -189,6 +189,15 @@ public final class MapRouletteDialog extends ToggleDialog {
     }
 
     /**
+     * Get the login control in the panel header
+     *
+     * @return The login control
+     */
+    public LoginControl login() {
+        return this.login;
+    }
+
+    /**
      * Get the current task section
      *
      * @return The current task

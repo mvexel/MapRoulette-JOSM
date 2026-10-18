@@ -4,7 +4,7 @@ package org.openstreetmap.josm.plugins.maproulette.util;
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.awt.Component;
+import java.awt.GraphicsEnvironment;
 import java.io.IOException;
 import java.net.SocketException;
 import java.net.UnknownHostException;
@@ -12,8 +12,7 @@ import java.util.regex.Pattern;
 
 import javax.swing.JOptionPane;
 
-import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
-import org.openstreetmap.josm.gui.HelpAwareOptionPane;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.maproulette.api.auth.MapRouletteAuth;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
@@ -25,11 +24,14 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteNotFound
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
-import org.openstreetmap.josm.plugins.maproulette.gui.MRGuiHelper;
 import org.openstreetmap.josm.tools.ExceptionUtil;
+import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
- * This is a more generic class for explaining exceptions, see {@link org.openstreetmap.josm.gui.ExceptionDialogUtil}
+ * This is a more generic class for explaining exceptions, see {@link org.openstreetmap.josm.gui.ExceptionDialogUtil}.
+ * Known problems show as a JOSM Notification: none of them needs a decision, so they don't stop the user with a
+ * dialog (#116).
  */
 public final class ExceptionDialogUtil {
     /**
@@ -42,7 +44,7 @@ public final class ExceptionDialogUtil {
     }
 
     /**
-     * Explain exceptions. This may be called from any thread; the dialog is shown on the EDT.
+     * Explain exceptions. This may be called from any thread; the notification is shown on the EDT.
      * @param exception The exception to explain to the user
      */
     public static void explainException(Exception exception) {
@@ -54,43 +56,38 @@ public final class ExceptionDialogUtil {
             // A connection problem: explain the underlying exception
             explainExceptionOnEdt(cause);
         } else if (exception instanceof MapRouletteAuthUnavailableException) {
-            ConditionalOptionPaneUtil.showMessageDialog("maproulette.user.not.logged.in", MRGuiHelper.dialogParent(),
-                    MapRouletteAuth.unavailableMessage(), tr("MapRoulette login unavailable"),
-                    JOptionPane.INFORMATION_MESSAGE);
+            notify(MapRouletteAuth.unavailableMessage(), JOptionPane.INFORMATION_MESSAGE, null);
         } else if (exception instanceof MapRouletteLockHeldException lockHeld) {
             if (lockHeld.heldTaskId().isPresent()) {
-                showErrorDialog(
-                        tr("You already have MapRoulette task {0} started. MapRoulette allows one started task"
-                                + " at a time; stop that task first.",
-                                Long.toString(lockHeld.heldTaskId().getAsLong())),
-                        tr("MapRoulette task already started"), null);
+                showError(tr("You already have MapRoulette task {0} started. MapRoulette allows one started task"
+                        + " at a time; stop that task first.", Long.toString(lockHeld.heldTaskId().getAsLong())),
+                        null);
             } else {
                 // MapRoulette also answers 409 for conflicts that are not about locks, such as OSM change conflicts
-                showErrorDialog(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
-                        .orElseGet(() -> tr("MapRoulette reported a conflict.")), tr("MapRoulette conflict"), null);
+                showError(lockHeld.serverMessage().map(m -> tr("MapRoulette reported a conflict: {0}", m))
+                        .orElseGet(() -> tr("MapRoulette reported a conflict.")), null);
             }
         } else if (exception instanceof MapRouletteUnsupportedException unsupported) {
-            showErrorDialog(explainRefusal(unsupported), tr("Not allowed for this login"), null);
+            showError(explainRefusal(unsupported), null);
         } else if (exception instanceof MapRouletteForbiddenException) {
-            showErrorDialog(tr("MapRoulette did not allow this. Another mapper may be working on the task."),
-                    tr("Not allowed"), null);
+            showError(tr("MapRoulette did not allow this. Another mapper may be working on the task."), null);
         } else if (exception instanceof MapRouletteNotFoundException) {
-            showErrorDialog(tr("MapRoulette does not have this task or challenge (any more)."), tr("Not found"), null);
+            showError(tr("MapRoulette does not have this task or challenge (any more)."), null);
         } else if (exception instanceof MapRouletteHttpException httpException && httpException.status() == 400) {
             // MapRoulette's message says why, for example a status change it does not allow or a paused challenge
-            showErrorDialog(httpException.serverMessage().map(m -> tr("MapRoulette did not accept this: {0}", m))
-                    .orElseGet(() -> tr("MapRoulette did not accept this.")), tr("Not accepted"), null);
+            showError(httpException.serverMessage().map(m -> tr("MapRoulette did not accept this: {0}", m))
+                    .orElseGet(() -> tr("MapRoulette did not accept this.")), null);
         } else if (exception instanceof MapRouletteParseException) {
-            showErrorDialog(tr("Could not read the MapRoulette response: {0}", exception.getMessage()),
-                    tr("Unexpected MapRoulette response"), null);
+            showError(tr("Could not read the MapRoulette response: {0}", exception.getMessage()), null);
         } else if (exception instanceof SocketException socketException) {
-            final var message = tr("<html>Failed to open a connection to the remote server<br>" + "''{0}''.<br>"
-                    + "Please check your internet connection.", socketException.getMessage()) + "</html>";
-            showErrorDialog(message, tr("Network exception"), ht("/ErrorMessages#NestedSocketException"));
+            showError(tr("Could not connect to the server: {0}. Please check your internet connection.",
+                    socketException.getMessage()), ht("/ErrorMessages#NestedSocketException"));
         } else if (exception instanceof UnknownHostException unknownHostException) {
-            showErrorDialog(unknownHostException.getMessage(), tr("Unknown host"), ht("/ErrorMessages#UnknownHost"));
+            showError(tr("Unknown server {0}. Please check your internet connection.",
+                    unknownHostException.getMessage()), ht("/ErrorMessages#UnknownHost"));
         } else if (exception instanceof IOException) {
-            showErrorDialog(ExceptionUtil.explainException(exception), tr("IO Exception"),
+            // JOSM's explanation is HTML already
+            notify(ExceptionUtil.explainException(exception), JOptionPane.WARNING_MESSAGE,
                     ht("/ErrorMessages#NestedIOException"));
         } else {
             org.openstreetmap.josm.gui.ExceptionDialogUtil.explainException(exception);
@@ -161,14 +158,31 @@ public final class ExceptionDialogUtil {
     }
 
     /**
-     * Show an error dialog
-     * @param msg The message to show
-     * @param title The dialog title
-     * @param helpTopic The help topic, if present
-     * @return See {@link HelpAwareOptionPane#showOptionDialog(Component, Object, String, int, String)}
+     * Show a problem as a notification
+     *
+     * @param text      The plain text, which may hold text from the server
+     * @param helpTopic The help topic, or {@code null}
      */
-    private static int showErrorDialog(String msg, String title, String helpTopic) {
-        return HelpAwareOptionPane.showOptionDialog(MRGuiHelper.dialogParent(), msg, title, JOptionPane.ERROR_MESSAGE,
-                helpTopic);
+    private static void showError(String text, String helpTopic) {
+        notify(Utils.escapeReservedCharactersHTML(text), JOptionPane.WARNING_MESSAGE, helpTopic);
+    }
+
+    /**
+     * Show a notification. Call on the EDT.
+     *
+     * @param html      The text, as HTML
+     * @param icon      The {@link JOptionPane} message type for the icon
+     * @param helpTopic The help topic, or {@code null}
+     */
+    private static void notify(String html, int icon, String helpTopic) {
+        if (GraphicsEnvironment.isHeadless()) {
+            Logging.warn(html);
+            return;
+        }
+        final var notification = new Notification(html).setIcon(icon).setDuration(Notification.TIME_LONG);
+        if (helpTopic != null) {
+            notification.setHelpTopic(helpTopic);
+        }
+        notification.show();
     }
 }

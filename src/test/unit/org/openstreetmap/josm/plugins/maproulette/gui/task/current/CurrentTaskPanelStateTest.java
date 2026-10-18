@@ -93,4 +93,20 @@ class CurrentTaskPanelStateTest {
                         new TaskResults.Result(235, TaskStatus.ALREADY_FIXED, 0, Link.NONE), false, false, true, false)
                         .html());
     }
+
+    /**
+     * A started task whose status can't be set without a login says so, with a Log in button; other lines win (#116)
+     */
+    @Test
+    void testLogin() {
+        final var working = state(true, 2, null);
+        final var login = CurrentTaskPanel.withLogin(TASK, working, true);
+        assertEquals(Tone.WARNING, login.tone());
+        assertEquals("Log in to set the status of task 235.", login.html());
+        assertEquals(List.of("Log in…"), labels(login));
+        assertEquals(working, CurrentTaskPanel.withLogin(TASK, working, false), "Logged in");
+        final var uploading = CurrentTaskPanel.state(TASK, true, 2, null, true, false, false, false);
+        assertEquals(uploading, CurrentTaskPanel.withLogin(TASK, uploading, true));
+        assertNull(CurrentTaskPanel.withLogin(TASK, null, true));
+    }
 }
