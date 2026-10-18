@@ -11,7 +11,6 @@ import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadOsmTask;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
 import org.openstreetmap.josm.data.Bounds;
-import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
@@ -142,25 +141,12 @@ public final class TaskData {
      */
     @Nullable
     static Bounds bounds(@Nonnull Task task) {
-        Bounds bounds = null;
-        for (var primitive : task.geometries().allNonDeletedPrimitives()) {
-            final var bbox = primitive.getBBox();
-            if (bbox.isValid()) {
-                if (bounds == null) {
-                    bounds = new Bounds(bbox.getBottomRight());
-                }
-                bounds.extend(bbox.getTopLeft());
-                bounds.extend(bbox.getBottomRight());
-            }
+        final var place = TaskArea.place(task);
+        if (place == null) {
+            return null;
         }
-        if (bounds == null && task.location() != null) {
-            bounds = new Bounds(new LatLon(task.location().lat(), task.location().lon()));
-        }
-        if (bounds != null) {
-            bounds.extend(bounds.getMinLat() - POINT_MARGIN, bounds.getMinLon() - POINT_MARGIN);
-            bounds.extend(bounds.getMaxLat() + POINT_MARGIN, bounds.getMaxLon() + POINT_MARGIN);
-        }
-        return bounds;
+        return new Bounds(place.getBottomRightLat() - POINT_MARGIN, place.getTopLeftLon() - POINT_MARGIN,
+                place.getTopLeftLat() + POINT_MARGIN, place.getBottomRightLon() + POINT_MARGIN);
     }
 
     /**

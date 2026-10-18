@@ -28,6 +28,7 @@ import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.plugins.maproulette.api.model.Task;
 import org.openstreetmap.josm.plugins.maproulette.api_caching.ChallengeCache;
 import org.openstreetmap.josm.plugins.maproulette.data.TaskPrimitives;
 
@@ -114,6 +115,19 @@ public final class TaskEdits implements DataSetListener, LayerChangeListener {
      */
     public static boolean touches(Collection<? extends OsmPrimitive> uploaded) {
         return uploaded.stream().anyMatch(INSTANCE.touched::contains);
+    }
+
+    /**
+     * Check if an upload contains an edit made while a task was started that concerns that task: one of its own
+     * objects, or an object near it (#149)
+     *
+     * @param uploaded The primitives of the upload
+     * @param task     The task
+     * @return {@code true} if it does
+     */
+    public static boolean touches(Collection<? extends OsmPrimitive> uploaded, Task task) {
+        return uploaded.stream().filter(INSTANCE.touched::contains)
+                .anyMatch(primitive -> TaskArea.concerns(task, primitive));
     }
 
     /**

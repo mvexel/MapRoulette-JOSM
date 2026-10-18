@@ -75,6 +75,7 @@ import org.openstreetmap.josm.plugins.maproulette.gui.TaskEdits;
 import org.openstreetmap.josm.plugins.maproulette.gui.preferences.MapRouletteServerPreference;
 import org.openstreetmap.josm.plugins.maproulette.gui.task.list.TaskRows;
 import org.openstreetmap.josm.plugins.maproulette.io.TaskStatusSender;
+import org.openstreetmap.josm.plugins.maproulette.io.upload.EarlyUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.io.upload.LateUploadHook;
 import org.openstreetmap.josm.plugins.maproulette.util.ExceptionDialogUtil;
 import org.openstreetmap.josm.tools.GBC;
@@ -952,7 +953,8 @@ private static final class FinishAction extends InnerAction {
     @Override
     public void actionPerformed(ActionEvent e) {
         if (MainApplication.getMenu() != null) {
-            // JOSM's own upload: the upload hook asks if it finishes the task
+            // JOSM's own upload: the upload hook asks if it finishes the task, whatever the distance of the edits (#149)
+            EarlyUploadHook.requestFinish();
             MainApplication.getMenu().upload.actionPerformed(e);
         }
     }
