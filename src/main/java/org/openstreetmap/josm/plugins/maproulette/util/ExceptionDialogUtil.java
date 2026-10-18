@@ -15,7 +15,6 @@ import javax.swing.JOptionPane;
 
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.plugins.maproulette.gui.LoginControl;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteAuthUnavailableException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteException;
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteForbiddenException;
@@ -26,6 +25,7 @@ import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteParseExc
 import org.openstreetmap.josm.plugins.maproulette.api.client.MapRouletteUnsupportedException;
 import org.openstreetmap.josm.plugins.maproulette.api.enums.TaskStatus;
 import org.openstreetmap.josm.plugins.maproulette.config.MapRouletteConfig;
+import org.openstreetmap.josm.plugins.maproulette.gui.LoginControl;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
